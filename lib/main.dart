@@ -1,10 +1,12 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:archive/archive.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:smart_rich_text_quill/smart_rich_text_quill.dart';
 import 'package:xml/xml.dart';
 
 void main() {
@@ -46,15 +48,12 @@ class _DocumentStudioState extends State<DocumentStudio> {
   final TextEditingController _titleController = TextEditingController(
     text: 'Project proposal',
   );
-  final TextEditingController _bodyController = TextEditingController(
-    text: _starterDocument,
-  );
+  late SrqController _srqController;
   final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _replaceController = TextEditingController();
   final FocusNode _editorFocusNode = FocusNode();
+  int _currentMatchIndex = -1;
 
-  bool _bold = false;
-  bool _italic = false;
-  bool _underline = false;
   bool _showRuler = true;
   bool _showNavigation = true;
   bool _showInspector = true;
@@ -86,7 +85,8 @@ class _DocumentStudioState extends State<DocumentStudio> {
   @override
   void initState() {
     super.initState();
-    _bodyController.addListener(_refresh);
+    _srqController = SrqControllerFactory.create(initialMarkdown: _starterDocument);
+    _srqController.addListener(_refresh);
     _titleController.addListener(_refresh);
     _searchController.addListener(_refresh);
     _captureVersion('Created first draft');
@@ -94,7 +94,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
 
   @override
   void dispose() {
-    _bodyController
+    _srqController
       ..removeListener(_refresh)
       ..dispose();
     _titleController
@@ -103,27 +103,46 @@ class _DocumentStudioState extends State<DocumentStudio> {
     _searchController
       ..removeListener(_refresh)
       ..dispose();
+    _replaceController.dispose();
     _editorFocusNode.dispose();
     super.dispose();
   }
 
   void _refresh() {
-    if (mounted) {
-      setState(() => _saved = false);
-    }
+    if (mounted) setState(() => _saved = false);
   }
 
+  // ─── Selection-aware format state (computed from SrqController) ──────────────
+
+  bool get _bold => _srqController.selectionBoldActive;
+  bool get _italic => _srqController.selectionItalicActive;
+  bool get _underline => _srqController.selectionUnderlineActive;
+  bool get _strikethrough => _srqController.selectionStrikethroughActive;
+
+  // ─── Document text helpers ────────────────────────────────────────────────────
+
+  String get _markdownText => _srqController.markdown;
+
+  String get _plainText {
+    return _markdownText
+        .replaceAll(RegExp(r'\*\*|~~|\*|<u>|</u>|`'), '')
+        .replaceAll(RegExp(r'^#{1,3} ', multiLine: true), '')
+        .replaceAll(RegExp(r'^\* \[ \] |^\* |^- |\d+\. |^> ', multiLine: true), '');
+  }
+
+  // ─── Document statistics ──────────────────────────────────────────────────────
+
   int get _wordCount {
-    final matches = RegExp(r"\b[\w'-]+\b").allMatches(_bodyController.text);
+    final matches = RegExp(r"\b[\w'-]+\b").allMatches(_plainText);
     return matches.length;
   }
 
-  int get _characterCount => _bodyController.text.length;
+  int get _characterCount => _plainText.length;
 
   int get _readingMinutes => math.max(1, (_wordCount / 220).ceil());
 
   int get _sentenceCount {
-    final matches = RegExp(r'[^.!?]+[.!?]').allMatches(_bodyController.text);
+    final matches = RegExp(r'[^.!?]+[.!?]').allMatches(_plainText);
     return math.max(1, matches.length);
   }
 
@@ -140,8 +159,8 @@ class _DocumentStudioState extends State<DocumentStudio> {
   int get _attentionScore {
     final mediaBoost = math.min(12, _mediaBlocks.length * 4);
     final listBoost = RegExp(
-      r'(^|\n)(-|[0-9]+\.|\[ \])',
-    ).allMatches(_bodyController.text).length.clamp(0, 8);
+      r'(^|\n)(\*\s|\-\s|[0-9]+\.|\*\s\[)',
+    ).allMatches(_markdownText).length.clamp(0, 8);
     final score = 58 + mediaBoost + listBoost + (_headings.length * 3);
     return score.clamp(35, 100);
   }
@@ -150,19 +169,19 @@ class _DocumentStudioState extends State<DocumentStudio> {
     return RegExp(
       r'https?://|doi:|Source:',
       caseSensitive: false,
-    ).allMatches(_bodyController.text).length;
+    ).allMatches(_markdownText).length;
   }
 
   int get _citationNudgeCount {
     final numberClaims = RegExp(
       r'\b\d{2,}(%|x|k|m| billion| million)?\b',
       caseSensitive: false,
-    ).allMatches(_bodyController.text).length;
+    ).allMatches(_plainText).length;
     return math.max(0, numberClaims - _sourceCount);
   }
 
   List<String> get _actionItems {
-    final lines = _bodyController.text
+    final lines = _markdownText
         .split('\n')
         .map((line) => line.trim())
         .where((line) => line.isNotEmpty)
@@ -170,7 +189,8 @@ class _DocumentStudioState extends State<DocumentStudio> {
     return lines
         .where(
           (line) =>
-              line.startsWith('[ ]') ||
+              line.startsWith('* [ ]') ||
+              line.startsWith('- [ ]') ||
               line.toLowerCase().startsWith('todo') ||
               line.toLowerCase().contains('follow up') ||
               line.toLowerCase().contains('owner:'),
@@ -181,30 +201,96 @@ class _DocumentStudioState extends State<DocumentStudio> {
 
   int get _searchMatches {
     final query = _searchController.text.trim().toLowerCase();
-    if (query.isEmpty) {
-      return 0;
+    if (query.isEmpty) return 0;
+    return RegExp(RegExp.escape(query)).allMatches(_markdownText.toLowerCase()).length;
+  }
+
+  List<(int, int)> get _allMatchPositions {
+    final query = _searchController.text.trim().toLowerCase();
+    if (query.isEmpty) return [];
+    return RegExp(RegExp.escape(query))
+        .allMatches(_markdownText.toLowerCase())
+        .map((m) => (m.start, m.end))
+        .toList();
+  }
+
+  void _findNext() {
+    final positions = _allMatchPositions;
+    if (positions.isEmpty) return;
+    final next = (_currentMatchIndex + 1) % positions.length;
+    setState(() => _currentMatchIndex = next);
+    final (start, end) = positions[next];
+    _srqController.textController.selection =
+        TextSelection(baseOffset: start, extentOffset: end);
+    _editorFocusNode.requestFocus();
+  }
+
+  void _findPrev() {
+    final positions = _allMatchPositions;
+    if (positions.isEmpty) return;
+    final idx = _currentMatchIndex <= 0 ? positions.length - 1 : _currentMatchIndex - 1;
+    setState(() => _currentMatchIndex = idx);
+    final (start, end) = positions[idx];
+    _srqController.textController.selection =
+        TextSelection(baseOffset: start, extentOffset: end);
+    _editorFocusNode.requestFocus();
+  }
+
+  void _replaceOne() {
+    final positions = _allMatchPositions;
+    if (positions.isEmpty) return;
+    final idx = _currentMatchIndex.clamp(0, positions.length - 1);
+    final (start, end) = positions[idx];
+    final replacement = _replaceController.text;
+    final newText = _markdownText.replaceRange(start, end, replacement);
+    _srqController.setMarkdown(newText);
+    setState(() => _currentMatchIndex = idx.clamp(0, _allMatchPositions.length - 1));
+  }
+
+  void _replaceAll() {
+    final query = _searchController.text.trim();
+    if (query.isEmpty) return;
+    final replacement = _replaceController.text;
+    final newText = _markdownText.replaceAll(
+      RegExp(RegExp.escape(query), caseSensitive: false),
+      replacement,
+    );
+    _srqController.setMarkdown(newText);
+    setState(() => _currentMatchIndex = -1);
+  }
+
+  Future<void> _exportToFile(String format) async {
+    final title = _titleController.text.replaceAll(RegExp(r'[^\w\s-]'), '').trim();
+    String content;
+    String ext;
+    if (format == 'markdown') {
+      content = _markdownText;
+      ext = 'md';
+    } else {
+      content = '${_titleController.text}\n\n$_plainText';
+      ext = 'txt';
     }
-    return RegExp(
-      RegExp.escape(query),
-    ).allMatches(_bodyController.text.toLowerCase()).length;
+    try {
+      final savePath = await FilePicker.saveFile(
+        dialogTitle: 'Save $ext file',
+        fileName: '$title.$ext',
+        bytes: Uint8List.fromList(content.codeUnits),
+      );
+      if (savePath != null) {
+        await File(savePath).writeAsString(content);
+        _showSnack('Saved to $savePath');
+      }
+    } catch (e) {
+      _showSnack('Export failed: $e');
+    }
   }
 
   List<String> get _headings {
-    final lines = _bodyController.text
+    return _markdownText
         .split('\n')
-        .map((line) => line.trim())
-        .where((line) => line.isNotEmpty)
-        .toList();
-    return lines
-        .where(
-          (line) =>
-              line.length < 60 &&
-              (line.startsWith('#') ||
-                  line.endsWith(':') ||
-                  !line.endsWith('.')),
-        )
+        .where((line) => RegExp(r'^#{1,3} .+').hasMatch(line.trim()))
+        .map((line) => line.replaceAll(RegExp(r'^#+\s*'), '').trim())
         .take(8)
-        .map((line) => line.replaceAll('#', '').replaceAll(':', '').trim())
         .toList();
   }
 
@@ -221,29 +307,15 @@ class _DocumentStudioState extends State<DocumentStudio> {
     }
   }
 
-  FontWeight get _fontWeight => _bold ? FontWeight.w700 : FontWeight.w400;
-
-  TextStyle get _editorStyle {
-    return TextStyle(
-      color: _inkColor,
-      fontFamily: _fontFamily == 'Aptos' ? null : _fontFamily,
-      fontSize: _fontSize,
-      height: 1.55,
-      fontWeight: _fontWeight,
-      fontStyle: _italic ? FontStyle.italic : FontStyle.normal,
-      decoration: _underline ? TextDecoration.underline : TextDecoration.none,
-    );
-  }
+  TextStyle get _editorStyle => TextStyle(
+    color: _inkColor,
+    fontFamily: _fontFamily == 'Aptos' ? null : _fontFamily,
+    fontSize: _fontSize,
+    height: 1.55,
+  );
 
   void _insertText(String value) {
-    final selection = _bodyController.selection;
-    final text = _bodyController.text;
-    final start = selection.start < 0 ? text.length : selection.start;
-    final end = selection.end < 0 ? text.length : selection.end;
-    _bodyController.value = TextEditingValue(
-      text: text.replaceRange(start, end, value),
-      selection: TextSelection.collapsed(offset: start + value.length),
-    );
+    _srqController.insertAtCursor(value);
     _editorFocusNode.requestFocus();
   }
 
@@ -256,7 +328,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
         nextVersion,
         label,
         _titleController.text,
-        _bodyController.text,
+        _markdownText,
         List<_MediaBlock>.of(_mediaBlocks),
         DateTime.now(),
         _wordCount,
@@ -272,9 +344,9 @@ class _DocumentStudioState extends State<DocumentStudio> {
   }
 
   void _newDocument() {
+    _srqController.setMarkdownSilently('');
     setState(() {
       _titleController.text = 'Untitled document';
-      _bodyController.text = '';
       _style = 'Body';
       _fontSize = 16;
       _zoom = 1;
@@ -478,9 +550,9 @@ class _DocumentStudioState extends State<DocumentStudio> {
       return;
     }
 
+    _srqController.setMarkdownSilently(cleanText);
     setState(() {
       _titleController.text = _titleFromFileName(name);
-      _bodyController.text = cleanText;
       _template = 'Imported $format';
       _mediaBlocks.clear();
       _captureVersion('Imported $format file');
@@ -632,10 +704,10 @@ class _DocumentStudioState extends State<DocumentStudio> {
                       selected: entry.key == _template,
                       onTap: () {
                         Navigator.of(context).pop();
+                        _srqController.setMarkdownSilently(entry.value);
                         setState(() {
                           _template = entry.key;
                           _titleController.text = entry.key;
-                          _bodyController.text = entry.value;
                           _mediaBlocks.clear();
                           _style = 'Body';
                           _captureVersion('Applied ${entry.key} template');
@@ -767,10 +839,10 @@ class _DocumentStudioState extends State<DocumentStudio> {
                       trailing: TextButton(
                         onPressed: () {
                           Navigator.of(context).pop();
+                          _srqController.setMarkdownSilently(version.body);
                           setState(() {
                             _activeVersion = version.id;
                             _titleController.text = version.title;
-                            _bodyController.text = version.body;
                             _mediaBlocks
                               ..clear()
                               ..addAll(version.mediaBlocks);
@@ -800,13 +872,11 @@ class _DocumentStudioState extends State<DocumentStudio> {
   }
 
   void _rejectAllChanges() {
-    if (_versions.isEmpty) {
-      return;
-    }
+    if (_versions.isEmpty) return;
     final previous = _versions.last;
+    _srqController.setMarkdownSilently(previous.body);
     setState(() {
       _titleController.text = previous.title;
-      _bodyController.text = previous.body;
       _mediaBlocks
         ..clear()
         ..addAll(previous.mediaBlocks);
@@ -817,12 +887,12 @@ class _DocumentStudioState extends State<DocumentStudio> {
   }
 
   String _smartBriefText() {
-    final firstParagraph = _bodyController.text
+    final firstParagraph = _plainText
         .split('\n')
         .map((line) => line.trim())
         .firstWhere(
           (line) => line.length > 80,
-          orElse: () => _bodyController.text.trim(),
+          orElse: () => _plainText.trim(),
         );
     final clean = firstParagraph.replaceAll(RegExp(r'\s+'), ' ');
     final summary = clean.length > 190
@@ -909,7 +979,13 @@ class _DocumentStudioState extends State<DocumentStudio> {
     return _NavigationRailPanel(
       headings: _headings,
       searchController: _searchController,
+      replaceController: _replaceController,
       searchMatches: _searchMatches,
+      currentMatchIndex: _currentMatchIndex,
+      onFindNext: _findNext,
+      onFindPrev: _findPrev,
+      onReplaceOne: _replaceOne,
+      onReplaceAll: _replaceAll,
       onClose: onClose,
     );
   }
@@ -947,6 +1023,11 @@ class _DocumentStudioState extends State<DocumentStudio> {
       onHistory: _showVersionHistorySheet,
       onSmartBrief: _showSmartBriefSheet,
       onActionDigest: _insertActionDigest,
+      onCommentsToggle: () => setState(() => _commentsMode = !_commentsMode),
+      onTrackChangesToggle: () => setState(() => _trackChanges = !_trackChanges),
+      onPermissionChange: (v) => setState(() => _permission = v),
+      onAudienceProfileChange: (v) => setState(() => _audienceProfile = v),
+      onToneModeChange: (v) => setState(() => _toneMode = v),
       onClose: onClose,
     );
   }
@@ -1026,7 +1107,12 @@ class _DocumentStudioState extends State<DocumentStudio> {
                   _ExportTile(
                     icon: Icons.text_snippet_outlined,
                     label: 'Plain text',
-                    onTap: () => _finishExport(context, 'plain text'),
+                    onTap: () => _finishExport(context, 'Plain text'),
+                  ),
+                  _ExportTile(
+                    icon: Icons.code_outlined,
+                    label: 'Markdown',
+                    onTap: () => _finishExport(context, 'Markdown'),
                   ),
                   _ExportTile(
                     icon: Icons.link_outlined,
@@ -1044,10 +1130,16 @@ class _DocumentStudioState extends State<DocumentStudio> {
 
   void _finishExport(BuildContext sheetContext, String type) {
     Navigator.of(sheetContext).pop();
-    final mediaNote = _mediaBlocks.isEmpty
-        ? ''
-        : ' with ${_mediaBlocks.length} media block${_mediaBlocks.length == 1 ? '' : 's'}';
-    _showSnack('$type export queued$mediaNote.');
+    if (type == 'Markdown') {
+      _exportToFile('markdown');
+    } else if (type == 'Plain text') {
+      _exportToFile('text');
+    } else {
+      final mediaNote = _mediaBlocks.isEmpty
+          ? ''
+          : ' with ${_mediaBlocks.length} media block${_mediaBlocks.length == 1 ? '' : 's'}';
+      _showSnack('$type export queued$mediaNote.');
+    }
   }
 
   void _copyPlainText() {
@@ -1059,8 +1151,8 @@ class _DocumentStudioState extends State<DocumentStudio> {
         .join('\n');
     Clipboard.setData(
       ClipboardData(
-        text:
-            '${_titleController.text}\n\n${_bodyController.text}${mediaText.isEmpty ? '' : '\n\nMedia\n$mediaText'}',
+        text: '${_titleController.text}\n\n$_plainText'
+            '${mediaText.isEmpty ? '' : '\n\nMedia\n$mediaText'}',
       ),
     );
     _showSnack('Document copied to clipboard.');
@@ -1076,24 +1168,55 @@ class _DocumentStudioState extends State<DocumentStudio> {
             _ToggleItalicIntent(),
         SingleActivator(LogicalKeyboardKey.keyU, control: true):
             _ToggleUnderlineIntent(),
+        SingleActivator(LogicalKeyboardKey.keyS, control: true, shift: true):
+            _ToggleStrikethroughIntent(),
+        SingleActivator(LogicalKeyboardKey.keyZ, control: true):
+            _UndoIntent(),
+        SingleActivator(LogicalKeyboardKey.keyZ, control: true, shift: true):
+            _RedoIntent(),
+        SingleActivator(LogicalKeyboardKey.keyY, control: true):
+            _RedoIntent(),
       },
       child: Actions(
         actions: {
           _ToggleBoldIntent: CallbackAction<_ToggleBoldIntent>(
             onInvoke: (_) {
-              setState(() => _bold = !_bold);
+              _srqController.toggleBold();
+              setState(() {});
               return null;
             },
           ),
           _ToggleItalicIntent: CallbackAction<_ToggleItalicIntent>(
             onInvoke: (_) {
-              setState(() => _italic = !_italic);
+              _srqController.toggleItalic();
+              setState(() {});
               return null;
             },
           ),
           _ToggleUnderlineIntent: CallbackAction<_ToggleUnderlineIntent>(
             onInvoke: (_) {
-              setState(() => _underline = !_underline);
+              _srqController.toggleUnderline();
+              setState(() {});
+              return null;
+            },
+          ),
+          _ToggleStrikethroughIntent:
+              CallbackAction<_ToggleStrikethroughIntent>(
+            onInvoke: (_) {
+              _srqController.toggleStrikethrough();
+              setState(() {});
+              return null;
+            },
+          ),
+          _UndoIntent: CallbackAction<_UndoIntent>(
+            onInvoke: (_) {
+              _srqController.undo();
+              return null;
+            },
+          ),
+          _RedoIntent: CallbackAction<_RedoIntent>(
+            onInvoke: (_) {
+              _srqController.redo();
               return null;
             },
           ),
@@ -1129,6 +1252,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                         bold: _bold,
                         italic: _italic,
                         underline: _underline,
+                        strikethrough: _strikethrough,
                         showRuler: _showRuler,
                         trackChanges: _trackChanges,
                         commentsMode: _commentsMode,
@@ -1141,10 +1265,22 @@ class _DocumentStudioState extends State<DocumentStudio> {
                         toneMode: _toneMode,
                         inkColor: _inkColor,
                         pageColor: _pageColor,
-                        onBold: () => setState(() => _bold = !_bold),
-                        onItalic: () => setState(() => _italic = !_italic),
-                        onUnderline: () =>
-                            setState(() => _underline = !_underline),
+                        onBold: () {
+                          _srqController.toggleBold();
+                          setState(() {});
+                        },
+                        onItalic: () {
+                          _srqController.toggleItalic();
+                          setState(() {});
+                        },
+                        onUnderline: () {
+                          _srqController.toggleUnderline();
+                          setState(() {});
+                        },
+                        onStrikethrough: () {
+                          _srqController.toggleStrikethrough();
+                          setState(() {});
+                        },
                         onRuler: () => setState(() => _showRuler = !_showRuler),
                         onTrackChanges: () =>
                             setState(() => _trackChanges = !_trackChanges),
@@ -1155,15 +1291,26 @@ class _DocumentStudioState extends State<DocumentStudio> {
                         onZoom: (value) => setState(() => _zoom = value),
                         onFontFamily: (value) =>
                             setState(() => _fontFamily = value),
-                        onStyle: (value) => setState(() {
-                          _style = value;
-                          _fontSize = value == 'Title'
-                              ? 28
-                              : value == 'Heading'
-                              ? 22
-                              : 16;
-                          _bold = value != 'Body';
-                        }),
+                        onStyle: (value) {
+                          setState(() {
+                            _style = value;
+                            _fontSize = value == 'Title'
+                                ? 28
+                                : value == 'Heading'
+                                ? 22
+                                : 16;
+                          });
+                          switch (value) {
+                            case 'Title':
+                              _srqController.setHeading(1);
+                            case 'Heading':
+                              _srqController.setHeading(2);
+                            case 'Quote':
+                              _srqController.toggleBlockquote();
+                            default:
+                              _srqController.clearBlockFormat();
+                          }
+                        },
                         onAlignment: (value) =>
                             setState(() => _alignment = value),
                         onAudienceProfile: (value) =>
@@ -1180,10 +1327,16 @@ class _DocumentStudioState extends State<DocumentStudio> {
                         onInsertImage: () => _showMediaSheet(_MediaType.image),
                         onInsertVideo: () => _showMediaSheet(_MediaType.video),
                         onInsertChecklist: () =>
-                            _insertText('\n[ ] Action item\n[ ] Follow up\n'),
+                            _srqController.toggleTaskList(),
+                        onInsertBulletList: () =>
+                            _srqController.toggleBulletList(),
+                        onInsertOrderedList: () =>
+                            _srqController.toggleOrderedList(),
                         onInsertSignature: () => _insertText(
                           '\n\nRegards,\n${_titleController.text.split(' ').first}\n',
                         ),
+                        onUndo: _srqController.undo,
+                        onRedo: _srqController.redo,
                         onAcceptChanges: _acceptAllChanges,
                         onRejectChanges: _rejectAllChanges,
                         onSmartBrief: _showSmartBriefSheet,
@@ -1204,7 +1357,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                             ),
                           Expanded(
                             child: _EditorWorkspace(
-                              bodyController: _bodyController,
+                              srqController: _srqController,
                               editorFocusNode: _editorFocusNode,
                               editorStyle: _editorStyle,
                               textAlign: _textAlign,
@@ -1261,6 +1414,18 @@ class _ToggleItalicIntent extends Intent {
 
 class _ToggleUnderlineIntent extends Intent {
   const _ToggleUnderlineIntent();
+}
+
+class _ToggleStrikethroughIntent extends Intent {
+  const _ToggleStrikethroughIntent();
+}
+
+class _UndoIntent extends Intent {
+  const _UndoIntent();
+}
+
+class _RedoIntent extends Intent {
+  const _RedoIntent();
 }
 
 class _TopBar extends StatelessWidget {
@@ -1459,6 +1624,7 @@ class _Ribbon extends StatelessWidget {
     required this.bold,
     required this.italic,
     required this.underline,
+    required this.strikethrough,
     required this.showRuler,
     required this.trackChanges,
     required this.commentsMode,
@@ -1474,6 +1640,7 @@ class _Ribbon extends StatelessWidget {
     required this.onBold,
     required this.onItalic,
     required this.onUnderline,
+    required this.onStrikethrough,
     required this.onRuler,
     required this.onTrackChanges,
     required this.onCommentsMode,
@@ -1490,7 +1657,11 @@ class _Ribbon extends StatelessWidget {
     required this.onInsertImage,
     required this.onInsertVideo,
     required this.onInsertChecklist,
+    required this.onInsertBulletList,
+    required this.onInsertOrderedList,
     required this.onInsertSignature,
+    required this.onUndo,
+    required this.onRedo,
     required this.onAcceptChanges,
     required this.onRejectChanges,
     required this.onSmartBrief,
@@ -1502,6 +1673,7 @@ class _Ribbon extends StatelessWidget {
   final bool bold;
   final bool italic;
   final bool underline;
+  final bool strikethrough;
   final bool showRuler;
   final bool trackChanges;
   final bool commentsMode;
@@ -1517,6 +1689,7 @@ class _Ribbon extends StatelessWidget {
   final VoidCallback onBold;
   final VoidCallback onItalic;
   final VoidCallback onUnderline;
+  final VoidCallback onStrikethrough;
   final VoidCallback onRuler;
   final VoidCallback onTrackChanges;
   final VoidCallback onCommentsMode;
@@ -1533,7 +1706,11 @@ class _Ribbon extends StatelessWidget {
   final VoidCallback onInsertImage;
   final VoidCallback onInsertVideo;
   final VoidCallback onInsertChecklist;
+  final VoidCallback onInsertBulletList;
+  final VoidCallback onInsertOrderedList;
   final VoidCallback onInsertSignature;
+  final VoidCallback onUndo;
+  final VoidCallback onRedo;
   final VoidCallback onAcceptChanges;
   final VoidCallback onRejectChanges;
   final VoidCallback onSmartBrief;
@@ -1580,6 +1757,16 @@ class _Ribbon extends StatelessWidget {
                         icon: Icons.smart_display_outlined,
                         label: 'Video',
                         onTap: onInsertVideo,
+                      ),
+                      _ToolButton(
+                        icon: Icons.format_list_bulleted_outlined,
+                        label: 'Bullet',
+                        onTap: onInsertBulletList,
+                      ),
+                      _ToolButton(
+                        icon: Icons.format_list_numbered_outlined,
+                        label: 'List',
+                        onTap: onInsertOrderedList,
                       ),
                       _ToolButton(
                         icon: Icons.checklist_outlined,
@@ -1642,6 +1829,12 @@ class _Ribbon extends StatelessWidget {
                         label: 'Underline',
                         selected: underline,
                         onTap: onUnderline,
+                      ),
+                      _ToggleTool(
+                        icon: Icons.format_strikethrough,
+                        label: 'Strike',
+                        selected: strikethrough,
+                        onTap: onStrikethrough,
                       ),
                       const SizedBox(width: 8),
                       _DropdownChip(
@@ -1707,12 +1900,23 @@ class _Ribbon extends StatelessWidget {
                       ),
                       const SizedBox(width: 8),
                       _ToolButton(
+                        icon: Icons.undo_outlined,
+                        label: 'Undo',
+                        onTap: onUndo,
+                      ),
+                      _ToolButton(
+                        icon: Icons.redo_outlined,
+                        label: 'Redo',
+                        onTap: onRedo,
+                      ),
+                      const SizedBox(width: 8),
+                      _ToolButton(
                         icon: Icons.done_all_outlined,
                         label: 'Accept',
                         onTap: onAcceptChanges,
                       ),
                       _ToolButton(
-                        icon: Icons.undo_outlined,
+                        icon: Icons.replay_outlined,
                         label: 'Reject',
                         onTap: onRejectChanges,
                       ),
@@ -1792,7 +1996,7 @@ class _Ribbon extends StatelessWidget {
 
 class _EditorWorkspace extends StatelessWidget {
   const _EditorWorkspace({
-    required this.bodyController,
+    required this.srqController,
     required this.editorFocusNode,
     required this.editorStyle,
     required this.textAlign,
@@ -1809,7 +2013,7 @@ class _EditorWorkspace extends StatelessWidget {
     required this.onToggleInspector,
   });
 
-  final TextEditingController bodyController;
+  final SrqController srqController;
   final FocusNode editorFocusNode;
   final TextStyle editorStyle;
   final TextAlign textAlign;
@@ -1940,7 +2144,7 @@ class _EditorWorkspace extends StatelessWidget {
                                   ],
                                   TextField(
                                     key: const ValueKey('document-editor'),
-                                    controller: bodyController,
+                                    controller: srqController.textController,
                                     focusNode: editorFocusNode,
                                     maxLines: null,
                                     minLines: 28,
@@ -2150,17 +2354,36 @@ class _NavigationRailPanel extends StatelessWidget {
   const _NavigationRailPanel({
     required this.headings,
     required this.searchController,
+    required this.replaceController,
     required this.searchMatches,
+    required this.currentMatchIndex,
+    required this.onFindNext,
+    required this.onFindPrev,
+    required this.onReplaceOne,
+    required this.onReplaceAll,
     required this.onClose,
   });
 
   final List<String> headings;
   final TextEditingController searchController;
+  final TextEditingController replaceController;
   final int searchMatches;
+  final int currentMatchIndex;
+  final VoidCallback onFindNext;
+  final VoidCallback onFindPrev;
+  final VoidCallback onReplaceOne;
+  final VoidCallback onReplaceAll;
   final VoidCallback onClose;
 
   @override
   Widget build(BuildContext context) {
+    final hasQuery = searchController.text.trim().isNotEmpty;
+    final matchLabel = !hasQuery
+        ? ''
+        : searchMatches == 0
+            ? 'No matches'
+            : '${currentMatchIndex < 0 ? 1 : currentMatchIndex + 1}/$searchMatches';
+
     return Container(
       width: double.infinity,
       color: Colors.white,
@@ -2173,15 +2396,35 @@ class _NavigationRailPanel extends StatelessWidget {
             onClose: onClose,
           ),
           Padding(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
             child: TextField(
               controller: searchController,
               decoration: InputDecoration(
-                prefixIcon: const Icon(Icons.search_outlined),
-                suffixText: searchController.text.isEmpty
-                    ? null
-                    : '$searchMatches',
-                hintText: 'Search document',
+                prefixIcon: const Icon(Icons.search_outlined, size: 18),
+                suffix: hasQuery
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            matchLabel,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Color(0xff6b7280),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          InkWell(
+                            onTap: onFindPrev,
+                            child: const Icon(Icons.keyboard_arrow_up, size: 18),
+                          ),
+                          InkWell(
+                            onTap: onFindNext,
+                            child: const Icon(Icons.keyboard_arrow_down, size: 18),
+                          ),
+                        ],
+                      )
+                    : null,
+                hintText: 'Find in document',
                 isDense: true,
                 filled: true,
                 fillColor: const Color(0xfff6f8fb),
@@ -2192,8 +2435,48 @@ class _NavigationRailPanel extends StatelessWidget {
               ),
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: replaceController,
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.find_replace_outlined, size: 18),
+                      hintText: 'Replace with',
+                      isDense: true,
+                      filled: true,
+                      fillColor: const Color(0xfff6f8fb),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Tooltip(
+                  message: 'Replace',
+                  child: IconButton(
+                    onPressed: hasQuery ? onReplaceOne : null,
+                    icon: const Icon(Icons.published_with_changes_outlined, size: 18),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+                Tooltip(
+                  message: 'Replace all',
+                  child: IconButton(
+                    onPressed: hasQuery ? onReplaceAll : null,
+                    icon: const Icon(Icons.sync_outlined, size: 18),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+              ],
+            ),
+          ),
           const Padding(
-            padding: EdgeInsets.fromLTRB(16, 8, 16, 6),
+            padding: EdgeInsets.fromLTRB(16, 4, 16, 6),
             child: Text(
               'Outline',
               style: TextStyle(fontWeight: FontWeight.w700),
@@ -2259,6 +2542,11 @@ class _InspectorPanel extends StatelessWidget {
     required this.onHistory,
     required this.onSmartBrief,
     required this.onActionDigest,
+    required this.onCommentsToggle,
+    required this.onTrackChangesToggle,
+    required this.onPermissionChange,
+    required this.onAudienceProfileChange,
+    required this.onToneModeChange,
     required this.onClose,
   });
 
@@ -2289,6 +2577,11 @@ class _InspectorPanel extends StatelessWidget {
   final VoidCallback onHistory;
   final VoidCallback onSmartBrief;
   final VoidCallback onActionDigest;
+  final VoidCallback onCommentsToggle;
+  final VoidCallback onTrackChangesToggle;
+  final ValueChanged<String> onPermissionChange;
+  final ValueChanged<String> onAudienceProfileChange;
+  final ValueChanged<String> onToneModeChange;
   final VoidCallback onClose;
 
   @override
@@ -2356,11 +2649,21 @@ class _InspectorPanel extends StatelessWidget {
               ],
             ),
           ),
-          _StatusTile(
+          _InspectorSelectTile(
             icon: Icons.psychology_alt_outlined,
-            title: 'Audience fit',
-            value: '$audienceProfile • $toneMode tone',
+            title: 'Audience',
+            value: audienceProfile,
+            options: const ['Millennial', 'Gen Z', 'Alpha', 'Beta'],
             color: const Color(0xff7c3aed),
+            onChanged: onAudienceProfileChange,
+          ),
+          _InspectorSelectTile(
+            icon: Icons.record_voice_over_outlined,
+            title: 'Tone',
+            value: toneMode,
+            options: const ['Clear', 'Warm', 'Bold', 'Brief'],
+            color: const Color(0xff7c3aed),
+            onChanged: onToneModeChange,
           ),
           _StatusTile(
             icon: Icons.speed_outlined,
@@ -2387,23 +2690,29 @@ class _InspectorPanel extends StatelessWidget {
                 '$mediaCount embedded block${mediaCount == 1 ? '' : 's'} in document',
             color: const Color(0xffbe123c),
           ),
-          _StatusTile(
+          _InspectorToggleTile(
             icon: Icons.rate_review_outlined,
             title: 'Comments',
-            value: commentsMode ? 'Open for review' : 'Hidden',
-            color: commentsMode ? const Color(0xff047857) : Colors.grey,
+            subtitle: commentsMode ? 'Open for review' : 'Hidden',
+            value: commentsMode,
+            activeColor: const Color(0xff047857),
+            onToggle: onCommentsToggle,
           ),
-          _StatusTile(
+          _InspectorToggleTile(
             icon: Icons.change_circle_outlined,
             title: 'Track changes',
-            value: trackChanges ? 'Recording edits' : 'Paused',
-            color: trackChanges ? const Color(0xff1d4ed8) : Colors.grey,
+            subtitle: trackChanges ? 'Recording edits' : 'Paused',
+            value: trackChanges,
+            activeColor: const Color(0xff1d4ed8),
+            onToggle: onTrackChangesToggle,
           ),
-          _StatusTile(
+          _InspectorSelectTile(
             icon: Icons.lock_open_outlined,
             title: 'Permission',
             value: permission,
+            options: const ['Can view', 'Can comment', 'Can edit'],
             color: const Color(0xff7c3aed),
+            onChanged: onPermissionChange,
           ),
           _StatusTile(
             icon: Icons.dashboard_customize_outlined,
@@ -2993,6 +3302,80 @@ class _StatusTile extends StatelessWidget {
       title: Text(title),
       subtitle: Text(value),
       dense: true,
+    );
+  }
+}
+
+class _InspectorToggleTile extends StatelessWidget {
+  const _InspectorToggleTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.activeColor,
+    required this.onToggle,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool value;
+  final Color activeColor;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      dense: true,
+      leading: Icon(icon, color: value ? activeColor : Colors.grey),
+      title: Text(title),
+      subtitle: Text(subtitle),
+      trailing: Switch(
+        value: value,
+        activeThumbColor: activeColor,
+        activeTrackColor: activeColor.withValues(alpha: 0.35),
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        onChanged: (_) => onToggle(),
+      ),
+    );
+  }
+}
+
+class _InspectorSelectTile extends StatelessWidget {
+  const _InspectorSelectTile({
+    required this.icon,
+    required this.title,
+    required this.value,
+    required this.options,
+    required this.color,
+    required this.onChanged,
+  });
+
+  final IconData icon;
+  final String title;
+  final String value;
+  final List<String> options;
+  final Color color;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      dense: true,
+      leading: Icon(icon, color: color),
+      title: Text(title),
+      trailing: DropdownButton<String>(
+        value: value,
+        underline: const SizedBox.shrink(),
+        style: Theme.of(context).textTheme.bodyMedium,
+        isDense: true,
+        items: options
+            .map((o) => DropdownMenuItem(value: o, child: Text(o)))
+            .toList(),
+        onChanged: (v) {
+          if (v != null) onChanged(v);
+        },
+      ),
     );
   }
 }
