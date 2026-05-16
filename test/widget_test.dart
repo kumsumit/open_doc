@@ -29,6 +29,71 @@ void main() {
     expect(imported.text, contains('Open Doc reads DOCX content.'));
   });
 
+  test('DOCX import preserves tables as markdown rows', () {
+    final archive = Archive()
+      ..addFile(
+        ArchiveFile.string('word/document.xml', '''
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>Budget</w:t></w:r></w:p>
+    <w:tbl>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>Item</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Amount</w:t></w:r></w:p></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>Design</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>1200</w:t></w:r></w:p></w:tc>
+      </w:tr>
+    </w:tbl>
+  </w:body>
+</w:document>
+'''),
+      );
+    final bytes = Uint8List.fromList(ZipEncoder().encode(archive));
+
+    final imported = parseImportedDocument(bytes, 'budget.docx');
+
+    expect(imported.text, contains('Budget'));
+    expect(imported.text, contains('| Item | Amount |'));
+    expect(imported.text, contains('| --- | --- |'));
+    expect(imported.text, contains('| Design | 1200 |'));
+  });
+
+  test('CSV import creates markdown tables and handles quoted cells', () {
+    final imported = parseImportedDocument(
+      Uint8List.fromList(
+        utf8.encode('Name,Notes\nAsha,"Needs review, legal"\nMina,Ready'),
+      ),
+      'status.csv',
+    );
+
+    expect(imported.formatLabel, 'CSV');
+    expect(imported.text, contains('| Name | Notes |'));
+    expect(imported.text, contains('| Asha | Needs review, legal |'));
+    expect(imported.text, contains('| Mina | Ready |'));
+  });
+
+  test('HTML import preserves table rows', () {
+    final imported = parseImportedDocument(
+      Uint8List.fromList(
+        utf8.encode('''
+<h1>Plan</h1>
+<table>
+  <tr><th>Milestone</th><th>Owner</th></tr>
+  <tr><td>Import</td><td>Asha</td></tr>
+</table>
+'''),
+      ),
+      'plan.html',
+    );
+
+    expect(imported.formatLabel, 'HTML');
+    expect(imported.text, contains('Plan'));
+    expect(imported.text, contains('| Milestone | Owner |'));
+    expect(imported.text, contains('| Import | Asha |'));
+  });
+
   test('plain import supports text-like files', () {
     final imported = parseImportedDocument(
       Uint8List.fromList(utf8.encode('# Notes\nHello')),
@@ -54,6 +119,8 @@ void main() {
     expect(find.text('Saved'), findsOneWidget);
     expect(find.byTooltip('Versions'), findsOneWidget);
     expect(find.byTooltip('Share'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'Import'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Export'), findsOneWidget);
     expect(find.byTooltip('Image'), findsOneWidget);
     expect(find.byTooltip('Video'), findsOneWidget);
 

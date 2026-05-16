@@ -1175,7 +1175,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                         onPageColor: (value) =>
                             setState(() => _pageColor = value),
                         onInsertTable: () => _insertText(
-                          '\n| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n|  |  |  |\n',
+                          '\n| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n| Detail | Owner | Status |\n| Detail | Owner | Status |\n',
                         ),
                         onInsertImage: () => _showMediaSheet(_MediaType.image),
                         onInsertVideo: () => _showMediaSheet(_MediaType.video),
@@ -1386,11 +1386,6 @@ class _TopBar extends StatelessWidget {
                         onTap: onSave,
                       ),
                       _IconAction(
-                        icon: Icons.upload_file_outlined,
-                        label: 'Import',
-                        onTap: onImport,
-                      ),
-                      _IconAction(
                         icon: Icons.dashboard_customize_outlined,
                         label: 'Templates',
                         onTap: onTemplates,
@@ -1415,11 +1410,31 @@ class _TopBar extends StatelessWidget {
                         label: 'Versions',
                         onTap: onHistory,
                       ),
-                      _IconAction(
-                        icon: Icons.ios_share_outlined,
-                        label: 'Export',
-                        onTap: onExport,
-                      ),
+                      if (compact) ...[
+                        _IconAction(
+                          icon: Icons.upload_file_outlined,
+                          label: 'Import',
+                          onTap: onImport,
+                        ),
+                        _IconAction(
+                          icon: Icons.ios_share_outlined,
+                          label: 'Export',
+                          onTap: onExport,
+                        ),
+                      ] else ...[
+                        _TopBarCommand(
+                          icon: Icons.upload_file_outlined,
+                          label: 'Import',
+                          onTap: onImport,
+                        ),
+                        const SizedBox(width: 8),
+                        _TopBarCommand(
+                          icon: Icons.ios_share_outlined,
+                          label: 'Export',
+                          onTap: onExport,
+                          filled: true,
+                        ),
+                      ],
                       _IconAction(
                         icon: focusMode
                             ? Icons.fullscreen_exit_outlined
@@ -2635,6 +2650,51 @@ class _IconAction extends StatelessWidget {
   }
 }
 
+class _TopBarCommand extends StatelessWidget {
+  const _TopBarCommand({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.filled = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(8),
+    );
+    final iconWidget = Icon(icon, size: 18);
+    final labelWidget = Text(label);
+    return SizedBox(
+      height: 38,
+      child: filled
+          ? FilledButton.icon(
+              onPressed: onTap,
+              icon: iconWidget,
+              label: labelWidget,
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                shape: shape,
+              ),
+            )
+          : OutlinedButton.icon(
+              onPressed: onTap,
+              icon: iconWidget,
+              label: labelWidget,
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                shape: shape,
+              ),
+            ),
+    );
+  }
+}
+
 class _ToolButton extends StatelessWidget {
   const _ToolButton({
     required this.icon,
@@ -3153,29 +3213,67 @@ String _extractDocxText(Uint8List bytes) {
   }
 
   final document = XmlDocument.parse(utf8.decode(documentFile.content));
-  final paragraphs = <String>[];
+  final body = document.descendants.whereType<XmlElement>().firstWhere(
+    (element) => element.name.local == 'body',
+    orElse: () => document.rootElement,
+  );
+  final blocks = <String>[];
 
-  for (final paragraph in document.descendants.whereType<XmlElement>().where(
-    (element) => element.name.local == 'p',
-  )) {
-    final buffer = StringBuffer();
-    for (final node in paragraph.descendants.whereType<XmlElement>()) {
-      switch (node.name.local) {
-        case 't':
-          buffer.write(node.innerText);
-        case 'tab':
-          buffer.write('\t');
-        case 'br':
-          buffer.write('\n');
-      }
-    }
-    final text = buffer.toString().trimRight();
-    if (text.trim().isNotEmpty) {
-      paragraphs.add(text);
+  for (final child in body.childElements) {
+    switch (child.name.local) {
+      case 'p':
+        final text = _extractDocxParagraphText(child);
+        if (text.trim().isNotEmpty) {
+          blocks.add(text);
+        }
+      case 'tbl':
+        final table = _extractDocxTableText(child);
+        if (table.trim().isNotEmpty) {
+          blocks.add(table);
+        }
     }
   }
 
-  return paragraphs.join('\n\n');
+  return blocks.join('\n\n');
+}
+
+String _extractDocxParagraphText(XmlElement paragraph) {
+  final buffer = StringBuffer();
+  for (final node in paragraph.descendants.whereType<XmlElement>()) {
+    switch (node.name.local) {
+      case 't':
+        buffer.write(node.innerText);
+      case 'tab':
+        buffer.write('\t');
+      case 'br':
+        buffer.write('\n');
+    }
+  }
+  return buffer.toString().trimRight();
+}
+
+String _extractDocxTableText(XmlElement table) {
+  final rows = <List<String>>[];
+  for (final row in table.childElements.where(
+    (element) => element.name.local == 'tr',
+  )) {
+    final cells = row.childElements
+        .where((element) => element.name.local == 'tc')
+        .map((cell) {
+          final paragraphs = cell.childElements
+              .where((element) => element.name.local == 'p')
+              .map(_extractDocxParagraphText)
+              .where((text) => text.trim().isNotEmpty)
+              .map((text) => text.trim())
+              .toList();
+          return paragraphs.join(' ');
+        })
+        .toList();
+    if (cells.any((cell) => cell.trim().isNotEmpty)) {
+      rows.add(cells);
+    }
+  }
+  return _rowsToMarkdownTable(rows);
 }
 
 String _decodeText(Uint8List bytes) {
@@ -3188,6 +3286,14 @@ String _decodeText(Uint8List bytes) {
 
 String _stripHtml(String value) {
   return value
+      .replaceAllMapped(
+        RegExp(
+          r'<\s*table\b[^>]*>.*?</\s*table\s*>',
+          caseSensitive: false,
+          dotAll: true,
+        ),
+        (match) => '\n${_extractHtmlTableText(match.group(0) ?? '')}\n',
+      )
       .replaceAll(RegExp(r'<\s*br\s*/?\s*>', caseSensitive: false), '\n')
       .replaceAll(
         RegExp(r'</\s*(p|div|h[1-6]|li|tr)\s*>', caseSensitive: false),
@@ -3203,6 +3309,30 @@ String _stripHtml(String value) {
       .trim();
 }
 
+String _extractHtmlTableText(String table) {
+  final rows =
+      RegExp(
+            r'<\s*tr\b[^>]*>(.*?)</\s*tr\s*>',
+            caseSensitive: false,
+            dotAll: true,
+          )
+          .allMatches(table)
+          .map((rowMatch) {
+            final rowHtml = rowMatch.group(1) ?? '';
+            return RegExp(
+                  r'<\s*(td|th)\b[^>]*>(.*?)</\s*\1\s*>',
+                  caseSensitive: false,
+                  dotAll: true,
+                )
+                .allMatches(rowHtml)
+                .map((cellMatch) => _stripHtml(cellMatch.group(2) ?? ''))
+                .toList();
+          })
+          .where((row) => row.any((cell) => cell.trim().isNotEmpty))
+          .toList();
+  return _rowsToMarkdownTable(rows);
+}
+
 String _stripRtf(String value) {
   return value
       .replaceAll(RegExp(r'\\par[d]?'), '\n')
@@ -3215,11 +3345,83 @@ String _stripRtf(String value) {
 }
 
 String _csvToReadableText(String value) {
-  return value
+  final rows = value
       .split('\n')
-      .map((line) => line.split(',').map((cell) => cell.trim()).join(' | '))
-      .join('\n')
-      .trim();
+      .map((line) => line.trim())
+      .where((line) => line.isNotEmpty)
+      .map(_parseCsvLine)
+      .toList();
+  return _rowsToMarkdownTable(rows);
+}
+
+List<String> _parseCsvLine(String line) {
+  final cells = <String>[];
+  final buffer = StringBuffer();
+  var quoted = false;
+
+  for (var index = 0; index < line.length; index += 1) {
+    final char = line[index];
+    if (char == '"') {
+      final isEscapedQuote =
+          quoted && index + 1 < line.length && line[index + 1] == '"';
+      if (isEscapedQuote) {
+        buffer.write('"');
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (char == ',' && !quoted) {
+      cells.add(buffer.toString().trim());
+      buffer.clear();
+    } else {
+      buffer.write(char);
+    }
+  }
+
+  cells.add(buffer.toString().trim());
+  return cells;
+}
+
+String _rowsToMarkdownTable(List<List<String>> rows) {
+  if (rows.isEmpty) {
+    return '';
+  }
+
+  final columnCount = rows.fold<int>(
+    0,
+    (count, row) => math.max(count, row.length),
+  );
+  if (columnCount == 0) {
+    return '';
+  }
+
+  final normalizedRows = rows
+      .map(
+        (row) => List<String>.generate(
+          columnCount,
+          (index) =>
+              index < row.length ? _escapeMarkdownTableCell(row[index]) : '',
+        ),
+      )
+      .toList();
+  final header = normalizedRows.first;
+  final bodyRows = normalizedRows.length == 1
+      ? <List<String>>[List.filled(columnCount, '')]
+      : normalizedRows.skip(1);
+
+  return [
+    _formatMarkdownTableRow(header),
+    _formatMarkdownTableRow(List.filled(columnCount, '---')),
+    for (final row in bodyRows) _formatMarkdownTableRow(row),
+  ].join('\n');
+}
+
+String _formatMarkdownTableRow(Iterable<String> cells) {
+  return '| ${cells.join(' | ')} |';
+}
+
+String _escapeMarkdownTableCell(String value) {
+  return value.replaceAll(RegExp(r'\s+'), ' ').replaceAll('|', r'\|').trim();
 }
 
 String _titleFromFileName(String fileName) {
