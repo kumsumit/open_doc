@@ -1,7 +1,11 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:archive/archive.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:xml/xml.dart';
 
 void main() {
   runApp(const OpenDocApp());
@@ -288,6 +292,45 @@ class _DocumentStudioState extends State<DocumentStudio> {
     _showSnack('A working copy is ready.');
   }
 
+  Future<void> _pickAndInsertMedia(_MediaType type) async {
+    try {
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: type.allowedExtensions,
+        withData: true,
+      );
+      final picked = result?.files.single;
+      final bytes = picked?.bytes;
+      if (picked == null || bytes == null) {
+        return;
+      }
+
+      setState(() {
+        _mediaBlocks.add(
+          _MediaBlock(
+            id: DateTime.now().microsecondsSinceEpoch.toString(),
+            type: type,
+            source: picked.name,
+            caption: _titleFromFileName(picked.name),
+            bytes: bytes,
+          ),
+        );
+        _saved = false;
+      });
+      _showSnack(
+        type == _MediaType.image
+            ? 'Device image inserted.'
+            : 'Device video inserted.',
+      );
+    } catch (_) {
+      _showSnack(
+        type == _MediaType.image
+            ? 'Could not insert that image.'
+            : 'Could not insert that video.',
+      );
+    }
+  }
+
   void _showMediaSheet(_MediaType type) {
     final urlController = TextEditingController(
       text: type == _MediaType.image
@@ -320,6 +363,26 @@ class _DocumentStudioState extends State<DocumentStudio> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(title, style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    _pickAndInsertMedia(type);
+                  },
+                  icon: Icon(
+                    type == _MediaType.image
+                        ? Icons.add_photo_alternate_outlined
+                        : Icons.video_library_outlined,
+                  ),
+                  label: Text(
+                    type == _MediaType.image
+                        ? 'Choose device image'
+                        : 'Choose device video',
+                  ),
+                ),
+              ),
               const SizedBox(height: 12),
               TextField(
                 controller: urlController,
@@ -373,6 +436,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                             type: type,
                             source: source,
                             caption: captionController.text.trim(),
+                            bytes: null,
                           ),
                         );
                         _saved = false;
@@ -403,6 +467,63 @@ class _DocumentStudioState extends State<DocumentStudio> {
     _showSnack('Media removed from document.');
   }
 
+  void _applyImportedDocument({
+    required String name,
+    required String text,
+    required String format,
+  }) {
+    final cleanText = text.trim();
+    if (cleanText.isEmpty) {
+      _showSnack('No readable text found in $name.');
+      return;
+    }
+
+    setState(() {
+      _titleController.text = _titleFromFileName(name);
+      _bodyController.text = cleanText;
+      _template = 'Imported $format';
+      _mediaBlocks.clear();
+      _captureVersion('Imported $format file');
+    });
+    _editorFocusNode.requestFocus();
+    _showSnack('Imported $name.');
+  }
+
+  Future<void> _pickAndImportFile() async {
+    try {
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const [
+          'docx',
+          'txt',
+          'md',
+          'markdown',
+          'rtf',
+          'html',
+          'htm',
+          'csv',
+        ],
+        withData: true,
+      );
+      final picked = result?.files.single;
+      final bytes = picked?.bytes;
+      if (picked == null || bytes == null) {
+        return;
+      }
+
+      final imported = parseImportedDocument(bytes, picked.name);
+      _applyImportedDocument(
+        name: picked.name,
+        text: imported.text,
+        format: imported.formatLabel,
+      );
+    } on FormatException catch (error) {
+      _showSnack(error.message);
+    } catch (_) {
+      _showSnack('Could not import that file yet.');
+    }
+  }
+
   void _showImportSheet() {
     final importController = TextEditingController();
     showModalBottomSheet<void>(
@@ -422,10 +543,24 @@ class _DocumentStudioState extends State<DocumentStudio> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Import text',
+                'Import document',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
+              const SizedBox(height: 6),
+              const Text(
+                'Supports DOCX, TXT, Markdown, RTF, HTML, and CSV.',
+                style: TextStyle(color: Color(0xff64748b)),
+              ),
               const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  _pickAndImportFile();
+                },
+                icon: const Icon(Icons.upload_file_outlined),
+                label: const Text('Choose file'),
+              ),
+              const SizedBox(height: 14),
               TextField(
                 controller: importController,
                 minLines: 6,
@@ -456,11 +591,11 @@ class _DocumentStudioState extends State<DocumentStudio> {
                         return;
                       }
                       Navigator.of(context).pop();
-                      setState(() {
-                        _bodyController.text = text;
-                        _template = 'Imported';
-                        _captureVersion('Imported text content');
-                      });
+                      _applyImportedDocument(
+                        name: 'Pasted text',
+                        text: text,
+                        format: 'text',
+                      );
                     },
                     icon: const Icon(Icons.file_upload_outlined),
                     label: const Text('Import'),
@@ -770,6 +905,84 @@ class _DocumentStudioState extends State<DocumentStudio> {
     _insertText('\n\nAction digest\n${actions.join('\n')}\n');
   }
 
+  Widget _buildNavigationPanel({required VoidCallback onClose}) {
+    return _NavigationRailPanel(
+      headings: _headings,
+      searchController: _searchController,
+      searchMatches: _searchMatches,
+      onClose: onClose,
+    );
+  }
+
+  Widget _buildInspectorPanel({required VoidCallback onClose}) {
+    return _InspectorPanel(
+      wordCount: _wordCount,
+      characterCount: _characterCount,
+      readingMinutes: _readingMinutes,
+      commentsMode: _commentsMode,
+      trackChanges: _trackChanges,
+      permission: _permission,
+      template: _template,
+      savedAt: _savedAt,
+      activeVersion: _activeVersion,
+      collaborators: _collaborators,
+      versions: _versions,
+      mediaCount: _mediaBlocks.length,
+      imageCount: _mediaBlocks
+          .where((block) => block.type == _MediaType.image)
+          .length,
+      videoCount: _mediaBlocks
+          .where((block) => block.type == _MediaType.video)
+          .length,
+      audienceProfile: _audienceProfile,
+      toneMode: _toneMode,
+      clarityScore: _clarityScore,
+      attentionScore: _attentionScore,
+      averageSentenceLength: _averageSentenceLength,
+      sourceCount: _sourceCount,
+      citationNudgeCount: _citationNudgeCount,
+      actionItems: _actionItems,
+      onSave: _saveDocument,
+      onShare: _showShareSheet,
+      onHistory: _showVersionHistorySheet,
+      onSmartBrief: _showSmartBriefSheet,
+      onActionDigest: _insertActionDigest,
+      onClose: onClose,
+    );
+  }
+
+  void _showNavigationSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) {
+        return SizedBox(
+          height: MediaQuery.of(context).size.height * .76,
+          child: _buildNavigationPanel(
+            onClose: () => Navigator.of(context).pop(),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showInspectorSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) {
+        return SizedBox(
+          height: MediaQuery.of(context).size.height * .82,
+          child: _buildInspectorPanel(
+            onClose: () => Navigator.of(context).pop(),
+          ),
+        );
+      },
+    );
+  }
+
   void _showSnack(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -982,12 +1195,12 @@ class _DocumentStudioState extends State<DocumentStudio> {
                       child: Row(
                         children: [
                           if (showLeft)
-                            _NavigationRailPanel(
-                              headings: _headings,
-                              searchController: _searchController,
-                              searchMatches: _searchMatches,
-                              onClose: () =>
-                                  setState(() => _showNavigation = false),
+                            SizedBox(
+                              width: constraints.maxWidth < 1180 ? 236 : 268,
+                              child: _buildNavigationPanel(
+                                onClose: () =>
+                                    setState(() => _showNavigation = false),
+                              ),
                             ),
                           Expanded(
                             child: _EditorWorkspace(
@@ -1004,53 +1217,25 @@ class _DocumentStudioState extends State<DocumentStudio> {
                               characterCount: _characterCount,
                               mediaBlocks: _mediaBlocks,
                               onRemoveMedia: _removeMediaBlock,
-                              onToggleNavigation: () => setState(
-                                () => _showNavigation = !_showNavigation,
-                              ),
-                              onToggleInspector: () => setState(
-                                () => _showInspector = !_showInspector,
-                              ),
+                              onToggleNavigation: compact
+                                  ? _showNavigationSheet
+                                  : () => setState(
+                                      () => _showNavigation = !_showNavigation,
+                                    ),
+                              onToggleInspector: compact
+                                  ? _showInspectorSheet
+                                  : () => setState(
+                                      () => _showInspector = !_showInspector,
+                                    ),
                             ),
                           ),
                           if (showRight)
-                            _InspectorPanel(
-                              wordCount: _wordCount,
-                              characterCount: _characterCount,
-                              readingMinutes: _readingMinutes,
-                              commentsMode: _commentsMode,
-                              trackChanges: _trackChanges,
-                              permission: _permission,
-                              template: _template,
-                              savedAt: _savedAt,
-                              activeVersion: _activeVersion,
-                              collaborators: _collaborators,
-                              versions: _versions,
-                              mediaCount: _mediaBlocks.length,
-                              imageCount: _mediaBlocks
-                                  .where(
-                                    (block) => block.type == _MediaType.image,
-                                  )
-                                  .length,
-                              videoCount: _mediaBlocks
-                                  .where(
-                                    (block) => block.type == _MediaType.video,
-                                  )
-                                  .length,
-                              audienceProfile: _audienceProfile,
-                              toneMode: _toneMode,
-                              clarityScore: _clarityScore,
-                              attentionScore: _attentionScore,
-                              averageSentenceLength: _averageSentenceLength,
-                              sourceCount: _sourceCount,
-                              citationNudgeCount: _citationNudgeCount,
-                              actionItems: _actionItems,
-                              onSave: _saveDocument,
-                              onShare: _showShareSheet,
-                              onHistory: _showVersionHistorySheet,
-                              onSmartBrief: _showSmartBriefSheet,
-                              onActionDigest: _insertActionDigest,
-                              onClose: () =>
-                                  setState(() => _showInspector = false),
+                            SizedBox(
+                              width: constraints.maxWidth < 1180 ? 264 : 292,
+                              child: _buildInspectorPanel(
+                                onClose: () =>
+                                    setState(() => _showInspector = false),
+                              ),
                             ),
                         ],
                       ),
@@ -1118,115 +1303,137 @@ class _TopBar extends StatelessWidget {
         color: Colors.white,
         border: Border(bottom: BorderSide(color: Color(0xffe5e7eb))),
       ),
-      child: Row(
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: const Color(0xff2563eb),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(Icons.article_outlined, color: Colors.white),
-          ),
-          const SizedBox(width: 12),
-          SizedBox(
-            width: 240,
-            child: TextField(
-              controller: titleController,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-              decoration: const InputDecoration(
-                border: InputBorder.none,
-                isDense: true,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 520;
+          return Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: const Color(0xff2563eb),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.article_outlined, color: Colors.white),
               ),
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-            decoration: BoxDecoration(
-              color: saved ? const Color(0xffecfdf5) : const Color(0xfffffbeb),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: saved
-                    ? const Color(0xffbbf7d0)
-                    : const Color(0xfffde68a),
+              const SizedBox(width: 12),
+              Flexible(
+                flex: compact ? 2 : 0,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: compact ? 128 : 240,
+                    minWidth: compact ? 88 : 180,
+                  ),
+                  child: TextField(
+                    controller: titleController,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    decoration: const InputDecoration(
+                      border: InputBorder.none,
+                      isDense: true,
+                    ),
+                  ),
+                ),
               ),
-            ),
-            child: Text(
-              saved ? 'Saved' : 'Unsaved',
-              style: TextStyle(
-                color: saved
-                    ? const Color(0xff047857)
-                    : const Color(0xff92400e),
-                fontWeight: FontWeight.w700,
-                fontSize: 12,
+              if (!compact) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: saved
+                        ? const Color(0xffecfdf5)
+                        : const Color(0xfffffbeb),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: saved
+                          ? const Color(0xffbbf7d0)
+                          : const Color(0xfffde68a),
+                    ),
+                  ),
+                  child: Text(
+                    saved ? 'Saved' : 'Unsaved',
+                    style: TextStyle(
+                      color: saved
+                          ? const Color(0xff047857)
+                          : const Color(0xff92400e),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(width: 8),
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  reverse: true,
+                  child: Row(
+                    children: [
+                      _IconAction(
+                        icon: Icons.note_add_outlined,
+                        label: 'New',
+                        onTap: onNew,
+                      ),
+                      _IconAction(
+                        icon: Icons.save_outlined,
+                        label: 'Save',
+                        onTap: onSave,
+                      ),
+                      _IconAction(
+                        icon: Icons.upload_file_outlined,
+                        label: 'Import',
+                        onTap: onImport,
+                      ),
+                      _IconAction(
+                        icon: Icons.dashboard_customize_outlined,
+                        label: 'Templates',
+                        onTap: onTemplates,
+                      ),
+                      _IconAction(
+                        icon: Icons.copy_outlined,
+                        label: 'Duplicate',
+                        onTap: onDuplicate,
+                      ),
+                      _IconAction(
+                        icon: Icons.content_copy_outlined,
+                        label: 'Copy',
+                        onTap: onCopy,
+                      ),
+                      _IconAction(
+                        icon: Icons.group_add_outlined,
+                        label: 'Share',
+                        onTap: onShare,
+                      ),
+                      _IconAction(
+                        icon: Icons.history_outlined,
+                        label: 'Versions',
+                        onTap: onHistory,
+                      ),
+                      _IconAction(
+                        icon: Icons.ios_share_outlined,
+                        label: 'Export',
+                        onTap: onExport,
+                      ),
+                      _IconAction(
+                        icon: focusMode
+                            ? Icons.fullscreen_exit_outlined
+                            : Icons.fullscreen_outlined,
+                        label: focusMode ? 'Exit focus' : 'Focus',
+                        onTap: onToggleFocus,
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ),
-          ),
-          const Spacer(),
-          Flexible(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              reverse: true,
-              child: Row(
-                children: [
-                  _IconAction(
-                    icon: Icons.note_add_outlined,
-                    label: 'New',
-                    onTap: onNew,
-                  ),
-                  _IconAction(
-                    icon: Icons.save_outlined,
-                    label: 'Save',
-                    onTap: onSave,
-                  ),
-                  _IconAction(
-                    icon: Icons.upload_file_outlined,
-                    label: 'Import',
-                    onTap: onImport,
-                  ),
-                  _IconAction(
-                    icon: Icons.dashboard_customize_outlined,
-                    label: 'Templates',
-                    onTap: onTemplates,
-                  ),
-                  _IconAction(
-                    icon: Icons.copy_outlined,
-                    label: 'Duplicate',
-                    onTap: onDuplicate,
-                  ),
-                  _IconAction(
-                    icon: Icons.content_copy_outlined,
-                    label: 'Copy',
-                    onTap: onCopy,
-                  ),
-                  _IconAction(
-                    icon: Icons.group_add_outlined,
-                    label: 'Share',
-                    onTap: onShare,
-                  ),
-                  _IconAction(
-                    icon: Icons.history_outlined,
-                    label: 'Versions',
-                    onTap: onHistory,
-                  ),
-                  _IconAction(
-                    icon: Icons.ios_share_outlined,
-                    label: 'Export',
-                    onTap: onExport,
-                  ),
-                  _IconAction(
-                    icon: focusMode
-                        ? Icons.fullscreen_exit_outlined
-                        : Icons.fullscreen_outlined,
-                    label: focusMode ? 'Exit focus' : 'Focus',
-                    onTap: onToggleFocus,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }
@@ -1323,236 +1530,246 @@ class _Ribbon extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: const Color(0xfffbfcfe),
-      child: Container(
-        height: 112,
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-        decoration: const BoxDecoration(
-          border: Border(bottom: BorderSide(color: Color(0xffdbe3ef))),
-        ),
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          children: [
-            _RibbonGroup(
-              label: 'Document',
-              child: Row(
-                children: [
-                  _ToolButton(
-                    icon: Icons.table_chart_outlined,
-                    label: 'Table',
-                    onTap: onInsertTable,
-                  ),
-                  _ToolButton(
-                    icon: Icons.image_outlined,
-                    label: 'Image',
-                    onTap: onInsertImage,
-                  ),
-                  _ToolButton(
-                    icon: Icons.smart_display_outlined,
-                    label: 'Video',
-                    onTap: onInsertVideo,
-                  ),
-                  _ToolButton(
-                    icon: Icons.checklist_outlined,
-                    label: 'Tasks',
-                    onTap: onInsertChecklist,
-                  ),
-                  _ToolButton(
-                    icon: Icons.draw_outlined,
-                    label: 'Sign',
-                    onTap: onInsertSignature,
-                  ),
-                ],
-              ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 640;
+          return Container(
+            height: 112,
+            padding: EdgeInsets.fromLTRB(
+              compact ? 10 : 16,
+              10,
+              compact ? 10 : 16,
+              compact ? 8 : 12,
             ),
-            _RibbonGroup(
-              label: 'Style',
-              child: Row(
-                children: [
-                  _DropdownChip(
-                    value: style,
-                    width: 112,
-                    values: const ['Body', 'Title', 'Heading', 'Quote'],
-                    onChanged: onStyle,
-                  ),
-                  const SizedBox(width: 8),
-                  _DropdownChip(
-                    value: fontFamily,
-                    width: 112,
-                    values: const ['Aptos', 'Arial', 'Georgia', 'Times'],
-                    onChanged: onFontFamily,
-                  ),
-                  const SizedBox(width: 8),
-                  _StepperChip(
-                    value: fontSize,
-                    min: 10,
-                    max: 34,
-                    onChanged: onFontSize,
-                  ),
-                ],
-              ),
+            decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: Color(0xffdbe3ef))),
             ),
-            _RibbonGroup(
-              label: 'Format',
-              child: Row(
-                children: [
-                  _ToggleTool(
-                    icon: Icons.format_bold,
-                    label: 'Bold',
-                    selected: bold,
-                    onTap: onBold,
-                  ),
-                  _ToggleTool(
-                    icon: Icons.format_italic,
-                    label: 'Italic',
-                    selected: italic,
-                    onTap: onItalic,
-                  ),
-                  _ToggleTool(
-                    icon: Icons.format_underlined,
-                    label: 'Underline',
-                    selected: underline,
-                    onTap: onUnderline,
-                  ),
-                  const SizedBox(width: 8),
-                  _DropdownChip(
-                    value: alignment,
-                    width: 112,
-                    values: const ['Left', 'Center', 'Right', 'Justify'],
-                    onChanged: onAlignment,
-                  ),
-                ],
-              ),
-            ),
-            _RibbonGroup(
-              label: 'Color',
-              child: Row(
-                children: [
-                  _ColorDot(
-                    label: 'Ink',
-                    value: inkColor,
-                    colors: const [
-                      Color(0xff111827),
-                      Color(0xffb91c1c),
-                      Color(0xff047857),
-                      Color(0xff1d4ed8),
-                    ],
-                    onChanged: onInkColor,
-                  ),
-                  const SizedBox(width: 10),
-                  _ColorDot(
-                    label: 'Page',
-                    value: pageColor,
-                    colors: const [
-                      Colors.white,
-                      Color(0xfffffbeb),
-                      Color(0xffecfdf5),
-                      Color(0xffeff6ff),
-                    ],
-                    onChanged: onPageColor,
-                  ),
-                ],
-              ),
-            ),
-            _RibbonGroup(
-              label: 'Review',
-              child: Row(
-                children: [
-                  _ToggleTool(
-                    icon: Icons.rate_review_outlined,
-                    label: 'Comments',
-                    selected: commentsMode,
-                    onTap: onCommentsMode,
-                  ),
-                  _ToggleTool(
-                    icon: Icons.change_circle_outlined,
-                    label: 'Track',
-                    selected: trackChanges,
-                    onTap: onTrackChanges,
-                  ),
-                  _ToggleTool(
-                    icon: Icons.straighten_outlined,
-                    label: 'Ruler',
-                    selected: showRuler,
-                    onTap: onRuler,
-                  ),
-                  const SizedBox(width: 8),
-                  _ToolButton(
-                    icon: Icons.done_all_outlined,
-                    label: 'Accept',
-                    onTap: onAcceptChanges,
-                  ),
-                  _ToolButton(
-                    icon: Icons.undo_outlined,
-                    label: 'Reject',
-                    onTap: onRejectChanges,
-                  ),
-                ],
-              ),
-            ),
-            _RibbonGroup(
-              label: 'Smart',
-              child: Row(
-                children: [
-                  _DropdownChip(
-                    value: audienceProfile,
-                    width: 128,
-                    values: const ['Millennial', 'Gen Z', 'Alpha', 'Beta'],
-                    onChanged: onAudienceProfile,
-                  ),
-                  const SizedBox(width: 8),
-                  _DropdownChip(
-                    value: toneMode,
-                    width: 112,
-                    values: const ['Clear', 'Warm', 'Bold', 'Brief'],
-                    onChanged: onToneMode,
-                  ),
-                  const SizedBox(width: 8),
-                  _ToolButton(
-                    icon: Icons.auto_awesome_outlined,
-                    label: 'Brief',
-                    onTap: onSmartBrief,
-                  ),
-                  _ToolButton(
-                    icon: Icons.ios_share_outlined,
-                    label: 'Social',
-                    onTap: onSocialSummary,
-                  ),
-                  _ToolButton(
-                    icon: Icons.verified_outlined,
-                    label: 'Source',
-                    onTap: onCitationNudge,
-                  ),
-                  _ToolButton(
-                    icon: Icons.task_alt_outlined,
-                    label: 'Actions',
-                    onTap: onActionDigest,
-                  ),
-                ],
-              ),
-            ),
-            _RibbonGroup(
-              label: 'View',
-              child: SizedBox(
-                width: 180,
-                child: Row(
-                  children: [
-                    const Icon(Icons.zoom_in_outlined, size: 20),
-                    Expanded(
-                      child: Slider(
-                        value: zoom,
-                        min: .75,
-                        max: 1.4,
-                        divisions: 13,
-                        onChanged: onZoom,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                _RibbonGroup(
+                  label: 'Document',
+                  child: Row(
+                    children: [
+                      _ToolButton(
+                        icon: Icons.table_chart_outlined,
+                        label: 'Table',
+                        onTap: onInsertTable,
                       ),
-                    ),
-                    Text('${(zoom * 100).round()}%'),
-                  ],
+                      _ToolButton(
+                        icon: Icons.image_outlined,
+                        label: 'Image',
+                        onTap: onInsertImage,
+                      ),
+                      _ToolButton(
+                        icon: Icons.smart_display_outlined,
+                        label: 'Video',
+                        onTap: onInsertVideo,
+                      ),
+                      _ToolButton(
+                        icon: Icons.checklist_outlined,
+                        label: 'Tasks',
+                        onTap: onInsertChecklist,
+                      ),
+                      _ToolButton(
+                        icon: Icons.draw_outlined,
+                        label: 'Sign',
+                        onTap: onInsertSignature,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+                _RibbonGroup(
+                  label: 'Style',
+                  child: Row(
+                    children: [
+                      _DropdownChip(
+                        value: style,
+                        width: 112,
+                        values: const ['Body', 'Title', 'Heading', 'Quote'],
+                        onChanged: onStyle,
+                      ),
+                      const SizedBox(width: 8),
+                      _DropdownChip(
+                        value: fontFamily,
+                        width: 112,
+                        values: const ['Aptos', 'Arial', 'Georgia', 'Times'],
+                        onChanged: onFontFamily,
+                      ),
+                      const SizedBox(width: 8),
+                      _StepperChip(
+                        value: fontSize,
+                        min: 10,
+                        max: 34,
+                        onChanged: onFontSize,
+                      ),
+                    ],
+                  ),
+                ),
+                _RibbonGroup(
+                  label: 'Format',
+                  child: Row(
+                    children: [
+                      _ToggleTool(
+                        icon: Icons.format_bold,
+                        label: 'Bold',
+                        selected: bold,
+                        onTap: onBold,
+                      ),
+                      _ToggleTool(
+                        icon: Icons.format_italic,
+                        label: 'Italic',
+                        selected: italic,
+                        onTap: onItalic,
+                      ),
+                      _ToggleTool(
+                        icon: Icons.format_underlined,
+                        label: 'Underline',
+                        selected: underline,
+                        onTap: onUnderline,
+                      ),
+                      const SizedBox(width: 8),
+                      _DropdownChip(
+                        value: alignment,
+                        width: 112,
+                        values: const ['Left', 'Center', 'Right', 'Justify'],
+                        onChanged: onAlignment,
+                      ),
+                    ],
+                  ),
+                ),
+                _RibbonGroup(
+                  label: 'Color',
+                  child: Row(
+                    children: [
+                      _ColorDot(
+                        label: 'Ink',
+                        value: inkColor,
+                        colors: const [
+                          Color(0xff111827),
+                          Color(0xffb91c1c),
+                          Color(0xff047857),
+                          Color(0xff1d4ed8),
+                        ],
+                        onChanged: onInkColor,
+                      ),
+                      const SizedBox(width: 10),
+                      _ColorDot(
+                        label: 'Page',
+                        value: pageColor,
+                        colors: const [
+                          Colors.white,
+                          Color(0xfffffbeb),
+                          Color(0xffecfdf5),
+                          Color(0xffeff6ff),
+                        ],
+                        onChanged: onPageColor,
+                      ),
+                    ],
+                  ),
+                ),
+                _RibbonGroup(
+                  label: 'Review',
+                  child: Row(
+                    children: [
+                      _ToggleTool(
+                        icon: Icons.rate_review_outlined,
+                        label: 'Comments',
+                        selected: commentsMode,
+                        onTap: onCommentsMode,
+                      ),
+                      _ToggleTool(
+                        icon: Icons.change_circle_outlined,
+                        label: 'Track',
+                        selected: trackChanges,
+                        onTap: onTrackChanges,
+                      ),
+                      _ToggleTool(
+                        icon: Icons.straighten_outlined,
+                        label: 'Ruler',
+                        selected: showRuler,
+                        onTap: onRuler,
+                      ),
+                      const SizedBox(width: 8),
+                      _ToolButton(
+                        icon: Icons.done_all_outlined,
+                        label: 'Accept',
+                        onTap: onAcceptChanges,
+                      ),
+                      _ToolButton(
+                        icon: Icons.undo_outlined,
+                        label: 'Reject',
+                        onTap: onRejectChanges,
+                      ),
+                    ],
+                  ),
+                ),
+                _RibbonGroup(
+                  label: 'Smart',
+                  child: Row(
+                    children: [
+                      _DropdownChip(
+                        value: audienceProfile,
+                        width: 128,
+                        values: const ['Millennial', 'Gen Z', 'Alpha', 'Beta'],
+                        onChanged: onAudienceProfile,
+                      ),
+                      const SizedBox(width: 8),
+                      _DropdownChip(
+                        value: toneMode,
+                        width: 112,
+                        values: const ['Clear', 'Warm', 'Bold', 'Brief'],
+                        onChanged: onToneMode,
+                      ),
+                      const SizedBox(width: 8),
+                      _ToolButton(
+                        icon: Icons.auto_awesome_outlined,
+                        label: 'Brief',
+                        onTap: onSmartBrief,
+                      ),
+                      _ToolButton(
+                        icon: Icons.ios_share_outlined,
+                        label: 'Social',
+                        onTap: onSocialSummary,
+                      ),
+                      _ToolButton(
+                        icon: Icons.verified_outlined,
+                        label: 'Source',
+                        onTap: onCitationNudge,
+                      ),
+                      _ToolButton(
+                        icon: Icons.task_alt_outlined,
+                        label: 'Actions',
+                        onTap: onActionDigest,
+                      ),
+                    ],
+                  ),
+                ),
+                _RibbonGroup(
+                  label: 'View',
+                  child: SizedBox(
+                    width: 180,
+                    child: Row(
+                      children: [
+                        const Icon(Icons.zoom_in_outlined, size: 20),
+                        Expanded(
+                          child: Slider(
+                            value: zoom,
+                            min: .75,
+                            max: 1.4,
+                            divisions: 13,
+                            onChanged: onZoom,
+                          ),
+                        ),
+                        Text('${(zoom * 100).round()}%'),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -1602,26 +1819,38 @@ class _EditorWorkspace extends StatelessWidget {
             height: 44,
             padding: const EdgeInsets.symmetric(horizontal: 14),
             color: const Color(0xffeef3f9),
-            child: Row(
-              children: [
-                _IconAction(
-                  icon: Icons.menu_open_outlined,
-                  label: 'Navigation',
-                  onTap: onToggleNavigation,
-                ),
-                _IconAction(
-                  icon: Icons.tune_outlined,
-                  label: 'Inspector',
-                  onTap: onToggleInspector,
-                ),
-                const Spacer(),
-                Text(
-                  '$wordCount words  •  $characterCount chars  •  $readingMinutes min read',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: const Color(0xff526070),
-                  ),
-                ),
-              ],
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 520;
+                final stats = compact
+                    ? '$wordCount words • ${readingMinutes}m'
+                    : '$wordCount words  •  $characterCount chars  •  $readingMinutes min read';
+                return Row(
+                  children: [
+                    _IconAction(
+                      icon: Icons.menu_open_outlined,
+                      label: 'Navigation',
+                      onTap: onToggleNavigation,
+                    ),
+                    _IconAction(
+                      icon: Icons.tune_outlined,
+                      label: 'Inspector',
+                      onTap: onToggleInspector,
+                    ),
+                    const Spacer(),
+                    Flexible(
+                      child: Text(
+                        stats,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: const Color(0xff526070),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         Expanded(
@@ -1629,65 +1858,97 @@ class _EditorWorkspace extends StatelessWidget {
             color: focusMode
                 ? const Color(0xfff8fafc)
                 : const Color(0xffe9eff7),
-            child: Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(22, 28, 22, 40),
-                child: Transform.scale(
-                  scale: zoom,
-                  alignment: Alignment.topCenter,
-                  child: Container(
-                    width: 760,
-                    constraints: const BoxConstraints(minHeight: 980),
-                    decoration: BoxDecoration(
-                      color: pageColor,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xffd6dee9)),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x1f0f172a),
-                          blurRadius: 28,
-                          offset: Offset(0, 16),
-                        ),
-                      ],
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 560;
+                final edgePadding = compact ? 10.0 : 22.0;
+                final availableWidth = math.max(
+                  280.0,
+                  constraints.maxWidth - (edgePadding * 2),
+                );
+                final pageWidth = math.min(760.0, availableWidth / zoom);
+                final pageHeight = math.max(
+                  constraints.maxHeight - 56,
+                  pageWidth * 1.29,
+                );
+                final pageInset = compact
+                    ? 24.0
+                    : pageWidth < 620
+                    ? 42.0
+                    : 72.0;
+
+                return Center(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(
+                      edgePadding,
+                      compact ? 14 : 28,
+                      edgePadding,
+                      40,
                     ),
-                    child: Column(
-                      children: [
-                        if (showRuler) const _Ruler(),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(72, 56, 72, 72),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              for (final block in mediaBlocks) ...[
-                                _MediaDocumentBlock(
-                                  block: block,
-                                  onRemove: () => onRemoveMedia(block.id),
-                                ),
-                                const SizedBox(height: 18),
-                              ],
-                              TextField(
-                                key: const ValueKey('document-editor'),
-                                controller: bodyController,
-                                focusNode: editorFocusNode,
-                                maxLines: null,
-                                minLines: 28,
-                                keyboardType: TextInputType.multiline,
-                                textAlign: textAlign,
-                                style: editorStyle,
-                                cursorColor: const Color(0xff2563eb),
-                                decoration: const InputDecoration(
-                                  border: InputBorder.none,
-                                  hintText: 'Start writing your document...',
-                                ),
-                              ),
-                            ],
-                          ),
+                    child: Transform.scale(
+                      scale: zoom,
+                      alignment: Alignment.topCenter,
+                      child: Container(
+                        width: pageWidth,
+                        constraints: BoxConstraints(minHeight: pageHeight),
+                        decoration: BoxDecoration(
+                          color: pageColor,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xffd6dee9)),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x1f0f172a),
+                              blurRadius: 28,
+                              offset: Offset(0, 16),
+                            ),
+                          ],
                         ),
-                      ],
+                        child: Column(
+                          children: [
+                            if (showRuler) const _Ruler(),
+                            Padding(
+                              padding: EdgeInsets.fromLTRB(
+                                pageInset,
+                                compact ? 30 : 56,
+                                pageInset,
+                                compact ? 42 : 72,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  for (final block in mediaBlocks) ...[
+                                    _MediaDocumentBlock(
+                                      block: block,
+                                      onRemove: () => onRemoveMedia(block.id),
+                                    ),
+                                    const SizedBox(height: 18),
+                                  ],
+                                  TextField(
+                                    key: const ValueKey('document-editor'),
+                                    controller: bodyController,
+                                    focusNode: editorFocusNode,
+                                    maxLines: null,
+                                    minLines: 28,
+                                    keyboardType: TextInputType.multiline,
+                                    textAlign: textAlign,
+                                    style: editorStyle,
+                                    cursorColor: const Color(0xff2563eb),
+                                    decoration: const InputDecoration(
+                                      border: InputBorder.none,
+                                      hintText:
+                                          'Start writing your document...',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
+                );
+              },
             ),
           ),
         ),
@@ -1718,12 +1979,19 @@ class _MediaDocumentBlock extends StatelessWidget {
           AspectRatio(
             aspectRatio: isImage ? 16 / 9 : 16 / 6,
             child: isImage
-                ? Image.network(
-                    block.source,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) =>
-                        _MediaFallback(block: block),
-                  )
+                ? block.bytes == null
+                      ? Image.network(
+                          block.source,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) =>
+                              _MediaFallback(block: block),
+                        )
+                      : Image.memory(
+                          block.bytes!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) =>
+                              _MediaFallback(block: block),
+                        )
                 : _VideoPreview(block: block),
           ),
           Padding(
@@ -1784,6 +2052,30 @@ class _VideoPreview extends StatelessWidget {
                 Icons.play_arrow_rounded,
                 color: Color(0xff2563eb),
                 size: 42,
+              ),
+            ),
+          ),
+          Positioned(
+            top: 12,
+            left: 14,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: const Color(0x33000000),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
+                child: Text(
+                  block.bytes == null ? 'Linked video' : 'Device video',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
               ),
             ),
           ),
@@ -1855,7 +2147,7 @@ class _NavigationRailPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 268,
+      width: double.infinity,
       color: Colors.white,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1987,7 +2279,7 @@ class _InspectorPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 292,
+      width: double.infinity,
       color: Colors.white,
       child: ListView(
         children: [
@@ -2782,6 +3074,13 @@ enum _MediaType {
 
   final String label;
   final IconData icon;
+
+  List<String> get allowedExtensions {
+    return switch (this) {
+      _MediaType.image => const ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'],
+      _MediaType.video => const ['mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi'],
+    };
+  }
 }
 
 class _MediaBlock {
@@ -2790,12 +3089,14 @@ class _MediaBlock {
     required this.type,
     required this.source,
     required this.caption,
+    required this.bytes,
   });
 
   final String id;
   final _MediaType type;
   final String source;
   final String caption;
+  final Uint8List? bytes;
 }
 
 class _Collaborator {
@@ -2804,6 +3105,137 @@ class _Collaborator {
   final String name;
   final String status;
   final Color color;
+}
+
+class ImportedDocument {
+  const ImportedDocument({required this.text, required this.formatLabel});
+
+  final String text;
+  final String formatLabel;
+}
+
+ImportedDocument parseImportedDocument(Uint8List bytes, String fileName) {
+  final extension = _fileExtension(fileName);
+  return switch (extension) {
+    'docx' => ImportedDocument(
+      text: _extractDocxText(bytes),
+      formatLabel: 'DOCX',
+    ),
+    'txt' || 'md' || 'markdown' => ImportedDocument(
+      text: _decodeText(bytes),
+      formatLabel: extension == 'txt' ? 'text' : 'Markdown',
+    ),
+    'rtf' => ImportedDocument(
+      text: _stripRtf(_decodeText(bytes)),
+      formatLabel: 'RTF',
+    ),
+    'html' || 'htm' => ImportedDocument(
+      text: _stripHtml(_decodeText(bytes)),
+      formatLabel: 'HTML',
+    ),
+    'csv' => ImportedDocument(
+      text: _csvToReadableText(_decodeText(bytes)),
+      formatLabel: 'CSV',
+    ),
+    _ => throw FormatException('Unsupported file type: .$extension'),
+  };
+}
+
+String _extractDocxText(Uint8List bytes) {
+  final archive = ZipDecoder().decodeBytes(bytes);
+  final documentFile = archive.files
+      .where((file) => file.name == 'word/document.xml')
+      .firstOrNull;
+  if (documentFile == null) {
+    throw const FormatException(
+      'This DOCX file has no readable document body.',
+    );
+  }
+
+  final document = XmlDocument.parse(utf8.decode(documentFile.content));
+  final paragraphs = <String>[];
+
+  for (final paragraph in document.descendants.whereType<XmlElement>().where(
+    (element) => element.name.local == 'p',
+  )) {
+    final buffer = StringBuffer();
+    for (final node in paragraph.descendants.whereType<XmlElement>()) {
+      switch (node.name.local) {
+        case 't':
+          buffer.write(node.innerText);
+        case 'tab':
+          buffer.write('\t');
+        case 'br':
+          buffer.write('\n');
+      }
+    }
+    final text = buffer.toString().trimRight();
+    if (text.trim().isNotEmpty) {
+      paragraphs.add(text);
+    }
+  }
+
+  return paragraphs.join('\n\n');
+}
+
+String _decodeText(Uint8List bytes) {
+  try {
+    return utf8.decode(bytes);
+  } on FormatException {
+    return latin1.decode(bytes);
+  }
+}
+
+String _stripHtml(String value) {
+  return value
+      .replaceAll(RegExp(r'<\s*br\s*/?\s*>', caseSensitive: false), '\n')
+      .replaceAll(
+        RegExp(r'</\s*(p|div|h[1-6]|li|tr)\s*>', caseSensitive: false),
+        '\n',
+      )
+      .replaceAll(RegExp(r'<[^>]+>'), ' ')
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll('&amp;', '&')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll(RegExp(r'[ \t]+'), ' ')
+      .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+      .trim();
+}
+
+String _stripRtf(String value) {
+  return value
+      .replaceAll(RegExp(r'\\par[d]?'), '\n')
+      .replaceAll(RegExp(r'\\tab'), '\t')
+      .replaceAll(RegExp(r"\\'[0-9a-fA-F]{2}"), '')
+      .replaceAll(RegExp(r'\\[a-zA-Z]+\d* ?'), '')
+      .replaceAll(RegExp(r'[{}]'), '')
+      .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+      .trim();
+}
+
+String _csvToReadableText(String value) {
+  return value
+      .split('\n')
+      .map((line) => line.split(',').map((cell) => cell.trim()).join(' | '))
+      .join('\n')
+      .trim();
+}
+
+String _titleFromFileName(String fileName) {
+  final baseName = fileName.split(RegExp(r'[/\\]')).last;
+  final withoutExtension = baseName.replaceFirst(RegExp(r'\.[^.]+$'), '');
+  return withoutExtension.trim().isEmpty
+      ? 'Imported document'
+      : withoutExtension;
+}
+
+String _fileExtension(String fileName) {
+  final index = fileName.lastIndexOf('.');
+  if (index == -1 || index == fileName.length - 1) {
+    return '';
+  }
+  return fileName.substring(index + 1).toLowerCase();
 }
 
 String _formatTime(DateTime value) {

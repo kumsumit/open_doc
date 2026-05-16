@@ -1,9 +1,44 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:open_doc/main.dart';
 
 void main() {
+  test('DOCX import extracts readable paragraphs', () {
+    final archive = Archive()
+      ..addFile(
+        ArchiveFile.string('word/document.xml', '''
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>Executive summary</w:t></w:r></w:p>
+    <w:p><w:r><w:t>Open Doc reads DOCX content.</w:t></w:r></w:p>
+  </w:body>
+</w:document>
+'''),
+      );
+    final bytes = Uint8List.fromList(ZipEncoder().encode(archive));
+
+    final imported = parseImportedDocument(bytes, 'sample.docx');
+
+    expect(imported.formatLabel, 'DOCX');
+    expect(imported.text, contains('Executive summary'));
+    expect(imported.text, contains('Open Doc reads DOCX content.'));
+  });
+
+  test('plain import supports text-like files', () {
+    final imported = parseImportedDocument(
+      Uint8List.fromList(utf8.encode('# Notes\nHello')),
+      'notes.md',
+    );
+
+    expect(imported.formatLabel, 'Markdown');
+    expect(imported.text, contains('Hello'));
+  });
+
   testWidgets('Open Doc editor loads and inserts content', (tester) async {
     tester.view.physicalSize = const Size(1440, 1000);
     tester.view.devicePixelRatio = 1;
@@ -32,6 +67,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Insert image'), findsOneWidget);
+    expect(find.text('Choose device image'), findsOneWidget);
 
     await tester.tap(find.text('Insert'));
     await tester.pumpAndSettle();
@@ -73,5 +109,34 @@ void main() {
 
     expect(find.text('Resume'), findsOneWidget);
     expect(find.text('Contract'), findsOneWidget);
+  });
+
+  testWidgets('Open Doc adapts to phone and landscape sizes', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(const OpenDocApp());
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const ValueKey('document-editor')), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Navigation'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Outline'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.close).last);
+    await tester.pumpAndSettle();
+
+    tester.view.physicalSize = const Size(844, 390);
+    await tester.pumpWidget(const OpenDocApp());
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const ValueKey('document-editor')), findsOneWidget);
   });
 }
