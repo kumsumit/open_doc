@@ -15,8 +15,8 @@ review.
   tracking states.
 - Prototype persistence with explicit save points and restorable version
   history.
-- Import flow for pasted text, export actions for DOCX, PDF, plain text, and
-  share links.
+- Import flow for pasted text, real DOCX/PDF/HTML/Markdown/plain-text export,
+  and share links.
 - Collaboration surface with visible collaborators and document permissions.
 - Templates for proposals, resumes, letters, contracts, invoices, and reports.
 - Media embeds for image URLs and video links, with captions, document-page
@@ -37,3 +37,13 @@ flutter run
 flutter test
 flutter analyze
 ```
+
+## Architecture
+
+The app is being split into focused modules:
+
+- `lib/main.dart` contains app bootstrapping and the main document studio state.
+- `lib/src/ui/` contains the top bar, ribbon, editor canvas, panels, and shared controls.
+- `lib/src/document/` contains document models plus import/export services.
+- `lib/src/data/` contains starter content and templates.
+- `docs/word_class_editor_roadmap.md` tracks the path toward a Word-class editor.

@@ -38,6 +38,8 @@ dependencies:
     git: "https://github.com/sumitsharansatsangi/flutter_file_picker.git"  
   archive: ^4.0.9
   xml: ^7.0.1
+  docx_creator:
+    path: /Users/amitsharan/StudioProjects/docx_creator
   smart_rich_text_quill:
     path: /Users/amitsharan/StudioProjects/smart_rich_text_quill
 

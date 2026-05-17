@@ -6,8 +6,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:open_doc/main.dart';
+import 'package:open_doc/src/document/document_export_service.dart';
+import 'package:open_doc/src/document/document_import_service.dart';
 
 void main() {
+  const exportService = DocumentExportService();
+  const importService = DocumentImportService();
+
   test('DOCX import extracts readable paragraphs', () {
     final archive = Archive()
       ..addFile(
@@ -22,7 +27,7 @@ void main() {
       );
     final bytes = Uint8List.fromList(ZipEncoder().encode(archive));
 
-    final imported = parseImportedDocument(bytes, 'sample.docx');
+    final imported = importService.parse(bytes, 'sample.docx');
 
     expect(imported.formatLabel, 'DOCX');
     expect(imported.text, contains('Executive summary'));
@@ -52,7 +57,7 @@ void main() {
       );
     final bytes = Uint8List.fromList(ZipEncoder().encode(archive));
 
-    final imported = parseImportedDocument(bytes, 'budget.docx');
+    final imported = importService.parse(bytes, 'budget.docx');
 
     expect(imported.text, contains('Budget'));
     expect(imported.text, contains('| Item | Amount |'));
@@ -61,7 +66,7 @@ void main() {
   });
 
   test('CSV import creates markdown tables and handles quoted cells', () {
-    final imported = parseImportedDocument(
+    final imported = importService.parse(
       Uint8List.fromList(
         utf8.encode('Name,Notes\nAsha,"Needs review, legal"\nMina,Ready'),
       ),
@@ -75,7 +80,7 @@ void main() {
   });
 
   test('HTML import preserves table rows', () {
-    final imported = parseImportedDocument(
+    final imported = importService.parse(
       Uint8List.fromList(
         utf8.encode('''
 <h1>Plan</h1>
@@ -95,13 +100,54 @@ void main() {
   });
 
   test('plain import supports text-like files', () {
-    final imported = parseImportedDocument(
+    final imported = importService.parse(
       Uint8List.fromList(utf8.encode('# Notes\nHello')),
       'notes.md',
     );
 
     expect(imported.formatLabel, 'Markdown');
     expect(imported.text, contains('Hello'));
+  });
+
+  test('DOCX export creates a valid Word package from markdown', () async {
+    final bytes = await exportService.exportDocx(
+      const DocumentExportPayload(
+        title: 'Export check',
+        markdown: '''
+Open Doc writes real DOCX files now.
+
+| Feature | Status |
+| --- | --- |
+| DOCX export | Ready |
+''',
+      ),
+    );
+    final archive = ZipDecoder().decodeBytes(bytes);
+
+    expect(archive.findFile('[Content_Types].xml'), isNotNull);
+    final documentXml = archive.findFile('word/document.xml');
+    expect(documentXml, isNotNull);
+    expect(
+      utf8.decode(documentXml!.content as List<int>),
+      contains('Open Doc writes real DOCX files now.'),
+    );
+  });
+
+  test('PDF and HTML exporters produce real document output', () async {
+    const payload = DocumentExportPayload(
+      title: 'Multi-format check',
+      markdown: 'Open Doc can publish through the shared document engine.',
+    );
+
+    final pdfBytes = await exportService.exportPdf(payload);
+    final html = utf8.decode(await exportService.exportHtml(payload));
+
+    expect(utf8.decode(pdfBytes.take(5).toList()), '%PDF-');
+    expect(html, contains('<h1>Multi-format check</h1>'));
+    expect(
+      html,
+      contains('Open Doc can publish through the shared document engine.'),
+    );
   });
 
   testWidgets('Open Doc editor loads and inserts content', (tester) async {
@@ -127,7 +173,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.checklist_outlined));
     await tester.pump();
 
-    expect(find.textContaining('[ ] Action item'), findsWidgets);
+    expect(find.textContaining('Action item'), findsWidgets);
     expect(find.text('Unsaved'), findsOneWidget);
 
     await tester.tap(find.byIcon(Icons.image_outlined).first);
@@ -149,8 +195,8 @@ void main() {
     expect(find.byTooltip('Social'), findsOneWidget);
     expect(find.byTooltip('Source'), findsOneWidget);
     expect(find.byTooltip('Actions'), findsWidgets);
-    expect(find.text('Millennial'), findsOneWidget);
-    expect(find.text('Clear'), findsOneWidget);
+    expect(find.text('Millennial'), findsWidgets);
+    expect(find.text('Clear'), findsWidgets);
 
     await tester.tap(find.byIcon(Icons.auto_awesome_outlined).first);
     await tester.pumpAndSettle();

@@ -1,0 +1,620 @@
+part of '../../main.dart';
+
+class _Ruler extends StatelessWidget {
+  const _Ruler();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: 72),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0xffe5e7eb))),
+      ),
+      child: Row(
+        children: List.generate(
+          12,
+          (index) => Expanded(
+            child: Align(
+              alignment: Alignment.bottomLeft,
+              child: Container(
+                width: 1,
+                height: index.isEven ? 15 : 8,
+                color: const Color(0xffb6c1d1),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RibbonGroup extends StatelessWidget {
+  const _RibbonGroup({required this.label, required this.child});
+
+  final String label;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(right: 14),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 5),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: const Color(0xffe2e8f0)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          child,
+          const SizedBox(height: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xff64748b),
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _IconAction extends StatelessWidget {
+  const _IconAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: label,
+      child: IconButton(
+        onPressed: onTap,
+        icon: Icon(icon),
+        visualDensity: VisualDensity.compact,
+      ),
+    );
+  }
+}
+
+class _TopBarCommand extends StatelessWidget {
+  const _TopBarCommand({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.filled = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(8),
+    );
+    final iconWidget = Icon(icon, size: 18);
+    final labelWidget = Text(label);
+    return SizedBox(
+      height: 38,
+      child: filled
+          ? FilledButton.icon(
+              onPressed: onTap,
+              icon: iconWidget,
+              label: labelWidget,
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                shape: shape,
+              ),
+            )
+          : OutlinedButton.icon(
+              onPressed: onTap,
+              icon: iconWidget,
+              label: labelWidget,
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                shape: shape,
+              ),
+            ),
+    );
+  }
+}
+
+class _ToolButton extends StatelessWidget {
+  const _ToolButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: label,
+      child: SizedBox(
+        width: 46,
+        height: 42,
+        child: IconButton(
+          onPressed: onTap,
+          icon: Icon(icon),
+          style: IconButton.styleFrom(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ToggleTool extends StatelessWidget {
+  const _ToggleTool({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: label,
+      child: Padding(
+        padding: const EdgeInsets.only(right: 4),
+        child: IconButton(
+          isSelected: selected,
+          selectedIcon: Icon(icon),
+          onPressed: onTap,
+          icon: Icon(icon),
+          style: IconButton.styleFrom(
+            backgroundColor: selected
+                ? const Color(0xffdbeafe)
+                : Colors.transparent,
+            foregroundColor: selected
+                ? const Color(0xff1d4ed8)
+                : const Color(0xff334155),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DropdownChip extends StatelessWidget {
+  const _DropdownChip({
+    required this.value,
+    required this.values,
+    required this.onChanged,
+    required this.width,
+  });
+
+  final String value;
+  final List<String> values;
+  final ValueChanged<String> onChanged;
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: 38,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xffd6dee9)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: value,
+          isExpanded: true,
+          icon: const Icon(Icons.expand_more, size: 18),
+          items: [
+            for (final option in values)
+              DropdownMenuItem(value: option, child: Text(option)),
+          ],
+          onChanged: (value) {
+            if (value != null) {
+              onChanged(value);
+            }
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _StepperChip extends StatelessWidget {
+  const _StepperChip({
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.onChanged,
+  });
+
+  final double value;
+  final double min;
+  final double max;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 38,
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xffd6dee9)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            onPressed: value <= min ? null : () => onChanged(value - 1),
+            icon: const Icon(Icons.remove, size: 18),
+          ),
+          SizedBox(
+            width: 32,
+            child: Text(
+              value.round().toString(),
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            onPressed: value >= max ? null : () => onChanged(value + 1),
+            icon: const Icon(Icons.add, size: 18),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ColorDot extends StatelessWidget {
+  const _ColorDot({
+    required this.label,
+    required this.value,
+    required this.colors,
+    required this.onChanged,
+  });
+
+  final String label;
+  final Color value;
+  final List<Color> colors;
+  final ValueChanged<Color> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(width: 6),
+        for (final color in colors)
+          Tooltip(
+            message: label,
+            child: InkWell(
+              onTap: () => onChanged(color),
+              borderRadius: BorderRadius.circular(999),
+              child: Container(
+                width: 24,
+                height: 24,
+                margin: const EdgeInsets.only(right: 5),
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: value == color
+                        ? const Color(0xff2563eb)
+                        : const Color(0xffcbd5e1),
+                    width: value == color ? 3 : 1,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _PanelHeader extends StatelessWidget {
+  const _PanelHeader({
+    required this.title,
+    required this.icon,
+    required this.onClose,
+  });
+
+  final String title;
+  final IconData icon;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 54,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0xffe5e7eb))),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 21, color: const Color(0xff2563eb)),
+          const SizedBox(width: 8),
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+          const Spacer(),
+          IconButton(
+            tooltip: 'Close',
+            onPressed: onClose,
+            icon: const Icon(Icons.close, size: 20),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MetricCard extends StatelessWidget {
+  const _MetricCard({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xfff6f8fb),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xffe2e8f0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            value,
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 2),
+          Text(label, style: const TextStyle(color: Color(0xff64748b))),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusTile extends StatelessWidget {
+  const _StatusTile({
+    required this.icon,
+    required this.title,
+    required this.value,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String title;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(icon, color: color),
+      title: Text(title),
+      subtitle: Text(value),
+      dense: true,
+    );
+  }
+}
+
+class _InspectorToggleTile extends StatelessWidget {
+  const _InspectorToggleTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.activeColor,
+    required this.onToggle,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool value;
+  final Color activeColor;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      dense: true,
+      leading: Icon(icon, color: value ? activeColor : Colors.grey),
+      title: Text(title),
+      subtitle: Text(subtitle),
+      trailing: Switch(
+        value: value,
+        activeThumbColor: activeColor,
+        activeTrackColor: activeColor.withValues(alpha: 0.35),
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        onChanged: (_) => onToggle(),
+      ),
+    );
+  }
+}
+
+class _InspectorSelectTile extends StatelessWidget {
+  const _InspectorSelectTile({
+    required this.icon,
+    required this.title,
+    required this.value,
+    required this.options,
+    required this.color,
+    required this.onChanged,
+  });
+
+  final IconData icon;
+  final String title;
+  final String value;
+  final List<String> options;
+  final Color color;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      dense: true,
+      leading: Icon(icon, color: color),
+      title: Text(title),
+      trailing: DropdownButton<String>(
+        value: value,
+        underline: const SizedBox.shrink(),
+        style: Theme.of(context).textTheme.bodyMedium,
+        isDense: true,
+        items: options
+            .map((o) => DropdownMenuItem(value: o, child: Text(o)))
+            .toList(),
+        onChanged: (v) {
+          if (v != null) onChanged(v);
+        },
+      ),
+    );
+  }
+}
+
+class _CommentCard extends StatelessWidget {
+  const _CommentCard({required this.author, required this.body});
+
+  final String author;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xfffffbeb),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xfffde68a)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(author, style: const TextStyle(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 4),
+          Text(body),
+        ],
+      ),
+    );
+  }
+}
+
+class _SuggestionTile extends StatelessWidget {
+  const _SuggestionTile({
+    required this.icon,
+    required this.title,
+    required this.body,
+  });
+
+  final IconData icon;
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(icon, color: const Color(0xff2563eb)),
+      title: Text(title),
+      subtitle: Text(body),
+      dense: true,
+    );
+  }
+}
+
+class _ExportTile extends StatelessWidget {
+  const _ExportTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 142,
+      child: OutlinedButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon),
+        label: Text(label),
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      ),
+    );
+  }
+}
+
+class _TemplateTile extends StatelessWidget {
+  const _TemplateTile({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 156,
+      child: OutlinedButton.icon(
+        onPressed: onTap,
+        icon: Icon(
+          selected ? Icons.radio_button_checked : Icons.article_outlined,
+        ),
+        label: Text(label),
+        style: OutlinedButton.styleFrom(
+          alignment: Alignment.centerLeft,
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      ),
+    );
+  }
+}

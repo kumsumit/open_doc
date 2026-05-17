@@ -1,16 +1,31 @@
-import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:archive/archive.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:smart_rich_text_quill/smart_rich_text_quill.dart';
-import 'package:xml/xml.dart';
+
+import 'src/document/document_export_service.dart';
+import 'src/document/document_import_service.dart';
+import 'src/document/document_models.dart';
+import 'src/data/document_templates.dart';
+
+part 'src/ui/editor_intents.dart';
+part 'src/ui/top_bar.dart';
+part 'src/ui/ribbon.dart';
+part 'src/ui/editor_workspace.dart';
+part 'src/ui/side_panels.dart';
+part 'src/ui/shared_controls.dart';
 
 void main() {
   runApp(const OpenDocApp());
+}
+
+String _formatTime(DateTime value) {
+  final hour = value.hour.toString().padLeft(2, '0');
+  final minute = value.minute.toString().padLeft(2, '0');
+  return '$hour:$minute';
 }
 
 class OpenDocApp extends StatelessWidget {
@@ -52,6 +67,8 @@ class _DocumentStudioState extends State<DocumentStudio> {
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _replaceController = TextEditingController();
   final FocusNode _editorFocusNode = FocusNode();
+  final DocumentExportService _exportService = const DocumentExportService();
+  final DocumentImportService _importService = const DocumentImportService();
   int _currentMatchIndex = -1;
 
   bool _showRuler = true;
@@ -74,18 +91,20 @@ class _DocumentStudioState extends State<DocumentStudio> {
   Color _inkColor = const Color(0xff111827);
   Color _pageColor = Colors.white;
   DateTime _savedAt = DateTime.now();
-  final List<_MediaBlock> _mediaBlocks = [];
-  final List<_DocumentVersion> _versions = [];
-  final List<_Collaborator> _collaborators = const [
-    _Collaborator('Asha', 'Editing', Color(0xff2563eb)),
-    _Collaborator('Legal', 'Commenting', Color(0xff047857)),
-    _Collaborator('Mina', 'Viewing', Color(0xffb45309)),
+  final List<MediaBlock> _mediaBlocks = [];
+  final List<DocumentVersion> _versions = [];
+  final List<Collaborator> _collaborators = const [
+    Collaborator('Asha', 'Editing', Color(0xff2563eb)),
+    Collaborator('Legal', 'Commenting', Color(0xff047857)),
+    Collaborator('Mina', 'Viewing', Color(0xffb45309)),
   ];
 
   @override
   void initState() {
     super.initState();
-    _srqController = SrqControllerFactory.create(initialMarkdown: _starterDocument);
+    _srqController = SrqControllerFactory.create(
+      initialMarkdown: starterDocument,
+    );
     _srqController.addListener(_refresh);
     _titleController.addListener(_refresh);
     _searchController.addListener(_refresh);
@@ -127,7 +146,10 @@ class _DocumentStudioState extends State<DocumentStudio> {
     return _markdownText
         .replaceAll(RegExp(r'\*\*|~~|\*|<u>|</u>|`'), '')
         .replaceAll(RegExp(r'^#{1,3} ', multiLine: true), '')
-        .replaceAll(RegExp(r'^\* \[ \] |^\* |^- |\d+\. |^> ', multiLine: true), '');
+        .replaceAll(
+          RegExp(r'^\* \[ \] |^\* |^- |\d+\. |^> ', multiLine: true),
+          '',
+        );
   }
 
   // ─── Document statistics ──────────────────────────────────────────────────────
@@ -202,7 +224,9 @@ class _DocumentStudioState extends State<DocumentStudio> {
   int get _searchMatches {
     final query = _searchController.text.trim().toLowerCase();
     if (query.isEmpty) return 0;
-    return RegExp(RegExp.escape(query)).allMatches(_markdownText.toLowerCase()).length;
+    return RegExp(
+      RegExp.escape(query),
+    ).allMatches(_markdownText.toLowerCase()).length;
   }
 
   List<(int, int)> get _allMatchPositions {
@@ -220,19 +244,25 @@ class _DocumentStudioState extends State<DocumentStudio> {
     final next = (_currentMatchIndex + 1) % positions.length;
     setState(() => _currentMatchIndex = next);
     final (start, end) = positions[next];
-    _srqController.textController.selection =
-        TextSelection(baseOffset: start, extentOffset: end);
+    _srqController.textController.selection = TextSelection(
+      baseOffset: start,
+      extentOffset: end,
+    );
     _editorFocusNode.requestFocus();
   }
 
   void _findPrev() {
     final positions = _allMatchPositions;
     if (positions.isEmpty) return;
-    final idx = _currentMatchIndex <= 0 ? positions.length - 1 : _currentMatchIndex - 1;
+    final idx = _currentMatchIndex <= 0
+        ? positions.length - 1
+        : _currentMatchIndex - 1;
     setState(() => _currentMatchIndex = idx);
     final (start, end) = positions[idx];
-    _srqController.textController.selection =
-        TextSelection(baseOffset: start, extentOffset: end);
+    _srqController.textController.selection = TextSelection(
+      baseOffset: start,
+      extentOffset: end,
+    );
     _editorFocusNode.requestFocus();
   }
 
@@ -244,7 +274,9 @@ class _DocumentStudioState extends State<DocumentStudio> {
     final replacement = _replaceController.text;
     final newText = _markdownText.replaceRange(start, end, replacement);
     _srqController.setMarkdown(newText);
-    setState(() => _currentMatchIndex = idx.clamp(0, _allMatchPositions.length - 1));
+    setState(
+      () => _currentMatchIndex = idx.clamp(0, _allMatchPositions.length - 1),
+    );
   }
 
   void _replaceAll() {
@@ -260,7 +292,22 @@ class _DocumentStudioState extends State<DocumentStudio> {
   }
 
   Future<void> _exportToFile(String format) async {
-    final title = _titleController.text.replaceAll(RegExp(r'[^\w\s-]'), '').trim();
+    final title = _titleController.text
+        .replaceAll(RegExp(r'[^\w\s-]'), '')
+        .trim();
+    if (format == 'docx') {
+      await _exportToDocx(title.isEmpty ? 'Untitled document' : title);
+      return;
+    }
+    if (format == 'pdf') {
+      await _exportToPdf(title.isEmpty ? 'Untitled document' : title);
+      return;
+    }
+    if (format == 'html') {
+      await _exportToHtml(title.isEmpty ? 'Untitled document' : title);
+      return;
+    }
+
     String content;
     String ext;
     if (format == 'markdown') {
@@ -283,6 +330,76 @@ class _DocumentStudioState extends State<DocumentStudio> {
     } catch (e) {
       _showSnack('Export failed: $e');
     }
+  }
+
+  Future<void> _exportToDocx(String title) async {
+    try {
+      final bytes = await _exportService.exportDocx(_exportPayload);
+      final savePath = await FilePicker.saveFile(
+        dialogTitle: 'Save DOCX file',
+        fileName: '$title.docx',
+        bytes: bytes,
+      );
+      if (savePath != null) {
+        await File(savePath).writeAsBytes(bytes);
+        _showSnack('Saved DOCX to $savePath');
+      }
+    } catch (e) {
+      _showSnack('DOCX export failed: $e');
+    }
+  }
+
+  Future<void> _exportToPdf(String title) async {
+    try {
+      final bytes = await _exportService.exportPdf(_exportPayload);
+      final savePath = await FilePicker.saveFile(
+        dialogTitle: 'Save PDF file',
+        fileName: '$title.pdf',
+        bytes: bytes,
+      );
+      if (savePath != null) {
+        await File(savePath).writeAsBytes(bytes);
+        _showSnack('Saved PDF to $savePath');
+      }
+    } catch (e) {
+      _showSnack('PDF export failed: $e');
+    }
+  }
+
+  Future<void> _exportToHtml(String title) async {
+    try {
+      final bytes = await _exportService.exportHtml(_exportPayload);
+      final savePath = await FilePicker.saveFile(
+        dialogTitle: 'Save HTML file',
+        fileName: '$title.html',
+        bytes: bytes,
+      );
+      if (savePath != null) {
+        await File(savePath).writeAsBytes(bytes);
+        _showSnack('Saved HTML to $savePath');
+      }
+    } catch (e) {
+      _showSnack('HTML export failed: $e');
+    }
+  }
+
+  DocumentExportPayload get _exportPayload {
+    return DocumentExportPayload(
+      title: _titleController.text,
+      markdown: _markdownText,
+      mediaBlocks: _mediaBlocks
+          .map(
+            (block) => ExportMediaBlock(
+              type: block.type == MediaType.image
+                  ? ExportMediaType.image
+                  : ExportMediaType.video,
+              source: block.source,
+              caption: block.caption,
+              hasBytes: block.bytes != null,
+            ),
+          )
+          .toList(),
+    );
   }
 
   List<String> get _headings {
@@ -315,7 +432,12 @@ class _DocumentStudioState extends State<DocumentStudio> {
   );
 
   void _insertText(String value) {
-    _srqController.insertAtCursor(value);
+    final selection = _srqController.textController.selection;
+    if (selection.isValid) {
+      _srqController.insertAtCursor(value);
+    } else {
+      _srqController.setMarkdown('$_markdownText$value');
+    }
     _editorFocusNode.requestFocus();
   }
 
@@ -324,12 +446,12 @@ class _DocumentStudioState extends State<DocumentStudio> {
     _activeVersion = nextVersion;
     _versions.insert(
       0,
-      _DocumentVersion(
+      DocumentVersion(
         nextVersion,
         label,
         _titleController.text,
         _markdownText,
-        List<_MediaBlock>.of(_mediaBlocks),
+        List<MediaBlock>.of(_mediaBlocks),
         DateTime.now(),
         _wordCount,
       ),
@@ -364,7 +486,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
     _showSnack('A working copy is ready.');
   }
 
-  Future<void> _pickAndInsertMedia(_MediaType type) async {
+  Future<void> _pickAndInsertMedia(MediaType type) async {
     try {
       final result = await FilePicker.pickFiles(
         type: FileType.custom,
@@ -379,38 +501,38 @@ class _DocumentStudioState extends State<DocumentStudio> {
 
       setState(() {
         _mediaBlocks.add(
-          _MediaBlock(
+          MediaBlock(
             id: DateTime.now().microsecondsSinceEpoch.toString(),
             type: type,
             source: picked.name,
-            caption: _titleFromFileName(picked.name),
+            caption: _importService.titleFromFileName(picked.name),
             bytes: bytes,
           ),
         );
         _saved = false;
       });
       _showSnack(
-        type == _MediaType.image
+        type == MediaType.image
             ? 'Device image inserted.'
             : 'Device video inserted.',
       );
     } catch (_) {
       _showSnack(
-        type == _MediaType.image
+        type == MediaType.image
             ? 'Could not insert that image.'
             : 'Could not insert that video.',
       );
     }
   }
 
-  void _showMediaSheet(_MediaType type) {
+  void _showMediaSheet(MediaType type) {
     final urlController = TextEditingController(
-      text: type == _MediaType.image
+      text: type == MediaType.image
           ? 'https://images.unsplash.com/photo-1497366754035-f200968a6e72?w=1200'
           : 'https://videos.open-doc.local/project-overview.mp4',
     );
     final captionController = TextEditingController(
-      text: type == _MediaType.image
+      text: type == MediaType.image
           ? 'Workspace reference image'
           : 'Project overview video',
     );
@@ -420,9 +542,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
       isScrollControlled: true,
       showDragHandle: true,
       builder: (context) {
-        final title = type == _MediaType.image
-            ? 'Insert image'
-            : 'Insert video';
+        final title = type == MediaType.image ? 'Insert image' : 'Insert video';
         return Padding(
           padding: EdgeInsets.fromLTRB(
             24,
@@ -444,12 +564,12 @@ class _DocumentStudioState extends State<DocumentStudio> {
                     _pickAndInsertMedia(type);
                   },
                   icon: Icon(
-                    type == _MediaType.image
+                    type == MediaType.image
                         ? Icons.add_photo_alternate_outlined
                         : Icons.video_library_outlined,
                   ),
                   label: Text(
-                    type == _MediaType.image
+                    type == MediaType.image
                         ? 'Choose device image'
                         : 'Choose device video',
                   ),
@@ -460,11 +580,11 @@ class _DocumentStudioState extends State<DocumentStudio> {
                 controller: urlController,
                 decoration: InputDecoration(
                   prefixIcon: Icon(
-                    type == _MediaType.image
+                    type == MediaType.image
                         ? Icons.image_outlined
                         : Icons.smart_display_outlined,
                   ),
-                  labelText: type == _MediaType.image
+                  labelText: type == MediaType.image
                       ? 'Image URL'
                       : 'Video URL or embed link',
                   border: const OutlineInputBorder(),
@@ -502,7 +622,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                       Navigator.of(context).pop();
                       setState(() {
                         _mediaBlocks.add(
-                          _MediaBlock(
+                          MediaBlock(
                             id: DateTime.now().microsecondsSinceEpoch
                                 .toString(),
                             type: type,
@@ -514,7 +634,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                         _saved = false;
                       });
                       _showSnack(
-                        type == _MediaType.image
+                        type == MediaType.image
                             ? 'Image inserted.'
                             : 'Video embed inserted.',
                       );
@@ -552,7 +672,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
 
     _srqController.setMarkdownSilently(cleanText);
     setState(() {
-      _titleController.text = _titleFromFileName(name);
+      _titleController.text = _importService.titleFromFileName(name);
       _template = 'Imported $format';
       _mediaBlocks.clear();
       _captureVersion('Imported $format file');
@@ -583,7 +703,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
         return;
       }
 
-      final imported = parseImportedDocument(bytes, picked.name);
+      final imported = _importService.parse(bytes, picked.name);
       _applyImportedDocument(
         name: picked.name,
         text: imported.text,
@@ -698,7 +818,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                 spacing: 12,
                 runSpacing: 12,
                 children: [
-                  for (final entry in _templateLibrary.entries)
+                  for (final entry in templateLibrary.entries)
                     _TemplateTile(
                       label: entry.key,
                       selected: entry.key == _template,
@@ -1005,10 +1125,10 @@ class _DocumentStudioState extends State<DocumentStudio> {
       versions: _versions,
       mediaCount: _mediaBlocks.length,
       imageCount: _mediaBlocks
-          .where((block) => block.type == _MediaType.image)
+          .where((block) => block.type == MediaType.image)
           .length,
       videoCount: _mediaBlocks
-          .where((block) => block.type == _MediaType.video)
+          .where((block) => block.type == MediaType.video)
           .length,
       audienceProfile: _audienceProfile,
       toneMode: _toneMode,
@@ -1024,7 +1144,8 @@ class _DocumentStudioState extends State<DocumentStudio> {
       onSmartBrief: _showSmartBriefSheet,
       onActionDigest: _insertActionDigest,
       onCommentsToggle: () => setState(() => _commentsMode = !_commentsMode),
-      onTrackChangesToggle: () => setState(() => _trackChanges = !_trackChanges),
+      onTrackChangesToggle: () =>
+          setState(() => _trackChanges = !_trackChanges),
       onPermissionChange: (v) => setState(() => _permission = v),
       onAudienceProfileChange: (v) => setState(() => _audienceProfile = v),
       onToneModeChange: (v) => setState(() => _toneMode = v),
@@ -1105,6 +1226,11 @@ class _DocumentStudioState extends State<DocumentStudio> {
                     onTap: () => _finishExport(context, 'PDF'),
                   ),
                   _ExportTile(
+                    icon: Icons.html_outlined,
+                    label: 'HTML',
+                    onTap: () => _finishExport(context, 'HTML'),
+                  ),
+                  _ExportTile(
                     icon: Icons.text_snippet_outlined,
                     label: 'Plain text',
                     onTap: () => _finishExport(context, 'Plain text'),
@@ -1130,7 +1256,13 @@ class _DocumentStudioState extends State<DocumentStudio> {
 
   void _finishExport(BuildContext sheetContext, String type) {
     Navigator.of(sheetContext).pop();
-    if (type == 'Markdown') {
+    if (type == 'DOCX') {
+      _exportToFile('docx');
+    } else if (type == 'PDF') {
+      _exportToFile('pdf');
+    } else if (type == 'HTML') {
+      _exportToFile('html');
+    } else if (type == 'Markdown') {
       _exportToFile('markdown');
     } else if (type == 'Plain text') {
       _exportToFile('text');
@@ -1151,7 +1283,8 @@ class _DocumentStudioState extends State<DocumentStudio> {
         .join('\n');
     Clipboard.setData(
       ClipboardData(
-        text: '${_titleController.text}\n\n$_plainText'
+        text:
+            '${_titleController.text}\n\n$_plainText'
             '${mediaText.isEmpty ? '' : '\n\nMedia\n$mediaText'}',
       ),
     );
@@ -1170,12 +1303,10 @@ class _DocumentStudioState extends State<DocumentStudio> {
             _ToggleUnderlineIntent(),
         SingleActivator(LogicalKeyboardKey.keyS, control: true, shift: true):
             _ToggleStrikethroughIntent(),
-        SingleActivator(LogicalKeyboardKey.keyZ, control: true):
-            _UndoIntent(),
+        SingleActivator(LogicalKeyboardKey.keyZ, control: true): _UndoIntent(),
         SingleActivator(LogicalKeyboardKey.keyZ, control: true, shift: true):
             _RedoIntent(),
-        SingleActivator(LogicalKeyboardKey.keyY, control: true):
-            _RedoIntent(),
+        SingleActivator(LogicalKeyboardKey.keyY, control: true): _RedoIntent(),
       },
       child: Actions(
         actions: {
@@ -1202,12 +1333,12 @@ class _DocumentStudioState extends State<DocumentStudio> {
           ),
           _ToggleStrikethroughIntent:
               CallbackAction<_ToggleStrikethroughIntent>(
-            onInvoke: (_) {
-              _srqController.toggleStrikethrough();
-              setState(() {});
-              return null;
-            },
-          ),
+                onInvoke: (_) {
+                  _srqController.toggleStrikethrough();
+                  setState(() {});
+                  return null;
+                },
+              ),
           _UndoIntent: CallbackAction<_UndoIntent>(
             onInvoke: (_) {
               _srqController.undo();
@@ -1324,10 +1455,10 @@ class _DocumentStudioState extends State<DocumentStudio> {
                         onInsertTable: () => _insertText(
                           '\n| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n| Detail | Owner | Status |\n| Detail | Owner | Status |\n',
                         ),
-                        onInsertImage: () => _showMediaSheet(_MediaType.image),
-                        onInsertVideo: () => _showMediaSheet(_MediaType.video),
+                        onInsertImage: () => _showMediaSheet(MediaType.image),
+                        onInsertVideo: () => _showMediaSheet(MediaType.video),
                         onInsertChecklist: () =>
-                            _srqController.toggleTaskList(),
+                            _insertText('\n* [ ] Action item\n'),
                         onInsertBulletList: () =>
                             _srqController.toggleBulletList(),
                         onInsertOrderedList: () =>
@@ -1403,2535 +1534,3 @@ class _DocumentStudioState extends State<DocumentStudio> {
     );
   }
 }
-
-class _ToggleBoldIntent extends Intent {
-  const _ToggleBoldIntent();
-}
-
-class _ToggleItalicIntent extends Intent {
-  const _ToggleItalicIntent();
-}
-
-class _ToggleUnderlineIntent extends Intent {
-  const _ToggleUnderlineIntent();
-}
-
-class _ToggleStrikethroughIntent extends Intent {
-  const _ToggleStrikethroughIntent();
-}
-
-class _UndoIntent extends Intent {
-  const _UndoIntent();
-}
-
-class _RedoIntent extends Intent {
-  const _RedoIntent();
-}
-
-class _TopBar extends StatelessWidget {
-  const _TopBar({
-    required this.titleController,
-    required this.focusMode,
-    required this.saved,
-    required this.onNew,
-    required this.onSave,
-    required this.onImport,
-    required this.onTemplates,
-    required this.onDuplicate,
-    required this.onCopy,
-    required this.onShare,
-    required this.onHistory,
-    required this.onExport,
-    required this.onToggleFocus,
-  });
-
-  final TextEditingController titleController;
-  final bool focusMode;
-  final bool saved;
-  final VoidCallback onNew;
-  final VoidCallback onSave;
-  final VoidCallback onImport;
-  final VoidCallback onTemplates;
-  final VoidCallback onDuplicate;
-  final VoidCallback onCopy;
-  final VoidCallback onShare;
-  final VoidCallback onHistory;
-  final VoidCallback onExport;
-  final VoidCallback onToggleFocus;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 64,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xffe5e7eb))),
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 520;
-          return Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: const Color(0xff2563eb),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.article_outlined, color: Colors.white),
-              ),
-              const SizedBox(width: 12),
-              Flexible(
-                flex: compact ? 2 : 0,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: compact ? 128 : 240,
-                    minWidth: compact ? 88 : 180,
-                  ),
-                  child: TextField(
-                    controller: titleController,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                    ),
-                    decoration: const InputDecoration(
-                      border: InputBorder.none,
-                      isDense: true,
-                    ),
-                  ),
-                ),
-              ),
-              if (!compact) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: saved
-                        ? const Color(0xffecfdf5)
-                        : const Color(0xfffffbeb),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                      color: saved
-                          ? const Color(0xffbbf7d0)
-                          : const Color(0xfffde68a),
-                    ),
-                  ),
-                  child: Text(
-                    saved ? 'Saved' : 'Unsaved',
-                    style: TextStyle(
-                      color: saved
-                          ? const Color(0xff047857)
-                          : const Color(0xff92400e),
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-              ],
-              const SizedBox(width: 8),
-              Expanded(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  reverse: true,
-                  child: Row(
-                    children: [
-                      _IconAction(
-                        icon: Icons.note_add_outlined,
-                        label: 'New',
-                        onTap: onNew,
-                      ),
-                      _IconAction(
-                        icon: Icons.save_outlined,
-                        label: 'Save',
-                        onTap: onSave,
-                      ),
-                      _IconAction(
-                        icon: Icons.dashboard_customize_outlined,
-                        label: 'Templates',
-                        onTap: onTemplates,
-                      ),
-                      _IconAction(
-                        icon: Icons.copy_outlined,
-                        label: 'Duplicate',
-                        onTap: onDuplicate,
-                      ),
-                      _IconAction(
-                        icon: Icons.content_copy_outlined,
-                        label: 'Copy',
-                        onTap: onCopy,
-                      ),
-                      _IconAction(
-                        icon: Icons.group_add_outlined,
-                        label: 'Share',
-                        onTap: onShare,
-                      ),
-                      _IconAction(
-                        icon: Icons.history_outlined,
-                        label: 'Versions',
-                        onTap: onHistory,
-                      ),
-                      if (compact) ...[
-                        _IconAction(
-                          icon: Icons.upload_file_outlined,
-                          label: 'Import',
-                          onTap: onImport,
-                        ),
-                        _IconAction(
-                          icon: Icons.ios_share_outlined,
-                          label: 'Export',
-                          onTap: onExport,
-                        ),
-                      ] else ...[
-                        _TopBarCommand(
-                          icon: Icons.upload_file_outlined,
-                          label: 'Import',
-                          onTap: onImport,
-                        ),
-                        const SizedBox(width: 8),
-                        _TopBarCommand(
-                          icon: Icons.ios_share_outlined,
-                          label: 'Export',
-                          onTap: onExport,
-                          filled: true,
-                        ),
-                      ],
-                      _IconAction(
-                        icon: focusMode
-                            ? Icons.fullscreen_exit_outlined
-                            : Icons.fullscreen_outlined,
-                        label: focusMode ? 'Exit focus' : 'Focus',
-                        onTap: onToggleFocus,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _Ribbon extends StatelessWidget {
-  const _Ribbon({
-    required this.bold,
-    required this.italic,
-    required this.underline,
-    required this.strikethrough,
-    required this.showRuler,
-    required this.trackChanges,
-    required this.commentsMode,
-    required this.fontSize,
-    required this.zoom,
-    required this.fontFamily,
-    required this.style,
-    required this.alignment,
-    required this.audienceProfile,
-    required this.toneMode,
-    required this.inkColor,
-    required this.pageColor,
-    required this.onBold,
-    required this.onItalic,
-    required this.onUnderline,
-    required this.onStrikethrough,
-    required this.onRuler,
-    required this.onTrackChanges,
-    required this.onCommentsMode,
-    required this.onFontSize,
-    required this.onZoom,
-    required this.onFontFamily,
-    required this.onStyle,
-    required this.onAlignment,
-    required this.onAudienceProfile,
-    required this.onToneMode,
-    required this.onInkColor,
-    required this.onPageColor,
-    required this.onInsertTable,
-    required this.onInsertImage,
-    required this.onInsertVideo,
-    required this.onInsertChecklist,
-    required this.onInsertBulletList,
-    required this.onInsertOrderedList,
-    required this.onInsertSignature,
-    required this.onUndo,
-    required this.onRedo,
-    required this.onAcceptChanges,
-    required this.onRejectChanges,
-    required this.onSmartBrief,
-    required this.onSocialSummary,
-    required this.onCitationNudge,
-    required this.onActionDigest,
-  });
-
-  final bool bold;
-  final bool italic;
-  final bool underline;
-  final bool strikethrough;
-  final bool showRuler;
-  final bool trackChanges;
-  final bool commentsMode;
-  final double fontSize;
-  final double zoom;
-  final String fontFamily;
-  final String style;
-  final String alignment;
-  final String audienceProfile;
-  final String toneMode;
-  final Color inkColor;
-  final Color pageColor;
-  final VoidCallback onBold;
-  final VoidCallback onItalic;
-  final VoidCallback onUnderline;
-  final VoidCallback onStrikethrough;
-  final VoidCallback onRuler;
-  final VoidCallback onTrackChanges;
-  final VoidCallback onCommentsMode;
-  final ValueChanged<double> onFontSize;
-  final ValueChanged<double> onZoom;
-  final ValueChanged<String> onFontFamily;
-  final ValueChanged<String> onStyle;
-  final ValueChanged<String> onAlignment;
-  final ValueChanged<String> onAudienceProfile;
-  final ValueChanged<String> onToneMode;
-  final ValueChanged<Color> onInkColor;
-  final ValueChanged<Color> onPageColor;
-  final VoidCallback onInsertTable;
-  final VoidCallback onInsertImage;
-  final VoidCallback onInsertVideo;
-  final VoidCallback onInsertChecklist;
-  final VoidCallback onInsertBulletList;
-  final VoidCallback onInsertOrderedList;
-  final VoidCallback onInsertSignature;
-  final VoidCallback onUndo;
-  final VoidCallback onRedo;
-  final VoidCallback onAcceptChanges;
-  final VoidCallback onRejectChanges;
-  final VoidCallback onSmartBrief;
-  final VoidCallback onSocialSummary;
-  final VoidCallback onCitationNudge;
-  final VoidCallback onActionDigest;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xfffbfcfe),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 640;
-          return Container(
-            height: 112,
-            padding: EdgeInsets.fromLTRB(
-              compact ? 10 : 16,
-              10,
-              compact ? 10 : 16,
-              compact ? 8 : 12,
-            ),
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: Color(0xffdbe3ef))),
-            ),
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: [
-                _RibbonGroup(
-                  label: 'Document',
-                  child: Row(
-                    children: [
-                      _ToolButton(
-                        icon: Icons.table_chart_outlined,
-                        label: 'Table',
-                        onTap: onInsertTable,
-                      ),
-                      _ToolButton(
-                        icon: Icons.image_outlined,
-                        label: 'Image',
-                        onTap: onInsertImage,
-                      ),
-                      _ToolButton(
-                        icon: Icons.smart_display_outlined,
-                        label: 'Video',
-                        onTap: onInsertVideo,
-                      ),
-                      _ToolButton(
-                        icon: Icons.format_list_bulleted_outlined,
-                        label: 'Bullet',
-                        onTap: onInsertBulletList,
-                      ),
-                      _ToolButton(
-                        icon: Icons.format_list_numbered_outlined,
-                        label: 'List',
-                        onTap: onInsertOrderedList,
-                      ),
-                      _ToolButton(
-                        icon: Icons.checklist_outlined,
-                        label: 'Tasks',
-                        onTap: onInsertChecklist,
-                      ),
-                      _ToolButton(
-                        icon: Icons.draw_outlined,
-                        label: 'Sign',
-                        onTap: onInsertSignature,
-                      ),
-                    ],
-                  ),
-                ),
-                _RibbonGroup(
-                  label: 'Style',
-                  child: Row(
-                    children: [
-                      _DropdownChip(
-                        value: style,
-                        width: 112,
-                        values: const ['Body', 'Title', 'Heading', 'Quote'],
-                        onChanged: onStyle,
-                      ),
-                      const SizedBox(width: 8),
-                      _DropdownChip(
-                        value: fontFamily,
-                        width: 112,
-                        values: const ['Aptos', 'Arial', 'Georgia', 'Times'],
-                        onChanged: onFontFamily,
-                      ),
-                      const SizedBox(width: 8),
-                      _StepperChip(
-                        value: fontSize,
-                        min: 10,
-                        max: 34,
-                        onChanged: onFontSize,
-                      ),
-                    ],
-                  ),
-                ),
-                _RibbonGroup(
-                  label: 'Format',
-                  child: Row(
-                    children: [
-                      _ToggleTool(
-                        icon: Icons.format_bold,
-                        label: 'Bold',
-                        selected: bold,
-                        onTap: onBold,
-                      ),
-                      _ToggleTool(
-                        icon: Icons.format_italic,
-                        label: 'Italic',
-                        selected: italic,
-                        onTap: onItalic,
-                      ),
-                      _ToggleTool(
-                        icon: Icons.format_underlined,
-                        label: 'Underline',
-                        selected: underline,
-                        onTap: onUnderline,
-                      ),
-                      _ToggleTool(
-                        icon: Icons.format_strikethrough,
-                        label: 'Strike',
-                        selected: strikethrough,
-                        onTap: onStrikethrough,
-                      ),
-                      const SizedBox(width: 8),
-                      _DropdownChip(
-                        value: alignment,
-                        width: 112,
-                        values: const ['Left', 'Center', 'Right', 'Justify'],
-                        onChanged: onAlignment,
-                      ),
-                    ],
-                  ),
-                ),
-                _RibbonGroup(
-                  label: 'Color',
-                  child: Row(
-                    children: [
-                      _ColorDot(
-                        label: 'Ink',
-                        value: inkColor,
-                        colors: const [
-                          Color(0xff111827),
-                          Color(0xffb91c1c),
-                          Color(0xff047857),
-                          Color(0xff1d4ed8),
-                        ],
-                        onChanged: onInkColor,
-                      ),
-                      const SizedBox(width: 10),
-                      _ColorDot(
-                        label: 'Page',
-                        value: pageColor,
-                        colors: const [
-                          Colors.white,
-                          Color(0xfffffbeb),
-                          Color(0xffecfdf5),
-                          Color(0xffeff6ff),
-                        ],
-                        onChanged: onPageColor,
-                      ),
-                    ],
-                  ),
-                ),
-                _RibbonGroup(
-                  label: 'Review',
-                  child: Row(
-                    children: [
-                      _ToggleTool(
-                        icon: Icons.rate_review_outlined,
-                        label: 'Comments',
-                        selected: commentsMode,
-                        onTap: onCommentsMode,
-                      ),
-                      _ToggleTool(
-                        icon: Icons.change_circle_outlined,
-                        label: 'Track',
-                        selected: trackChanges,
-                        onTap: onTrackChanges,
-                      ),
-                      _ToggleTool(
-                        icon: Icons.straighten_outlined,
-                        label: 'Ruler',
-                        selected: showRuler,
-                        onTap: onRuler,
-                      ),
-                      const SizedBox(width: 8),
-                      _ToolButton(
-                        icon: Icons.undo_outlined,
-                        label: 'Undo',
-                        onTap: onUndo,
-                      ),
-                      _ToolButton(
-                        icon: Icons.redo_outlined,
-                        label: 'Redo',
-                        onTap: onRedo,
-                      ),
-                      const SizedBox(width: 8),
-                      _ToolButton(
-                        icon: Icons.done_all_outlined,
-                        label: 'Accept',
-                        onTap: onAcceptChanges,
-                      ),
-                      _ToolButton(
-                        icon: Icons.replay_outlined,
-                        label: 'Reject',
-                        onTap: onRejectChanges,
-                      ),
-                    ],
-                  ),
-                ),
-                _RibbonGroup(
-                  label: 'Smart',
-                  child: Row(
-                    children: [
-                      _DropdownChip(
-                        value: audienceProfile,
-                        width: 128,
-                        values: const ['Millennial', 'Gen Z', 'Alpha', 'Beta'],
-                        onChanged: onAudienceProfile,
-                      ),
-                      const SizedBox(width: 8),
-                      _DropdownChip(
-                        value: toneMode,
-                        width: 112,
-                        values: const ['Clear', 'Warm', 'Bold', 'Brief'],
-                        onChanged: onToneMode,
-                      ),
-                      const SizedBox(width: 8),
-                      _ToolButton(
-                        icon: Icons.auto_awesome_outlined,
-                        label: 'Brief',
-                        onTap: onSmartBrief,
-                      ),
-                      _ToolButton(
-                        icon: Icons.ios_share_outlined,
-                        label: 'Social',
-                        onTap: onSocialSummary,
-                      ),
-                      _ToolButton(
-                        icon: Icons.verified_outlined,
-                        label: 'Source',
-                        onTap: onCitationNudge,
-                      ),
-                      _ToolButton(
-                        icon: Icons.task_alt_outlined,
-                        label: 'Actions',
-                        onTap: onActionDigest,
-                      ),
-                    ],
-                  ),
-                ),
-                _RibbonGroup(
-                  label: 'View',
-                  child: SizedBox(
-                    width: 180,
-                    child: Row(
-                      children: [
-                        const Icon(Icons.zoom_in_outlined, size: 20),
-                        Expanded(
-                          child: Slider(
-                            value: zoom,
-                            min: .75,
-                            max: 1.4,
-                            divisions: 13,
-                            onChanged: onZoom,
-                          ),
-                        ),
-                        Text('${(zoom * 100).round()}%'),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _EditorWorkspace extends StatelessWidget {
-  const _EditorWorkspace({
-    required this.srqController,
-    required this.editorFocusNode,
-    required this.editorStyle,
-    required this.textAlign,
-    required this.showRuler,
-    required this.pageColor,
-    required this.zoom,
-    required this.focusMode,
-    required this.wordCount,
-    required this.readingMinutes,
-    required this.characterCount,
-    required this.mediaBlocks,
-    required this.onRemoveMedia,
-    required this.onToggleNavigation,
-    required this.onToggleInspector,
-  });
-
-  final SrqController srqController;
-  final FocusNode editorFocusNode;
-  final TextStyle editorStyle;
-  final TextAlign textAlign;
-  final bool showRuler;
-  final Color pageColor;
-  final double zoom;
-  final bool focusMode;
-  final int wordCount;
-  final int readingMinutes;
-  final int characterCount;
-  final List<_MediaBlock> mediaBlocks;
-  final ValueChanged<String> onRemoveMedia;
-  final VoidCallback onToggleNavigation;
-  final VoidCallback onToggleInspector;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        if (!focusMode)
-          Container(
-            height: 44,
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            color: const Color(0xffeef3f9),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final compact = constraints.maxWidth < 520;
-                final stats = compact
-                    ? '$wordCount words • ${readingMinutes}m'
-                    : '$wordCount words  •  $characterCount chars  •  $readingMinutes min read';
-                return Row(
-                  children: [
-                    _IconAction(
-                      icon: Icons.menu_open_outlined,
-                      label: 'Navigation',
-                      onTap: onToggleNavigation,
-                    ),
-                    _IconAction(
-                      icon: Icons.tune_outlined,
-                      label: 'Inspector',
-                      onTap: onToggleInspector,
-                    ),
-                    const Spacer(),
-                    Flexible(
-                      child: Text(
-                        stats,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: const Color(0xff526070),
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
-        Expanded(
-          child: ColoredBox(
-            color: focusMode
-                ? const Color(0xfff8fafc)
-                : const Color(0xffe9eff7),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final compact = constraints.maxWidth < 560;
-                final edgePadding = compact ? 10.0 : 22.0;
-                final availableWidth = math.max(
-                  280.0,
-                  constraints.maxWidth - (edgePadding * 2),
-                );
-                final pageWidth = math.min(760.0, availableWidth / zoom);
-                final pageHeight = math.max(
-                  constraints.maxHeight - 56,
-                  pageWidth * 1.29,
-                );
-                final pageInset = compact
-                    ? 24.0
-                    : pageWidth < 620
-                    ? 42.0
-                    : 72.0;
-
-                return Center(
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.fromLTRB(
-                      edgePadding,
-                      compact ? 14 : 28,
-                      edgePadding,
-                      40,
-                    ),
-                    child: Transform.scale(
-                      scale: zoom,
-                      alignment: Alignment.topCenter,
-                      child: Container(
-                        width: pageWidth,
-                        constraints: BoxConstraints(minHeight: pageHeight),
-                        decoration: BoxDecoration(
-                          color: pageColor,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xffd6dee9)),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0x1f0f172a),
-                              blurRadius: 28,
-                              offset: Offset(0, 16),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          children: [
-                            if (showRuler) const _Ruler(),
-                            Padding(
-                              padding: EdgeInsets.fromLTRB(
-                                pageInset,
-                                compact ? 30 : 56,
-                                pageInset,
-                                compact ? 42 : 72,
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  for (final block in mediaBlocks) ...[
-                                    _MediaDocumentBlock(
-                                      block: block,
-                                      onRemove: () => onRemoveMedia(block.id),
-                                    ),
-                                    const SizedBox(height: 18),
-                                  ],
-                                  TextField(
-                                    key: const ValueKey('document-editor'),
-                                    controller: srqController.textController,
-                                    focusNode: editorFocusNode,
-                                    maxLines: null,
-                                    minLines: 28,
-                                    keyboardType: TextInputType.multiline,
-                                    textAlign: textAlign,
-                                    style: editorStyle,
-                                    cursorColor: const Color(0xff2563eb),
-                                    decoration: const InputDecoration(
-                                      border: InputBorder.none,
-                                      hintText:
-                                          'Start writing your document...',
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _MediaDocumentBlock extends StatelessWidget {
-  const _MediaDocumentBlock({required this.block, required this.onRemove});
-
-  final _MediaBlock block;
-  final VoidCallback onRemove;
-
-  @override
-  Widget build(BuildContext context) {
-    final isImage = block.type == _MediaType.image;
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: const Color(0xfff8fafc),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xffdbe3ef)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          AspectRatio(
-            aspectRatio: isImage ? 16 / 9 : 16 / 6,
-            child: isImage
-                ? block.bytes == null
-                      ? Image.network(
-                          block.source,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) =>
-                              _MediaFallback(block: block),
-                        )
-                      : Image.memory(
-                          block.bytes!,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) =>
-                              _MediaFallback(block: block),
-                        )
-                : _VideoPreview(block: block),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-            child: Row(
-              children: [
-                Icon(block.type.icon, size: 18, color: const Color(0xff2563eb)),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    block.caption.isEmpty ? block.source : block.caption,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Remove media',
-                  onPressed: onRemove,
-                  icon: const Icon(Icons.close, size: 18),
-                  visualDensity: VisualDensity.compact,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _VideoPreview extends StatelessWidget {
-  const _VideoPreview({required this.block});
-
-  final _MediaBlock block;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Color(0xff111827), Color(0xff334155)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-      child: Stack(
-        children: [
-          Center(
-            child: Container(
-              width: 64,
-              height: 64,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white,
-              ),
-              child: const Icon(
-                Icons.play_arrow_rounded,
-                color: Color(0xff2563eb),
-                size: 42,
-              ),
-            ),
-          ),
-          Positioned(
-            top: 12,
-            left: 14,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: const Color(0x33000000),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                child: Text(
-                  block.bytes == null ? 'Linked video' : 'Device video',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            left: 14,
-            right: 14,
-            bottom: 12,
-            child: Text(
-              block.source,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MediaFallback extends StatelessWidget {
-  const _MediaFallback({required this.block});
-
-  final _MediaBlock block;
-
-  @override
-  Widget build(BuildContext context) {
-    return ColoredBox(
-      color: const Color(0xffeef3f9),
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(block.type.icon, size: 42, color: const Color(0xff64748b)),
-              const SizedBox(height: 8),
-              Text(
-                block.source,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Color(0xff475569)),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _NavigationRailPanel extends StatelessWidget {
-  const _NavigationRailPanel({
-    required this.headings,
-    required this.searchController,
-    required this.replaceController,
-    required this.searchMatches,
-    required this.currentMatchIndex,
-    required this.onFindNext,
-    required this.onFindPrev,
-    required this.onReplaceOne,
-    required this.onReplaceAll,
-    required this.onClose,
-  });
-
-  final List<String> headings;
-  final TextEditingController searchController;
-  final TextEditingController replaceController;
-  final int searchMatches;
-  final int currentMatchIndex;
-  final VoidCallback onFindNext;
-  final VoidCallback onFindPrev;
-  final VoidCallback onReplaceOne;
-  final VoidCallback onReplaceAll;
-  final VoidCallback onClose;
-
-  @override
-  Widget build(BuildContext context) {
-    final hasQuery = searchController.text.trim().isNotEmpty;
-    final matchLabel = !hasQuery
-        ? ''
-        : searchMatches == 0
-            ? 'No matches'
-            : '${currentMatchIndex < 0 ? 1 : currentMatchIndex + 1}/$searchMatches';
-
-    return Container(
-      width: double.infinity,
-      color: Colors.white,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _PanelHeader(
-            title: 'Navigation',
-            icon: Icons.subject_outlined,
-            onClose: onClose,
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
-            child: TextField(
-              controller: searchController,
-              decoration: InputDecoration(
-                prefixIcon: const Icon(Icons.search_outlined, size: 18),
-                suffix: hasQuery
-                    ? Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            matchLabel,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: Color(0xff6b7280),
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          InkWell(
-                            onTap: onFindPrev,
-                            child: const Icon(Icons.keyboard_arrow_up, size: 18),
-                          ),
-                          InkWell(
-                            onTap: onFindNext,
-                            child: const Icon(Icons.keyboard_arrow_down, size: 18),
-                          ),
-                        ],
-                      )
-                    : null,
-                hintText: 'Find in document',
-                isDense: true,
-                filled: true,
-                fillColor: const Color(0xfff6f8fb),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: replaceController,
-                    decoration: InputDecoration(
-                      prefixIcon: const Icon(Icons.find_replace_outlined, size: 18),
-                      hintText: 'Replace with',
-                      isDense: true,
-                      filled: true,
-                      fillColor: const Color(0xfff6f8fb),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Tooltip(
-                  message: 'Replace',
-                  child: IconButton(
-                    onPressed: hasQuery ? onReplaceOne : null,
-                    icon: const Icon(Icons.published_with_changes_outlined, size: 18),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                ),
-                Tooltip(
-                  message: 'Replace all',
-                  child: IconButton(
-                    onPressed: hasQuery ? onReplaceAll : null,
-                    icon: const Icon(Icons.sync_outlined, size: 18),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 4, 16, 6),
-            child: Text(
-              'Outline',
-              style: TextStyle(fontWeight: FontWeight.w700),
-            ),
-          ),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(10, 0, 10, 16),
-              children: [
-                for (final heading in headings)
-                  ListTile(
-                    dense: true,
-                    leading: const Icon(Icons.notes_outlined, size: 20),
-                    title: Text(
-                      heading,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                if (headings.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text('Headings appear here as you write.'),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _InspectorPanel extends StatelessWidget {
-  const _InspectorPanel({
-    required this.wordCount,
-    required this.characterCount,
-    required this.readingMinutes,
-    required this.commentsMode,
-    required this.trackChanges,
-    required this.permission,
-    required this.template,
-    required this.savedAt,
-    required this.activeVersion,
-    required this.collaborators,
-    required this.versions,
-    required this.mediaCount,
-    required this.imageCount,
-    required this.videoCount,
-    required this.audienceProfile,
-    required this.toneMode,
-    required this.clarityScore,
-    required this.attentionScore,
-    required this.averageSentenceLength,
-    required this.sourceCount,
-    required this.citationNudgeCount,
-    required this.actionItems,
-    required this.onSave,
-    required this.onShare,
-    required this.onHistory,
-    required this.onSmartBrief,
-    required this.onActionDigest,
-    required this.onCommentsToggle,
-    required this.onTrackChangesToggle,
-    required this.onPermissionChange,
-    required this.onAudienceProfileChange,
-    required this.onToneModeChange,
-    required this.onClose,
-  });
-
-  final int wordCount;
-  final int characterCount;
-  final int readingMinutes;
-  final bool commentsMode;
-  final bool trackChanges;
-  final String permission;
-  final String template;
-  final DateTime savedAt;
-  final String activeVersion;
-  final List<_Collaborator> collaborators;
-  final List<_DocumentVersion> versions;
-  final int mediaCount;
-  final int imageCount;
-  final int videoCount;
-  final String audienceProfile;
-  final String toneMode;
-  final int clarityScore;
-  final int attentionScore;
-  final int averageSentenceLength;
-  final int sourceCount;
-  final int citationNudgeCount;
-  final List<String> actionItems;
-  final VoidCallback onSave;
-  final VoidCallback onShare;
-  final VoidCallback onHistory;
-  final VoidCallback onSmartBrief;
-  final VoidCallback onActionDigest;
-  final VoidCallback onCommentsToggle;
-  final VoidCallback onTrackChangesToggle;
-  final ValueChanged<String> onPermissionChange;
-  final ValueChanged<String> onAudienceProfileChange;
-  final ValueChanged<String> onToneModeChange;
-  final VoidCallback onClose;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      color: Colors.white,
-      child: ListView(
-        children: [
-          _PanelHeader(
-            title: 'Inspector',
-            icon: Icons.fact_check_outlined,
-            onClose: onClose,
-          ),
-          Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: _MetricCard(label: 'Words', value: '$wordCount'),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _MetricCard(
-                        label: 'Read',
-                        value: '${readingMinutes}m',
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                _MetricCard(label: 'Characters', value: '$characterCount'),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _MetricCard(label: 'Images', value: '$imageCount'),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _MetricCard(label: 'Videos', value: '$videoCount'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _MetricCard(
-                        label: 'Clarity',
-                        value: '$clarityScore',
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _MetricCard(
-                        label: 'Attention',
-                        value: '$attentionScore',
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          _InspectorSelectTile(
-            icon: Icons.psychology_alt_outlined,
-            title: 'Audience',
-            value: audienceProfile,
-            options: const ['Millennial', 'Gen Z', 'Alpha', 'Beta'],
-            color: const Color(0xff7c3aed),
-            onChanged: onAudienceProfileChange,
-          ),
-          _InspectorSelectTile(
-            icon: Icons.record_voice_over_outlined,
-            title: 'Tone',
-            value: toneMode,
-            options: const ['Clear', 'Warm', 'Bold', 'Brief'],
-            color: const Color(0xff7c3aed),
-            onChanged: onToneModeChange,
-          ),
-          _StatusTile(
-            icon: Icons.speed_outlined,
-            title: 'Scanability',
-            value: '$averageSentenceLength words per sentence',
-            color: averageSentenceLength <= 18
-                ? const Color(0xff047857)
-                : const Color(0xffb45309),
-          ),
-          _StatusTile(
-            icon: Icons.verified_outlined,
-            title: 'Trust layer',
-            value: citationNudgeCount == 0
-                ? '$sourceCount source signal${sourceCount == 1 ? '' : 's'} found'
-                : '$citationNudgeCount claim${citationNudgeCount == 1 ? '' : 's'} may need a source',
-            color: citationNudgeCount == 0
-                ? const Color(0xff047857)
-                : const Color(0xffbe123c),
-          ),
-          _StatusTile(
-            icon: Icons.perm_media_outlined,
-            title: 'Media',
-            value:
-                '$mediaCount embedded block${mediaCount == 1 ? '' : 's'} in document',
-            color: const Color(0xffbe123c),
-          ),
-          _InspectorToggleTile(
-            icon: Icons.rate_review_outlined,
-            title: 'Comments',
-            subtitle: commentsMode ? 'Open for review' : 'Hidden',
-            value: commentsMode,
-            activeColor: const Color(0xff047857),
-            onToggle: onCommentsToggle,
-          ),
-          _InspectorToggleTile(
-            icon: Icons.change_circle_outlined,
-            title: 'Track changes',
-            subtitle: trackChanges ? 'Recording edits' : 'Paused',
-            value: trackChanges,
-            activeColor: const Color(0xff1d4ed8),
-            onToggle: onTrackChangesToggle,
-          ),
-          _InspectorSelectTile(
-            icon: Icons.lock_open_outlined,
-            title: 'Permission',
-            value: permission,
-            options: const ['Can view', 'Can comment', 'Can edit'],
-            color: const Color(0xff7c3aed),
-            onChanged: onPermissionChange,
-          ),
-          _StatusTile(
-            icon: Icons.dashboard_customize_outlined,
-            title: 'Template',
-            value: template,
-            color: const Color(0xff0f766e),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: onSave,
-                    icon: const Icon(Icons.save_outlined),
-                    label: const Text('Save'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: onShare,
-                    icon: const Icon(Icons.group_add_outlined),
-                    label: const Text('Share'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: onSmartBrief,
-                    icon: const Icon(Icons.auto_awesome_outlined),
-                    label: const Text('Brief'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: onActionDigest,
-                    icon: const Icon(Icons.task_alt_outlined),
-                    label: const Text('Actions'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 18, 16, 8),
-            child: Text(
-              'Next actions',
-              style: TextStyle(fontWeight: FontWeight.w700),
-            ),
-          ),
-          if (actionItems.isEmpty)
-            const _SuggestionTile(
-              icon: Icons.task_alt_outlined,
-              title: 'No open actions',
-              body: 'Add [ ] tasks or owner lines to build a digest.',
-            )
-          else
-            for (final item in actionItems)
-              _SuggestionTile(
-                icon: Icons.task_alt_outlined,
-                title: 'Action',
-                body: item,
-              ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 18, 16, 8),
-            child: Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Collaborators',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
-                TextButton(onPressed: onShare, child: const Text('Manage')),
-              ],
-            ),
-          ),
-          for (final collaborator in collaborators)
-            ListTile(
-              dense: true,
-              leading: CircleAvatar(
-                radius: 15,
-                backgroundColor: collaborator.color,
-                child: Text(
-                  collaborator.name.substring(0, 1),
-                  style: const TextStyle(color: Colors.white, fontSize: 12),
-                ),
-              ),
-              title: Text(collaborator.name),
-              subtitle: Text(collaborator.status),
-            ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 18, 16, 8),
-            child: Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Version history',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
-                TextButton(onPressed: onHistory, child: const Text('Open')),
-              ],
-            ),
-          ),
-          ListTile(
-            dense: true,
-            leading: const Icon(Icons.history_outlined),
-            title: Text('$activeVersion saved ${_formatTime(savedAt)}'),
-            subtitle: Text('${versions.length} saved versions'),
-          ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 18, 16, 8),
-            child: Text(
-              'Comments',
-              style: TextStyle(fontWeight: FontWeight.w700),
-            ),
-          ),
-          const _CommentCard(
-            author: 'Asha',
-            body: 'Strengthen the objective with one measurable outcome.',
-          ),
-          const _CommentCard(
-            author: 'Legal',
-            body: 'Check whether this proposal needs a confidentiality note.',
-          ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 18, 16, 8),
-            child: Text(
-              'Suggestions',
-              style: TextStyle(fontWeight: FontWeight.w700),
-            ),
-          ),
-          const _SuggestionTile(
-            icon: Icons.spellcheck_outlined,
-            title: 'Tone',
-            body: 'The document reads clear and professional.',
-          ),
-          const _SuggestionTile(
-            icon: Icons.format_line_spacing_outlined,
-            title: 'Layout',
-            body: 'Margins and line height are ready for print.',
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Ruler extends StatelessWidget {
-  const _Ruler();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 32,
-      padding: const EdgeInsets.symmetric(horizontal: 72),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xffe5e7eb))),
-      ),
-      child: Row(
-        children: List.generate(
-          12,
-          (index) => Expanded(
-            child: Align(
-              alignment: Alignment.bottomLeft,
-              child: Container(
-                width: 1,
-                height: index.isEven ? 15 : 8,
-                color: const Color(0xffb6c1d1),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _RibbonGroup extends StatelessWidget {
-  const _RibbonGroup({required this.label, required this.child});
-
-  final String label;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(right: 14),
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 5),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: const Color(0xffe2e8f0)),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          child,
-          const SizedBox(height: 6),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Color(0xff64748b),
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _IconAction extends StatelessWidget {
-  const _IconAction({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: label,
-      child: IconButton(
-        onPressed: onTap,
-        icon: Icon(icon),
-        visualDensity: VisualDensity.compact,
-      ),
-    );
-  }
-}
-
-class _TopBarCommand extends StatelessWidget {
-  const _TopBarCommand({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.filled = false,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final bool filled;
-
-  @override
-  Widget build(BuildContext context) {
-    final shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(8),
-    );
-    final iconWidget = Icon(icon, size: 18);
-    final labelWidget = Text(label);
-    return SizedBox(
-      height: 38,
-      child: filled
-          ? FilledButton.icon(
-              onPressed: onTap,
-              icon: iconWidget,
-              label: labelWidget,
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                shape: shape,
-              ),
-            )
-          : OutlinedButton.icon(
-              onPressed: onTap,
-              icon: iconWidget,
-              label: labelWidget,
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                shape: shape,
-              ),
-            ),
-    );
-  }
-}
-
-class _ToolButton extends StatelessWidget {
-  const _ToolButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: label,
-      child: SizedBox(
-        width: 46,
-        height: 42,
-        child: IconButton(
-          onPressed: onTap,
-          icon: Icon(icon),
-          style: IconButton.styleFrom(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ToggleTool extends StatelessWidget {
-  const _ToggleTool({
-    required this.icon,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: label,
-      child: Padding(
-        padding: const EdgeInsets.only(right: 4),
-        child: IconButton(
-          isSelected: selected,
-          selectedIcon: Icon(icon),
-          onPressed: onTap,
-          icon: Icon(icon),
-          style: IconButton.styleFrom(
-            backgroundColor: selected
-                ? const Color(0xffdbeafe)
-                : Colors.transparent,
-            foregroundColor: selected
-                ? const Color(0xff1d4ed8)
-                : const Color(0xff334155),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _DropdownChip extends StatelessWidget {
-  const _DropdownChip({
-    required this.value,
-    required this.values,
-    required this.onChanged,
-    required this.width,
-  });
-
-  final String value;
-  final List<String> values;
-  final ValueChanged<String> onChanged;
-  final double width;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: width,
-      height: 38,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xffd6dee9)),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: value,
-          isExpanded: true,
-          icon: const Icon(Icons.expand_more, size: 18),
-          items: [
-            for (final option in values)
-              DropdownMenuItem(value: option, child: Text(option)),
-          ],
-          onChanged: (value) {
-            if (value != null) {
-              onChanged(value);
-            }
-          },
-        ),
-      ),
-    );
-  }
-}
-
-class _StepperChip extends StatelessWidget {
-  const _StepperChip({
-    required this.value,
-    required this.min,
-    required this.max,
-    required this.onChanged,
-  });
-
-  final double value;
-  final double min;
-  final double max;
-  final ValueChanged<double> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 38,
-      decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xffd6dee9)),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            onPressed: value <= min ? null : () => onChanged(value - 1),
-            icon: const Icon(Icons.remove, size: 18),
-          ),
-          SizedBox(
-            width: 32,
-            child: Text(
-              value.round().toString(),
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-          ),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            onPressed: value >= max ? null : () => onChanged(value + 1),
-            icon: const Icon(Icons.add, size: 18),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ColorDot extends StatelessWidget {
-  const _ColorDot({
-    required this.label,
-    required this.value,
-    required this.colors,
-    required this.onChanged,
-  });
-
-  final String label;
-  final Color value;
-  final List<Color> colors;
-  final ValueChanged<Color> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-        const SizedBox(width: 6),
-        for (final color in colors)
-          Tooltip(
-            message: label,
-            child: InkWell(
-              onTap: () => onChanged(color),
-              borderRadius: BorderRadius.circular(999),
-              child: Container(
-                width: 24,
-                height: 24,
-                margin: const EdgeInsets.only(right: 5),
-                decoration: BoxDecoration(
-                  color: color,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: value == color
-                        ? const Color(0xff2563eb)
-                        : const Color(0xffcbd5e1),
-                    width: value == color ? 3 : 1,
-                  ),
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _PanelHeader extends StatelessWidget {
-  const _PanelHeader({
-    required this.title,
-    required this.icon,
-    required this.onClose,
-  });
-
-  final String title;
-  final IconData icon;
-  final VoidCallback onClose;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 54,
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xffe5e7eb))),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, size: 21, color: const Color(0xff2563eb)),
-          const SizedBox(width: 8),
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-          const Spacer(),
-          IconButton(
-            tooltip: 'Close',
-            onPressed: onClose,
-            icon: const Icon(Icons.close, size: 20),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MetricCard extends StatelessWidget {
-  const _MetricCard({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xfff6f8fb),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xffe2e8f0)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            value,
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 2),
-          Text(label, style: const TextStyle(color: Color(0xff64748b))),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatusTile extends StatelessWidget {
-  const _StatusTile({
-    required this.icon,
-    required this.title,
-    required this.value,
-    required this.color,
-  });
-
-  final IconData icon;
-  final String title;
-  final String value;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(icon, color: color),
-      title: Text(title),
-      subtitle: Text(value),
-      dense: true,
-    );
-  }
-}
-
-class _InspectorToggleTile extends StatelessWidget {
-  const _InspectorToggleTile({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.value,
-    required this.activeColor,
-    required this.onToggle,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final bool value;
-  final Color activeColor;
-  final VoidCallback onToggle;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      dense: true,
-      leading: Icon(icon, color: value ? activeColor : Colors.grey),
-      title: Text(title),
-      subtitle: Text(subtitle),
-      trailing: Switch(
-        value: value,
-        activeThumbColor: activeColor,
-        activeTrackColor: activeColor.withValues(alpha: 0.35),
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        onChanged: (_) => onToggle(),
-      ),
-    );
-  }
-}
-
-class _InspectorSelectTile extends StatelessWidget {
-  const _InspectorSelectTile({
-    required this.icon,
-    required this.title,
-    required this.value,
-    required this.options,
-    required this.color,
-    required this.onChanged,
-  });
-
-  final IconData icon;
-  final String title;
-  final String value;
-  final List<String> options;
-  final Color color;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      dense: true,
-      leading: Icon(icon, color: color),
-      title: Text(title),
-      trailing: DropdownButton<String>(
-        value: value,
-        underline: const SizedBox.shrink(),
-        style: Theme.of(context).textTheme.bodyMedium,
-        isDense: true,
-        items: options
-            .map((o) => DropdownMenuItem(value: o, child: Text(o)))
-            .toList(),
-        onChanged: (v) {
-          if (v != null) onChanged(v);
-        },
-      ),
-    );
-  }
-}
-
-class _CommentCard extends StatelessWidget {
-  const _CommentCard({required this.author, required this.body});
-
-  final String author;
-  final String body;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(14, 0, 14, 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xfffffbeb),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xfffde68a)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(author, style: const TextStyle(fontWeight: FontWeight.w800)),
-          const SizedBox(height: 4),
-          Text(body),
-        ],
-      ),
-    );
-  }
-}
-
-class _SuggestionTile extends StatelessWidget {
-  const _SuggestionTile({
-    required this.icon,
-    required this.title,
-    required this.body,
-  });
-
-  final IconData icon;
-  final String title;
-  final String body;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(icon, color: const Color(0xff2563eb)),
-      title: Text(title),
-      subtitle: Text(body),
-      dense: true,
-    );
-  }
-}
-
-class _ExportTile extends StatelessWidget {
-  const _ExportTile({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 142,
-      child: OutlinedButton.icon(
-        onPressed: onTap,
-        icon: Icon(icon),
-        label: Text(label),
-        style: OutlinedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
-      ),
-    );
-  }
-}
-
-class _TemplateTile extends StatelessWidget {
-  const _TemplateTile({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 156,
-      child: OutlinedButton.icon(
-        onPressed: onTap,
-        icon: Icon(
-          selected ? Icons.radio_button_checked : Icons.article_outlined,
-        ),
-        label: Text(label),
-        style: OutlinedButton.styleFrom(
-          alignment: Alignment.centerLeft,
-          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
-      ),
-    );
-  }
-}
-
-class _DocumentVersion {
-  const _DocumentVersion(
-    this.id,
-    this.label,
-    this.title,
-    this.body,
-    this.mediaBlocks,
-    this.createdAt,
-    this.wordCount,
-  );
-
-  final String id;
-  final String label;
-  final String title;
-  final String body;
-  final List<_MediaBlock> mediaBlocks;
-  final DateTime createdAt;
-  final int wordCount;
-}
-
-enum _MediaType {
-  image('Image', Icons.image_outlined),
-  video('Video', Icons.smart_display_outlined);
-
-  const _MediaType(this.label, this.icon);
-
-  final String label;
-  final IconData icon;
-
-  List<String> get allowedExtensions {
-    return switch (this) {
-      _MediaType.image => const ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'],
-      _MediaType.video => const ['mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi'],
-    };
-  }
-}
-
-class _MediaBlock {
-  const _MediaBlock({
-    required this.id,
-    required this.type,
-    required this.source,
-    required this.caption,
-    required this.bytes,
-  });
-
-  final String id;
-  final _MediaType type;
-  final String source;
-  final String caption;
-  final Uint8List? bytes;
-}
-
-class _Collaborator {
-  const _Collaborator(this.name, this.status, this.color);
-
-  final String name;
-  final String status;
-  final Color color;
-}
-
-class ImportedDocument {
-  const ImportedDocument({required this.text, required this.formatLabel});
-
-  final String text;
-  final String formatLabel;
-}
-
-ImportedDocument parseImportedDocument(Uint8List bytes, String fileName) {
-  final extension = _fileExtension(fileName);
-  return switch (extension) {
-    'docx' => ImportedDocument(
-      text: _extractDocxText(bytes),
-      formatLabel: 'DOCX',
-    ),
-    'txt' || 'md' || 'markdown' => ImportedDocument(
-      text: _decodeText(bytes),
-      formatLabel: extension == 'txt' ? 'text' : 'Markdown',
-    ),
-    'rtf' => ImportedDocument(
-      text: _stripRtf(_decodeText(bytes)),
-      formatLabel: 'RTF',
-    ),
-    'html' || 'htm' => ImportedDocument(
-      text: _stripHtml(_decodeText(bytes)),
-      formatLabel: 'HTML',
-    ),
-    'csv' => ImportedDocument(
-      text: _csvToReadableText(_decodeText(bytes)),
-      formatLabel: 'CSV',
-    ),
-    _ => throw FormatException('Unsupported file type: .$extension'),
-  };
-}
-
-String _extractDocxText(Uint8List bytes) {
-  final archive = ZipDecoder().decodeBytes(bytes);
-  final documentFile = archive.files
-      .where((file) => file.name == 'word/document.xml')
-      .firstOrNull;
-  if (documentFile == null) {
-    throw const FormatException(
-      'This DOCX file has no readable document body.',
-    );
-  }
-
-  final document = XmlDocument.parse(utf8.decode(documentFile.content));
-  final body = document.descendants.whereType<XmlElement>().firstWhere(
-    (element) => element.name.local == 'body',
-    orElse: () => document.rootElement,
-  );
-  final blocks = <String>[];
-
-  for (final child in body.childElements) {
-    switch (child.name.local) {
-      case 'p':
-        final text = _extractDocxParagraphText(child);
-        if (text.trim().isNotEmpty) {
-          blocks.add(text);
-        }
-      case 'tbl':
-        final table = _extractDocxTableText(child);
-        if (table.trim().isNotEmpty) {
-          blocks.add(table);
-        }
-    }
-  }
-
-  return blocks.join('\n\n');
-}
-
-String _extractDocxParagraphText(XmlElement paragraph) {
-  final buffer = StringBuffer();
-  for (final node in paragraph.descendants.whereType<XmlElement>()) {
-    switch (node.name.local) {
-      case 't':
-        buffer.write(node.innerText);
-      case 'tab':
-        buffer.write('\t');
-      case 'br':
-        buffer.write('\n');
-    }
-  }
-  return buffer.toString().trimRight();
-}
-
-String _extractDocxTableText(XmlElement table) {
-  final rows = <List<String>>[];
-  for (final row in table.childElements.where(
-    (element) => element.name.local == 'tr',
-  )) {
-    final cells = row.childElements
-        .where((element) => element.name.local == 'tc')
-        .map((cell) {
-          final paragraphs = cell.childElements
-              .where((element) => element.name.local == 'p')
-              .map(_extractDocxParagraphText)
-              .where((text) => text.trim().isNotEmpty)
-              .map((text) => text.trim())
-              .toList();
-          return paragraphs.join(' ');
-        })
-        .toList();
-    if (cells.any((cell) => cell.trim().isNotEmpty)) {
-      rows.add(cells);
-    }
-  }
-  return _rowsToMarkdownTable(rows);
-}
-
-String _decodeText(Uint8List bytes) {
-  try {
-    return utf8.decode(bytes);
-  } on FormatException {
-    return latin1.decode(bytes);
-  }
-}
-
-String _stripHtml(String value) {
-  return value
-      .replaceAllMapped(
-        RegExp(
-          r'<\s*table\b[^>]*>.*?</\s*table\s*>',
-          caseSensitive: false,
-          dotAll: true,
-        ),
-        (match) => '\n${_extractHtmlTableText(match.group(0) ?? '')}\n',
-      )
-      .replaceAll(RegExp(r'<\s*br\s*/?\s*>', caseSensitive: false), '\n')
-      .replaceAll(
-        RegExp(r'</\s*(p|div|h[1-6]|li|tr)\s*>', caseSensitive: false),
-        '\n',
-      )
-      .replaceAll(RegExp(r'<[^>]+>'), ' ')
-      .replaceAll('&nbsp;', ' ')
-      .replaceAll('&amp;', '&')
-      .replaceAll('&lt;', '<')
-      .replaceAll('&gt;', '>')
-      .replaceAll(RegExp(r'[ \t]+'), ' ')
-      .replaceAll(RegExp(r'\n{3,}'), '\n\n')
-      .trim();
-}
-
-String _extractHtmlTableText(String table) {
-  final rows =
-      RegExp(
-            r'<\s*tr\b[^>]*>(.*?)</\s*tr\s*>',
-            caseSensitive: false,
-            dotAll: true,
-          )
-          .allMatches(table)
-          .map((rowMatch) {
-            final rowHtml = rowMatch.group(1) ?? '';
-            return RegExp(
-                  r'<\s*(td|th)\b[^>]*>(.*?)</\s*\1\s*>',
-                  caseSensitive: false,
-                  dotAll: true,
-                )
-                .allMatches(rowHtml)
-                .map((cellMatch) => _stripHtml(cellMatch.group(2) ?? ''))
-                .toList();
-          })
-          .where((row) => row.any((cell) => cell.trim().isNotEmpty))
-          .toList();
-  return _rowsToMarkdownTable(rows);
-}
-
-String _stripRtf(String value) {
-  return value
-      .replaceAll(RegExp(r'\\par[d]?'), '\n')
-      .replaceAll(RegExp(r'\\tab'), '\t')
-      .replaceAll(RegExp(r"\\'[0-9a-fA-F]{2}"), '')
-      .replaceAll(RegExp(r'\\[a-zA-Z]+\d* ?'), '')
-      .replaceAll(RegExp(r'[{}]'), '')
-      .replaceAll(RegExp(r'\n{3,}'), '\n\n')
-      .trim();
-}
-
-String _csvToReadableText(String value) {
-  final rows = value
-      .split('\n')
-      .map((line) => line.trim())
-      .where((line) => line.isNotEmpty)
-      .map(_parseCsvLine)
-      .toList();
-  return _rowsToMarkdownTable(rows);
-}
-
-List<String> _parseCsvLine(String line) {
-  final cells = <String>[];
-  final buffer = StringBuffer();
-  var quoted = false;
-
-  for (var index = 0; index < line.length; index += 1) {
-    final char = line[index];
-    if (char == '"') {
-      final isEscapedQuote =
-          quoted && index + 1 < line.length && line[index + 1] == '"';
-      if (isEscapedQuote) {
-        buffer.write('"');
-        index += 1;
-      } else {
-        quoted = !quoted;
-      }
-    } else if (char == ',' && !quoted) {
-      cells.add(buffer.toString().trim());
-      buffer.clear();
-    } else {
-      buffer.write(char);
-    }
-  }
-
-  cells.add(buffer.toString().trim());
-  return cells;
-}
-
-String _rowsToMarkdownTable(List<List<String>> rows) {
-  if (rows.isEmpty) {
-    return '';
-  }
-
-  final columnCount = rows.fold<int>(
-    0,
-    (count, row) => math.max(count, row.length),
-  );
-  if (columnCount == 0) {
-    return '';
-  }
-
-  final normalizedRows = rows
-      .map(
-        (row) => List<String>.generate(
-          columnCount,
-          (index) =>
-              index < row.length ? _escapeMarkdownTableCell(row[index]) : '',
-        ),
-      )
-      .toList();
-  final header = normalizedRows.first;
-  final bodyRows = normalizedRows.length == 1
-      ? <List<String>>[List.filled(columnCount, '')]
-      : normalizedRows.skip(1);
-
-  return [
-    _formatMarkdownTableRow(header),
-    _formatMarkdownTableRow(List.filled(columnCount, '---')),
-    for (final row in bodyRows) _formatMarkdownTableRow(row),
-  ].join('\n');
-}
-
-String _formatMarkdownTableRow(Iterable<String> cells) {
-  return '| ${cells.join(' | ')} |';
-}
-
-String _escapeMarkdownTableCell(String value) {
-  return value.replaceAll(RegExp(r'\s+'), ' ').replaceAll('|', r'\|').trim();
-}
-
-String _titleFromFileName(String fileName) {
-  final baseName = fileName.split(RegExp(r'[/\\]')).last;
-  final withoutExtension = baseName.replaceFirst(RegExp(r'\.[^.]+$'), '');
-  return withoutExtension.trim().isEmpty
-      ? 'Imported document'
-      : withoutExtension;
-}
-
-String _fileExtension(String fileName) {
-  final index = fileName.lastIndexOf('.');
-  if (index == -1 || index == fileName.length - 1) {
-    return '';
-  }
-  return fileName.substring(index + 1).toLowerCase();
-}
-
-String _formatTime(DateTime value) {
-  final hour = value.hour.toString().padLeft(2, '0');
-  final minute = value.minute.toString().padLeft(2, '0');
-  return '$hour:$minute';
-}
-
-const _templateLibrary = {
-  'Proposal': _starterDocument,
-  'Resume': '''
-Professional summary
-
-Write a concise summary of your role, strengths, and measurable impact.
-
-Experience
-
-Company name - Role title
-- Led a meaningful project and describe the result.
-- Improved a process, metric, or customer outcome.
-
-Education
-
-Degree, institution, year
-
-Skills
-
-Writing, analysis, planning, collaboration
-''',
-  'Letter': '''
-Recipient name
-Company or address
-
-Dear recipient,
-
-Use this opening paragraph to state the purpose of the letter clearly.
-
-Add supporting details, dates, decisions, or requests in the body.
-
-Sincerely,
-Your name
-''',
-  'Contract': '''
-Agreement overview
-
-This agreement is between Party A and Party B and begins on the effective date.
-
-Scope of work
-
-1. Define responsibilities.
-2. Define deliverables.
-3. Define review and approval steps.
-
-Terms
-
-Payment, confidentiality, termination, and governing law should be reviewed by legal counsel.
-''',
-  'Invoice': '''
-Invoice
-
-Bill to:
-Client name
-
-| Item | Qty | Rate | Amount |
-| --- | --- | --- | --- |
-| Service | 1 | 0.00 | 0.00 |
-
-Subtotal:
-Tax:
-Total:
-
-Payment terms: due on receipt.
-''',
-  'Report': '''
-Report title
-
-Overview
-
-Summarize the finding, decision, or project status.
-
-Findings
-
-- Key observation
-- Supporting evidence
-- Impact
-
-Recommendations
-
-1. Recommended action
-2. Owner
-3. Timeline
-''',
-};
-
-const _starterDocument = '''
-Executive summary
-
-Open Doc is a modern writing workspace for proposals, reports, letters, contracts, and research notes. It keeps the familiar power of a desktop word processor while making the core writing flow faster, calmer, and easier to review.
-
-Goals:
-- Create documents with print-ready layout, typography, tables, comments, and review tools.
-- Keep the interface focused on the page instead of burying everyday actions.
-- Make collaboration, export, and versioning visible without interrupting writing.
-
-Project scope
-
-This first draft covers the editor experience, document outline, search, formatting controls, comments, change tracking states, page zoom, copy, and export actions. The next production milestone can add real DOCX parsing, cloud sync, advanced rich text spans, and PDF generation.
-
-Key milestones:
-1. Build a polished editor shell with page layout and responsive panels.
-2. Add document persistence and file import/export.
-3. Add collaborative editing, permissions, and version history.
-4. Add templates for resumes, letters, proposals, invoices, and reports.
-''';
