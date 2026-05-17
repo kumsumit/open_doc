@@ -1,7 +1,13 @@
-part of '../../main.dart';
+// ignore_for_file: use_key_in_widget_constructors
 
-class _Ribbon extends StatelessWidget {
-  const _Ribbon({
+import 'package:flutter/material.dart';
+
+import '../document/document_export_service.dart';
+import 'common_controls.dart';
+
+class Ribbon extends StatelessWidget {
+  const Ribbon({
+    super.key,
     required this.bold,
     required this.italic,
     required this.underline,
@@ -16,6 +22,9 @@ class _Ribbon extends StatelessWidget {
     required this.alignment,
     required this.audienceProfile,
     required this.toneMode,
+    required this.pageSize,
+    required this.pageOrientation,
+    required this.marginPreset,
     required this.inkColor,
     required this.pageColor,
     required this.onBold,
@@ -32,6 +41,9 @@ class _Ribbon extends StatelessWidget {
     required this.onAlignment,
     required this.onAudienceProfile,
     required this.onToneMode,
+    required this.onPageSize,
+    required this.onPageOrientation,
+    required this.onMarginPreset,
     required this.onInkColor,
     required this.onPageColor,
     required this.onInsertTable,
@@ -40,6 +52,9 @@ class _Ribbon extends StatelessWidget {
     required this.onInsertChecklist,
     required this.onInsertBulletList,
     required this.onInsertOrderedList,
+    required this.onInsertPageBreak,
+    required this.onInsertToc,
+    required this.onInsertFootnote,
     required this.onInsertSignature,
     required this.onUndo,
     required this.onRedo,
@@ -65,6 +80,9 @@ class _Ribbon extends StatelessWidget {
   final String alignment;
   final String audienceProfile;
   final String toneMode;
+  final DocumentPageSize pageSize;
+  final DocumentPageOrientation pageOrientation;
+  final DocumentMarginPreset marginPreset;
   final Color inkColor;
   final Color pageColor;
   final VoidCallback onBold;
@@ -81,6 +99,9 @@ class _Ribbon extends StatelessWidget {
   final ValueChanged<String> onAlignment;
   final ValueChanged<String> onAudienceProfile;
   final ValueChanged<String> onToneMode;
+  final ValueChanged<DocumentPageSize> onPageSize;
+  final ValueChanged<DocumentPageOrientation> onPageOrientation;
+  final ValueChanged<DocumentMarginPreset> onMarginPreset;
   final ValueChanged<Color> onInkColor;
   final ValueChanged<Color> onPageColor;
   final VoidCallback onInsertTable;
@@ -89,6 +110,9 @@ class _Ribbon extends StatelessWidget {
   final VoidCallback onInsertChecklist;
   final VoidCallback onInsertBulletList;
   final VoidCallback onInsertOrderedList;
+  final VoidCallback onInsertPageBreak;
+  final VoidCallback onInsertToc;
+  final VoidCallback onInsertFootnote;
   final VoidCallback onInsertSignature;
   final VoidCallback onUndo;
   final VoidCallback onRedo;
@@ -120,41 +144,56 @@ class _Ribbon extends StatelessWidget {
             child: ListView(
               scrollDirection: Axis.horizontal,
               children: [
-                _RibbonGroup(
+                RibbonGroup(
                   label: 'Document',
                   child: Row(
                     children: [
-                      _ToolButton(
+                      ToolButton(
                         icon: Icons.table_chart_outlined,
                         label: 'Table',
                         onTap: onInsertTable,
                       ),
-                      _ToolButton(
+                      ToolButton(
                         icon: Icons.image_outlined,
                         label: 'Image',
                         onTap: onInsertImage,
                       ),
-                      _ToolButton(
+                      ToolButton(
                         icon: Icons.smart_display_outlined,
                         label: 'Video',
                         onTap: onInsertVideo,
                       ),
-                      _ToolButton(
+                      ToolButton(
                         icon: Icons.format_list_bulleted_outlined,
                         label: 'Bullet',
                         onTap: onInsertBulletList,
                       ),
-                      _ToolButton(
+                      ToolButton(
                         icon: Icons.format_list_numbered_outlined,
                         label: 'List',
                         onTap: onInsertOrderedList,
                       ),
-                      _ToolButton(
+                      ToolButton(
                         icon: Icons.checklist_outlined,
                         label: 'Tasks',
                         onTap: onInsertChecklist,
                       ),
-                      _ToolButton(
+                      ToolButton(
+                        icon: Icons.vertical_split_outlined,
+                        label: 'Break',
+                        onTap: onInsertPageBreak,
+                      ),
+                      ToolButton(
+                        icon: Icons.format_list_numbered_rtl_outlined,
+                        label: 'TOC',
+                        onTap: onInsertToc,
+                      ),
+                      ToolButton(
+                        icon: Icons.note_alt_outlined,
+                        label: 'Footnote',
+                        onTap: onInsertFootnote,
+                      ),
+                      ToolButton(
                         icon: Icons.draw_outlined,
                         label: 'Sign',
                         onTap: onInsertSignature,
@@ -162,25 +201,25 @@ class _Ribbon extends StatelessWidget {
                     ],
                   ),
                 ),
-                _RibbonGroup(
+                RibbonGroup(
                   label: 'Style',
                   child: Row(
                     children: [
-                      _DropdownChip(
+                      DropdownChip(
                         value: style,
                         width: 112,
                         values: const ['Body', 'Title', 'Heading', 'Quote'],
                         onChanged: onStyle,
                       ),
                       const SizedBox(width: 8),
-                      _DropdownChip(
+                      DropdownChip(
                         value: fontFamily,
                         width: 112,
                         values: const ['Aptos', 'Arial', 'Georgia', 'Times'],
                         onChanged: onFontFamily,
                       ),
                       const SizedBox(width: 8),
-                      _StepperChip(
+                      StepperChip(
                         value: fontSize,
                         min: 10,
                         max: 34,
@@ -189,36 +228,36 @@ class _Ribbon extends StatelessWidget {
                     ],
                   ),
                 ),
-                _RibbonGroup(
+                RibbonGroup(
                   label: 'Format',
                   child: Row(
                     children: [
-                      _ToggleTool(
+                      ToggleTool(
                         icon: Icons.format_bold,
                         label: 'Bold',
                         selected: bold,
                         onTap: onBold,
                       ),
-                      _ToggleTool(
+                      ToggleTool(
                         icon: Icons.format_italic,
                         label: 'Italic',
                         selected: italic,
                         onTap: onItalic,
                       ),
-                      _ToggleTool(
+                      ToggleTool(
                         icon: Icons.format_underlined,
                         label: 'Underline',
                         selected: underline,
                         onTap: onUnderline,
                       ),
-                      _ToggleTool(
+                      ToggleTool(
                         icon: Icons.format_strikethrough,
                         label: 'Strike',
                         selected: strikethrough,
                         onTap: onStrikethrough,
                       ),
                       const SizedBox(width: 8),
-                      _DropdownChip(
+                      DropdownChip(
                         value: alignment,
                         width: 112,
                         values: const ['Left', 'Center', 'Right', 'Justify'],
@@ -227,11 +266,11 @@ class _Ribbon extends StatelessWidget {
                     ],
                   ),
                 ),
-                _RibbonGroup(
+                RibbonGroup(
                   label: 'Color',
                   child: Row(
                     children: [
-                      _ColorDot(
+                      ColorDot(
                         label: 'Ink',
                         value: inkColor,
                         colors: const [
@@ -243,7 +282,7 @@ class _Ribbon extends StatelessWidget {
                         onChanged: onInkColor,
                       ),
                       const SizedBox(width: 10),
-                      _ColorDot(
+                      ColorDot(
                         label: 'Page',
                         value: pageColor,
                         colors: const [
@@ -257,46 +296,76 @@ class _Ribbon extends StatelessWidget {
                     ],
                   ),
                 ),
-                _RibbonGroup(
+                RibbonGroup(
+                  label: 'Page',
+                  child: Row(
+                    children: [
+                      EnumDropdownChip<DocumentPageSize>(
+                        value: pageSize,
+                        width: 96,
+                        values: DocumentPageSize.values,
+                        labelFor: (value) => value.label,
+                        onChanged: onPageSize,
+                      ),
+                      const SizedBox(width: 8),
+                      EnumDropdownChip<DocumentPageOrientation>(
+                        value: pageOrientation,
+                        width: 122,
+                        values: DocumentPageOrientation.values,
+                        labelFor: (value) => value.label,
+                        onChanged: onPageOrientation,
+                      ),
+                      const SizedBox(width: 8),
+                      EnumDropdownChip<DocumentMarginPreset>(
+                        value: marginPreset,
+                        width: 104,
+                        values: DocumentMarginPreset.values,
+                        labelFor: (value) => value.label,
+                        onChanged: onMarginPreset,
+                      ),
+                    ],
+                  ),
+                ),
+                RibbonGroup(
                   label: 'Review',
                   child: Row(
                     children: [
-                      _ToggleTool(
+                      ToggleTool(
                         icon: Icons.rate_review_outlined,
                         label: 'Comments',
                         selected: commentsMode,
                         onTap: onCommentsMode,
                       ),
-                      _ToggleTool(
+                      ToggleTool(
                         icon: Icons.change_circle_outlined,
                         label: 'Track',
                         selected: trackChanges,
                         onTap: onTrackChanges,
                       ),
-                      _ToggleTool(
+                      ToggleTool(
                         icon: Icons.straighten_outlined,
                         label: 'Ruler',
                         selected: showRuler,
                         onTap: onRuler,
                       ),
                       const SizedBox(width: 8),
-                      _ToolButton(
+                      ToolButton(
                         icon: Icons.undo_outlined,
                         label: 'Undo',
                         onTap: onUndo,
                       ),
-                      _ToolButton(
+                      ToolButton(
                         icon: Icons.redo_outlined,
                         label: 'Redo',
                         onTap: onRedo,
                       ),
                       const SizedBox(width: 8),
-                      _ToolButton(
+                      ToolButton(
                         icon: Icons.done_all_outlined,
                         label: 'Accept',
                         onTap: onAcceptChanges,
                       ),
-                      _ToolButton(
+                      ToolButton(
                         icon: Icons.replay_outlined,
                         label: 'Reject',
                         onTap: onRejectChanges,
@@ -304,40 +373,40 @@ class _Ribbon extends StatelessWidget {
                     ],
                   ),
                 ),
-                _RibbonGroup(
+                RibbonGroup(
                   label: 'Smart',
                   child: Row(
                     children: [
-                      _DropdownChip(
+                      DropdownChip(
                         value: audienceProfile,
                         width: 128,
                         values: const ['Millennial', 'Gen Z', 'Alpha', 'Beta'],
                         onChanged: onAudienceProfile,
                       ),
                       const SizedBox(width: 8),
-                      _DropdownChip(
+                      DropdownChip(
                         value: toneMode,
                         width: 112,
                         values: const ['Clear', 'Warm', 'Bold', 'Brief'],
                         onChanged: onToneMode,
                       ),
                       const SizedBox(width: 8),
-                      _ToolButton(
+                      ToolButton(
                         icon: Icons.auto_awesome_outlined,
                         label: 'Brief',
                         onTap: onSmartBrief,
                       ),
-                      _ToolButton(
+                      ToolButton(
                         icon: Icons.ios_share_outlined,
                         label: 'Social',
                         onTap: onSocialSummary,
                       ),
-                      _ToolButton(
+                      ToolButton(
                         icon: Icons.verified_outlined,
                         label: 'Source',
                         onTap: onCitationNudge,
                       ),
-                      _ToolButton(
+                      ToolButton(
                         icon: Icons.task_alt_outlined,
                         label: 'Actions',
                         onTap: onActionDigest,
@@ -345,7 +414,7 @@ class _Ribbon extends StatelessWidget {
                     ],
                   ),
                 ),
-                _RibbonGroup(
+                RibbonGroup(
                   label: 'View',
                   child: SizedBox(
                     width: 180,

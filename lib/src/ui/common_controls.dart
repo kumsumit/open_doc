@@ -1,7 +1,9 @@
-part of '../../main.dart';
+// ignore_for_file: use_key_in_widget_constructors
 
-class _Ruler extends StatelessWidget {
-  const _Ruler();
+import 'package:flutter/material.dart';
+
+class Ruler extends StatelessWidget {
+  const Ruler();
 
   @override
   Widget build(BuildContext context) {
@@ -30,8 +32,8 @@ class _Ruler extends StatelessWidget {
   }
 }
 
-class _RibbonGroup extends StatelessWidget {
-  const _RibbonGroup({required this.label, required this.child});
+class RibbonGroup extends StatelessWidget {
+  const RibbonGroup({required this.label, required this.child});
 
   final String label;
   final Widget child;
@@ -65,8 +67,8 @@ class _RibbonGroup extends StatelessWidget {
   }
 }
 
-class _IconAction extends StatelessWidget {
-  const _IconAction({
+class IconAction extends StatelessWidget {
+  const IconAction({
     required this.icon,
     required this.label,
     required this.onTap,
@@ -89,8 +91,8 @@ class _IconAction extends StatelessWidget {
   }
 }
 
-class _TopBarCommand extends StatelessWidget {
-  const _TopBarCommand({
+class TopBarCommand extends StatelessWidget {
+  const TopBarCommand({
     required this.icon,
     required this.label,
     required this.onTap,
@@ -134,8 +136,8 @@ class _TopBarCommand extends StatelessWidget {
   }
 }
 
-class _ToolButton extends StatelessWidget {
-  const _ToolButton({
+class ToolButton extends StatelessWidget {
+  const ToolButton({
     required this.icon,
     required this.label,
     required this.onTap,
@@ -166,8 +168,8 @@ class _ToolButton extends StatelessWidget {
   }
 }
 
-class _ToggleTool extends StatelessWidget {
-  const _ToggleTool({
+class ToggleTool extends StatelessWidget {
+  const ToggleTool({
     required this.icon,
     required this.label,
     required this.selected,
@@ -207,8 +209,8 @@ class _ToggleTool extends StatelessWidget {
   }
 }
 
-class _DropdownChip extends StatelessWidget {
-  const _DropdownChip({
+class DropdownChip extends StatelessWidget {
+  const DropdownChip({
     required this.value,
     required this.values,
     required this.onChanged,
@@ -250,8 +252,57 @@ class _DropdownChip extends StatelessWidget {
   }
 }
 
-class _StepperChip extends StatelessWidget {
-  const _StepperChip({
+class EnumDropdownChip<T> extends StatelessWidget {
+  const EnumDropdownChip({
+    super.key,
+    required this.value,
+    required this.values,
+    required this.labelFor,
+    required this.onChanged,
+    this.width = 112,
+  });
+
+  final T value;
+  final List<T> values;
+  final String Function(T value) labelFor;
+  final ValueChanged<T> onChanged;
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: 36,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xfff8fafc),
+        border: Border.all(color: const Color(0xffcbd5e1)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<T>(
+          value: value,
+          isExpanded: true,
+          icon: const Icon(Icons.expand_more, size: 18),
+          items: values
+              .map(
+                (entry) => DropdownMenuItem<T>(
+                  value: entry,
+                  child: Text(labelFor(entry), overflow: TextOverflow.ellipsis),
+                ),
+              )
+              .toList(),
+          onChanged: (value) {
+            if (value != null) onChanged(value);
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class StepperChip extends StatelessWidget {
+  const StepperChip({
     required this.value,
     required this.min,
     required this.max,
@@ -298,8 +349,8 @@ class _StepperChip extends StatelessWidget {
   }
 }
 
-class _ColorDot extends StatelessWidget {
-  const _ColorDot({
+class ColorDot extends StatelessWidget {
+  const ColorDot({
     required this.label,
     required this.value,
     required this.colors,
@@ -346,8 +397,8 @@ class _ColorDot extends StatelessWidget {
   }
 }
 
-class _PanelHeader extends StatelessWidget {
-  const _PanelHeader({
+class PanelHeader extends StatelessWidget {
+  const PanelHeader({
     required this.title,
     required this.icon,
     required this.onClose,
@@ -382,8 +433,8 @@ class _PanelHeader extends StatelessWidget {
   }
 }
 
-class _MetricCard extends StatelessWidget {
-  const _MetricCard({required this.label, required this.value});
+class MetricCard extends StatelessWidget {
+  const MetricCard({required this.label, required this.value});
 
   final String label;
   final String value;
@@ -412,8 +463,8 @@ class _MetricCard extends StatelessWidget {
   }
 }
 
-class _StatusTile extends StatelessWidget {
-  const _StatusTile({
+class StatusTile extends StatelessWidget {
+  const StatusTile({
     required this.icon,
     required this.title,
     required this.value,
@@ -436,8 +487,8 @@ class _StatusTile extends StatelessWidget {
   }
 }
 
-class _InspectorToggleTile extends StatelessWidget {
-  const _InspectorToggleTile({
+class InspectorToggleTile extends StatelessWidget {
+  const InspectorToggleTile({
     required this.icon,
     required this.title,
     required this.subtitle,
@@ -471,8 +522,8 @@ class _InspectorToggleTile extends StatelessWidget {
   }
 }
 
-class _InspectorSelectTile extends StatelessWidget {
-  const _InspectorSelectTile({
+class InspectorSelectTile extends StatelessWidget {
+  const InspectorSelectTile({
     required this.icon,
     required this.title,
     required this.value,
@@ -510,8 +561,8 @@ class _InspectorSelectTile extends StatelessWidget {
   }
 }
 
-class _CommentCard extends StatelessWidget {
-  const _CommentCard({required this.author, required this.body});
+class CommentCard extends StatelessWidget {
+  const CommentCard({required this.author, required this.body});
 
   final String author;
   final String body;
@@ -538,8 +589,8 @@ class _CommentCard extends StatelessWidget {
   }
 }
 
-class _SuggestionTile extends StatelessWidget {
-  const _SuggestionTile({
+class SuggestionTile extends StatelessWidget {
+  const SuggestionTile({
     required this.icon,
     required this.title,
     required this.body,
@@ -560,8 +611,8 @@ class _SuggestionTile extends StatelessWidget {
   }
 }
 
-class _ExportTile extends StatelessWidget {
-  const _ExportTile({
+class ExportTile extends StatelessWidget {
+  const ExportTile({
     required this.icon,
     required this.label,
     required this.onTap,
@@ -588,8 +639,8 @@ class _ExportTile extends StatelessWidget {
   }
 }
 
-class _TemplateTile extends StatelessWidget {
-  const _TemplateTile({
+class TemplateTile extends StatelessWidget {
+  const TemplateTile({
     required this.label,
     required this.selected,
     required this.onTap,

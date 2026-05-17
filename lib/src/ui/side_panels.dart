@@ -1,7 +1,19 @@
-part of '../../main.dart';
+// ignore_for_file: use_key_in_widget_constructors
 
-class _NavigationRailPanel extends StatelessWidget {
-  const _NavigationRailPanel({
+import 'package:flutter/material.dart';
+
+import '../document/document_models.dart';
+import 'common_controls.dart';
+
+String _formatTime(DateTime value) {
+  final hour = value.hour.toString().padLeft(2, '0');
+  final minute = value.minute.toString().padLeft(2, '0');
+  return '$hour:$minute';
+}
+
+class NavigationRailPanel extends StatelessWidget {
+  const NavigationRailPanel({
+    super.key,
     required this.headings,
     required this.searchController,
     required this.replaceController,
@@ -40,7 +52,7 @@ class _NavigationRailPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _PanelHeader(
+          PanelHeader(
             title: 'Navigation',
             icon: Icons.subject_outlined,
             onClose: onClose,
@@ -175,8 +187,9 @@ class _NavigationRailPanel extends StatelessWidget {
   }
 }
 
-class _InspectorPanel extends StatelessWidget {
-  const _InspectorPanel({
+class InspectorPanel extends StatelessWidget {
+  const InspectorPanel({
+    super.key,
     required this.wordCount,
     required this.characterCount,
     required this.readingMinutes,
@@ -253,7 +266,7 @@ class _InspectorPanel extends StatelessWidget {
       color: Colors.white,
       child: ListView(
         children: [
-          _PanelHeader(
+          PanelHeader(
             title: 'Inspector',
             icon: Icons.fact_check_outlined,
             onClose: onClose,
@@ -265,11 +278,11 @@ class _InspectorPanel extends StatelessWidget {
                 Row(
                   children: [
                     Expanded(
-                      child: _MetricCard(label: 'Words', value: '$wordCount'),
+                      child: MetricCard(label: 'Words', value: '$wordCount'),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: _MetricCard(
+                      child: MetricCard(
                         label: 'Read',
                         value: '${readingMinutes}m',
                       ),
@@ -277,16 +290,16 @@ class _InspectorPanel extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 10),
-                _MetricCard(label: 'Characters', value: '$characterCount'),
+                MetricCard(label: 'Characters', value: '$characterCount'),
                 const SizedBox(height: 10),
                 Row(
                   children: [
                     Expanded(
-                      child: _MetricCard(label: 'Images', value: '$imageCount'),
+                      child: MetricCard(label: 'Images', value: '$imageCount'),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: _MetricCard(label: 'Videos', value: '$videoCount'),
+                      child: MetricCard(label: 'Videos', value: '$videoCount'),
                     ),
                   ],
                 ),
@@ -294,14 +307,14 @@ class _InspectorPanel extends StatelessWidget {
                 Row(
                   children: [
                     Expanded(
-                      child: _MetricCard(
+                      child: MetricCard(
                         label: 'Clarity',
                         value: '$clarityScore',
                       ),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: _MetricCard(
+                      child: MetricCard(
                         label: 'Attention',
                         value: '$attentionScore',
                       ),
@@ -311,7 +324,7 @@ class _InspectorPanel extends StatelessWidget {
               ],
             ),
           ),
-          _InspectorSelectTile(
+          InspectorSelectTile(
             icon: Icons.psychology_alt_outlined,
             title: 'Audience',
             value: audienceProfile,
@@ -319,7 +332,7 @@ class _InspectorPanel extends StatelessWidget {
             color: const Color(0xff7c3aed),
             onChanged: onAudienceProfileChange,
           ),
-          _InspectorSelectTile(
+          InspectorSelectTile(
             icon: Icons.record_voice_over_outlined,
             title: 'Tone',
             value: toneMode,
@@ -327,7 +340,7 @@ class _InspectorPanel extends StatelessWidget {
             color: const Color(0xff7c3aed),
             onChanged: onToneModeChange,
           ),
-          _StatusTile(
+          StatusTile(
             icon: Icons.speed_outlined,
             title: 'Scanability',
             value: '$averageSentenceLength words per sentence',
@@ -335,7 +348,7 @@ class _InspectorPanel extends StatelessWidget {
                 ? const Color(0xff047857)
                 : const Color(0xffb45309),
           ),
-          _StatusTile(
+          StatusTile(
             icon: Icons.verified_outlined,
             title: 'Trust layer',
             value: citationNudgeCount == 0
@@ -345,14 +358,14 @@ class _InspectorPanel extends StatelessWidget {
                 ? const Color(0xff047857)
                 : const Color(0xffbe123c),
           ),
-          _StatusTile(
+          StatusTile(
             icon: Icons.perm_media_outlined,
             title: 'Media',
             value:
                 '$mediaCount embedded block${mediaCount == 1 ? '' : 's'} in document',
             color: const Color(0xffbe123c),
           ),
-          _InspectorToggleTile(
+          InspectorToggleTile(
             icon: Icons.rate_review_outlined,
             title: 'Comments',
             subtitle: commentsMode ? 'Open for review' : 'Hidden',
@@ -360,7 +373,7 @@ class _InspectorPanel extends StatelessWidget {
             activeColor: const Color(0xff047857),
             onToggle: onCommentsToggle,
           ),
-          _InspectorToggleTile(
+          InspectorToggleTile(
             icon: Icons.change_circle_outlined,
             title: 'Track changes',
             subtitle: trackChanges ? 'Recording edits' : 'Paused',
@@ -368,7 +381,7 @@ class _InspectorPanel extends StatelessWidget {
             activeColor: const Color(0xff1d4ed8),
             onToggle: onTrackChangesToggle,
           ),
-          _InspectorSelectTile(
+          InspectorSelectTile(
             icon: Icons.lock_open_outlined,
             title: 'Permission',
             value: permission,
@@ -376,7 +389,7 @@ class _InspectorPanel extends StatelessWidget {
             color: const Color(0xff7c3aed),
             onChanged: onPermissionChange,
           ),
-          _StatusTile(
+          StatusTile(
             icon: Icons.dashboard_customize_outlined,
             title: 'Template',
             value: template,
@@ -434,14 +447,14 @@ class _InspectorPanel extends StatelessWidget {
             ),
           ),
           if (actionItems.isEmpty)
-            const _SuggestionTile(
+            const SuggestionTile(
               icon: Icons.task_alt_outlined,
               title: 'No open actions',
               body: 'Add [ ] tasks or owner lines to build a digest.',
             )
           else
             for (final item in actionItems)
-              _SuggestionTile(
+              SuggestionTile(
                 icon: Icons.task_alt_outlined,
                 title: 'Action',
                 body: item,
@@ -501,11 +514,11 @@ class _InspectorPanel extends StatelessWidget {
               style: TextStyle(fontWeight: FontWeight.w700),
             ),
           ),
-          const _CommentCard(
+          const CommentCard(
             author: 'Asha',
             body: 'Strengthen the objective with one measurable outcome.',
           ),
-          const _CommentCard(
+          const CommentCard(
             author: 'Legal',
             body: 'Check whether this proposal needs a confidentiality note.',
           ),
@@ -516,12 +529,12 @@ class _InspectorPanel extends StatelessWidget {
               style: TextStyle(fontWeight: FontWeight.w700),
             ),
           ),
-          const _SuggestionTile(
+          const SuggestionTile(
             icon: Icons.spellcheck_outlined,
             title: 'Tone',
             body: 'The document reads clear and professional.',
           ),
-          const _SuggestionTile(
+          const SuggestionTile(
             icon: Icons.format_line_spacing_outlined,
             title: 'Layout',
             body: 'Margins and line height are ready for print.',

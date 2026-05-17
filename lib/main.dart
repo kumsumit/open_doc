@@ -10,13 +10,12 @@ import 'src/document/document_export_service.dart';
 import 'src/document/document_import_service.dart';
 import 'src/document/document_models.dart';
 import 'src/data/document_templates.dart';
-
-part 'src/ui/editor_intents.dart';
-part 'src/ui/top_bar.dart';
-part 'src/ui/ribbon.dart';
-part 'src/ui/editor_workspace.dart';
-part 'src/ui/side_panels.dart';
-part 'src/ui/shared_controls.dart';
+import 'src/ui/editor_intents.dart';
+import 'src/ui/editor_workspace.dart';
+import 'src/ui/ribbon.dart';
+import 'src/ui/side_panels.dart';
+import 'src/ui/common_controls.dart';
+import 'src/ui/top_bar.dart';
 
 void main() {
   runApp(const OpenDocApp());
@@ -88,6 +87,9 @@ class _DocumentStudioState extends State<DocumentStudio> {
   String _activeVersion = 'v1';
   String _audienceProfile = 'Millennial';
   String _toneMode = 'Clear';
+  DocumentPageSize _pageSize = DocumentPageSize.a4;
+  DocumentPageOrientation _pageOrientation = DocumentPageOrientation.portrait;
+  DocumentMarginPreset _marginPreset = DocumentMarginPreset.normal;
   Color _inkColor = const Color(0xff111827);
   Color _pageColor = Colors.white;
   DateTime _savedAt = DateTime.now();
@@ -387,6 +389,11 @@ class _DocumentStudioState extends State<DocumentStudio> {
     return DocumentExportPayload(
       title: _titleController.text,
       markdown: _markdownText,
+      pageSetup: DocumentPageSetup(
+        pageSize: _pageSize,
+        orientation: _pageOrientation,
+        marginPreset: _marginPreset,
+      ),
       mediaBlocks: _mediaBlocks
           .map(
             (block) => ExportMediaBlock(
@@ -819,7 +826,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                 runSpacing: 12,
                 children: [
                   for (final entry in templateLibrary.entries)
-                    _TemplateTile(
+                    TemplateTile(
                       label: entry.key,
                       selected: entry.key == _template,
                       onTap: () {
@@ -1095,8 +1102,25 @@ class _DocumentStudioState extends State<DocumentStudio> {
     _insertText('\n\nAction digest\n${actions.join('\n')}\n');
   }
 
+  void _insertPageBreak() {
+    _insertText('\n\n[[PAGE_BREAK]]\n\n');
+    _showSnack('Page break inserted.');
+  }
+
+  void _insertTableOfContents() {
+    _insertText('\n\n[[TOC]]\n\n');
+    _showSnack('Table of contents inserted.');
+  }
+
+  void _insertFootnote() {
+    _insertText(
+      '\n\n[[FOOTNOTE:Add source, citation, or explanatory note.]]\n\n',
+    );
+    _showSnack('Footnote placeholder inserted.');
+  }
+
   Widget _buildNavigationPanel({required VoidCallback onClose}) {
-    return _NavigationRailPanel(
+    return NavigationRailPanel(
       headings: _headings,
       searchController: _searchController,
       replaceController: _replaceController,
@@ -1111,7 +1135,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
   }
 
   Widget _buildInspectorPanel({required VoidCallback onClose}) {
-    return _InspectorPanel(
+    return InspectorPanel(
       wordCount: _wordCount,
       characterCount: _characterCount,
       readingMinutes: _readingMinutes,
@@ -1215,32 +1239,32 @@ class _DocumentStudioState extends State<DocumentStudio> {
                 spacing: 12,
                 runSpacing: 12,
                 children: [
-                  _ExportTile(
+                  ExportTile(
                     icon: Icons.description_outlined,
                     label: 'DOCX',
                     onTap: () => _finishExport(context, 'DOCX'),
                   ),
-                  _ExportTile(
+                  ExportTile(
                     icon: Icons.picture_as_pdf_outlined,
                     label: 'PDF',
                     onTap: () => _finishExport(context, 'PDF'),
                   ),
-                  _ExportTile(
+                  ExportTile(
                     icon: Icons.html_outlined,
                     label: 'HTML',
                     onTap: () => _finishExport(context, 'HTML'),
                   ),
-                  _ExportTile(
+                  ExportTile(
                     icon: Icons.text_snippet_outlined,
                     label: 'Plain text',
                     onTap: () => _finishExport(context, 'Plain text'),
                   ),
-                  _ExportTile(
+                  ExportTile(
                     icon: Icons.code_outlined,
                     label: 'Markdown',
                     onTap: () => _finishExport(context, 'Markdown'),
                   ),
-                  _ExportTile(
+                  ExportTile(
                     icon: Icons.link_outlined,
                     label: 'Share link',
                     onTap: () => _finishExport(context, 'share link'),
@@ -1296,56 +1320,55 @@ class _DocumentStudioState extends State<DocumentStudio> {
     return Shortcuts(
       shortcuts: const {
         SingleActivator(LogicalKeyboardKey.keyB, control: true):
-            _ToggleBoldIntent(),
+            ToggleBoldIntent(),
         SingleActivator(LogicalKeyboardKey.keyI, control: true):
-            _ToggleItalicIntent(),
+            ToggleItalicIntent(),
         SingleActivator(LogicalKeyboardKey.keyU, control: true):
-            _ToggleUnderlineIntent(),
+            ToggleUnderlineIntent(),
         SingleActivator(LogicalKeyboardKey.keyS, control: true, shift: true):
-            _ToggleStrikethroughIntent(),
-        SingleActivator(LogicalKeyboardKey.keyZ, control: true): _UndoIntent(),
+            ToggleStrikethroughIntent(),
+        SingleActivator(LogicalKeyboardKey.keyZ, control: true): UndoIntent(),
         SingleActivator(LogicalKeyboardKey.keyZ, control: true, shift: true):
-            _RedoIntent(),
-        SingleActivator(LogicalKeyboardKey.keyY, control: true): _RedoIntent(),
+            RedoIntent(),
+        SingleActivator(LogicalKeyboardKey.keyY, control: true): RedoIntent(),
       },
       child: Actions(
         actions: {
-          _ToggleBoldIntent: CallbackAction<_ToggleBoldIntent>(
+          ToggleBoldIntent: CallbackAction<ToggleBoldIntent>(
             onInvoke: (_) {
               _srqController.toggleBold();
               setState(() {});
               return null;
             },
           ),
-          _ToggleItalicIntent: CallbackAction<_ToggleItalicIntent>(
+          ToggleItalicIntent: CallbackAction<ToggleItalicIntent>(
             onInvoke: (_) {
               _srqController.toggleItalic();
               setState(() {});
               return null;
             },
           ),
-          _ToggleUnderlineIntent: CallbackAction<_ToggleUnderlineIntent>(
+          ToggleUnderlineIntent: CallbackAction<ToggleUnderlineIntent>(
             onInvoke: (_) {
               _srqController.toggleUnderline();
               setState(() {});
               return null;
             },
           ),
-          _ToggleStrikethroughIntent:
-              CallbackAction<_ToggleStrikethroughIntent>(
-                onInvoke: (_) {
-                  _srqController.toggleStrikethrough();
-                  setState(() {});
-                  return null;
-                },
-              ),
-          _UndoIntent: CallbackAction<_UndoIntent>(
+          ToggleStrikethroughIntent: CallbackAction<ToggleStrikethroughIntent>(
+            onInvoke: (_) {
+              _srqController.toggleStrikethrough();
+              setState(() {});
+              return null;
+            },
+          ),
+          UndoIntent: CallbackAction<UndoIntent>(
             onInvoke: (_) {
               _srqController.undo();
               return null;
             },
           ),
-          _RedoIntent: CallbackAction<_RedoIntent>(
+          RedoIntent: CallbackAction<RedoIntent>(
             onInvoke: (_) {
               _srqController.redo();
               return null;
@@ -1362,7 +1385,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
 
                 return Column(
                   children: [
-                    _TopBar(
+                    TopBar(
                       titleController: _titleController,
                       focusMode: _focusMode,
                       saved: _saved,
@@ -1379,7 +1402,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                           setState(() => _focusMode = !_focusMode),
                     ),
                     if (!_focusMode)
-                      _Ribbon(
+                      Ribbon(
                         bold: _bold,
                         italic: _italic,
                         underline: _underline,
@@ -1394,6 +1417,9 @@ class _DocumentStudioState extends State<DocumentStudio> {
                         alignment: _alignment,
                         audienceProfile: _audienceProfile,
                         toneMode: _toneMode,
+                        pageSize: _pageSize,
+                        pageOrientation: _pageOrientation,
+                        marginPreset: _marginPreset,
                         inkColor: _inkColor,
                         pageColor: _pageColor,
                         onBold: () {
@@ -1448,6 +1474,12 @@ class _DocumentStudioState extends State<DocumentStudio> {
                             setState(() => _audienceProfile = value),
                         onToneMode: (value) =>
                             setState(() => _toneMode = value),
+                        onPageSize: (value) =>
+                            setState(() => _pageSize = value),
+                        onPageOrientation: (value) =>
+                            setState(() => _pageOrientation = value),
+                        onMarginPreset: (value) =>
+                            setState(() => _marginPreset = value),
                         onInkColor: (value) =>
                             setState(() => _inkColor = value),
                         onPageColor: (value) =>
@@ -1463,6 +1495,9 @@ class _DocumentStudioState extends State<DocumentStudio> {
                             _srqController.toggleBulletList(),
                         onInsertOrderedList: () =>
                             _srqController.toggleOrderedList(),
+                        onInsertPageBreak: _insertPageBreak,
+                        onInsertToc: _insertTableOfContents,
+                        onInsertFootnote: _insertFootnote,
                         onInsertSignature: () => _insertText(
                           '\n\nRegards,\n${_titleController.text.split(' ').first}\n',
                         ),
@@ -1487,7 +1522,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                               ),
                             ),
                           Expanded(
-                            child: _EditorWorkspace(
+                            child: EditorWorkspace(
                               srqController: _srqController,
                               editorFocusNode: _editorFocusNode,
                               editorStyle: _editorStyle,

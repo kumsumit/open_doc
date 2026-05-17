@@ -11,6 +11,8 @@ review.
   inspector panels.
 - Formatting controls for type style, font, size, alignment, ink color, page
   color, tables, images, videos, checklists, and signatures.
+- Page setup controls for page size, orientation, and margins, plus page
+  breaks, table of contents, and footnote placeholders that export to DOCX.
 - Search, word count, character count, reading time, comments, and change
   tracking states.
 - Prototype persistence with explicit save points and restorable version

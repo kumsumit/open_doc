@@ -1,7 +1,12 @@
-part of '../../main.dart';
+// ignore_for_file: use_key_in_widget_constructors
 
-class _TopBar extends StatelessWidget {
-  const _TopBar({
+import 'package:flutter/material.dart';
+
+import 'common_controls.dart';
+
+class TopBar extends StatelessWidget {
+  const TopBar({
+    super.key,
     required this.titleController,
     required this.focusMode,
     required this.saved,
@@ -112,67 +117,67 @@ class _TopBar extends StatelessWidget {
                   reverse: true,
                   child: Row(
                     children: [
-                      _IconAction(
+                      IconAction(
                         icon: Icons.note_add_outlined,
                         label: 'New',
                         onTap: onNew,
                       ),
-                      _IconAction(
+                      IconAction(
                         icon: Icons.save_outlined,
                         label: 'Save',
                         onTap: onSave,
                       ),
-                      _IconAction(
+                      IconAction(
                         icon: Icons.dashboard_customize_outlined,
                         label: 'Templates',
                         onTap: onTemplates,
                       ),
-                      _IconAction(
+                      IconAction(
                         icon: Icons.copy_outlined,
                         label: 'Duplicate',
                         onTap: onDuplicate,
                       ),
-                      _IconAction(
+                      IconAction(
                         icon: Icons.content_copy_outlined,
                         label: 'Copy',
                         onTap: onCopy,
                       ),
-                      _IconAction(
+                      IconAction(
                         icon: Icons.group_add_outlined,
                         label: 'Share',
                         onTap: onShare,
                       ),
-                      _IconAction(
+                      IconAction(
                         icon: Icons.history_outlined,
                         label: 'Versions',
                         onTap: onHistory,
                       ),
                       if (compact) ...[
-                        _IconAction(
+                        IconAction(
                           icon: Icons.upload_file_outlined,
                           label: 'Import',
                           onTap: onImport,
                         ),
-                        _IconAction(
+                        IconAction(
                           icon: Icons.ios_share_outlined,
                           label: 'Export',
                           onTap: onExport,
                         ),
                       ] else ...[
-                        _TopBarCommand(
+                        TopBarCommand(
                           icon: Icons.upload_file_outlined,
                           label: 'Import',
                           onTap: onImport,
                         ),
                         const SizedBox(width: 8),
-                        _TopBarCommand(
+                        TopBarCommand(
                           icon: Icons.ios_share_outlined,
                           label: 'Export',
                           onTap: onExport,
                           filled: true,
                         ),
                       ],
-                      _IconAction(
+                      IconAction(
                         icon: focusMode
                             ? Icons.fullscreen_exit_outlined
                             : Icons.fullscreen_outlined,

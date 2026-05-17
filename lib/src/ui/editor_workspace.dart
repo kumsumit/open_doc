@@ -1,7 +1,15 @@
-part of '../../main.dart';
+// ignore_for_file: use_key_in_widget_constructors
 
-class _EditorWorkspace extends StatelessWidget {
-  const _EditorWorkspace({
+import 'dart:math' as math;
+
+import 'package:flutter/material.dart';
+import 'package:smart_rich_text_quill/smart_rich_text_quill.dart';
+
+import '../document/document_models.dart';
+import 'common_controls.dart';
+
+class EditorWorkspace extends StatelessWidget {
+  const EditorWorkspace({
     required this.srqController,
     required this.editorFocusNode,
     required this.editorStyle,
@@ -52,12 +60,12 @@ class _EditorWorkspace extends StatelessWidget {
                     : '$wordCount words  •  $characterCount chars  •  $readingMinutes min read';
                 return Row(
                   children: [
-                    _IconAction(
+                    IconAction(
                       icon: Icons.menu_open_outlined,
                       label: 'Navigation',
                       onTap: onToggleNavigation,
                     ),
-                    _IconAction(
+                    IconAction(
                       icon: Icons.tune_outlined,
                       label: 'Inspector',
                       onTap: onToggleInspector,
@@ -130,7 +138,7 @@ class _EditorWorkspace extends StatelessWidget {
                         ),
                         child: Column(
                           children: [
-                            if (showRuler) const _Ruler(),
+                            if (showRuler) const Ruler(),
                             Padding(
                               padding: EdgeInsets.fromLTRB(
                                 pageInset,

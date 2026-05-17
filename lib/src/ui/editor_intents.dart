@@ -1,25 +1,25 @@
-part of '../../main.dart';
+import 'package:flutter/widgets.dart';
 
-class _ToggleBoldIntent extends Intent {
-  const _ToggleBoldIntent();
+class ToggleBoldIntent extends Intent {
+  const ToggleBoldIntent();
 }
 
-class _ToggleItalicIntent extends Intent {
-  const _ToggleItalicIntent();
+class ToggleItalicIntent extends Intent {
+  const ToggleItalicIntent();
 }
 
-class _ToggleUnderlineIntent extends Intent {
-  const _ToggleUnderlineIntent();
+class ToggleUnderlineIntent extends Intent {
+  const ToggleUnderlineIntent();
 }
 
-class _ToggleStrikethroughIntent extends Intent {
-  const _ToggleStrikethroughIntent();
+class ToggleStrikethroughIntent extends Intent {
+  const ToggleStrikethroughIntent();
 }
 
-class _UndoIntent extends Intent {
-  const _UndoIntent();
+class UndoIntent extends Intent {
+  const UndoIntent();
 }
 
-class _RedoIntent extends Intent {
-  const _RedoIntent();
+class RedoIntent extends Intent {
+  const RedoIntent();
 }
