@@ -3,8 +3,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:docx_creator/docx_creator.dart' as docx;
-import 'package:docx_creator/src/core/font_manager.dart' as docx_fonts;
+import '../docx/docx.dart' as docx;
+import '../docx/core/font_manager.dart' as docx_fonts;
 
 import 'document_models.dart';
 import 'language_support_service.dart';

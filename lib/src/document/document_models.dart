@@ -5,7 +5,8 @@ import 'package:flutter/material.dart';
 enum DocumentEditMode {
   markdown('Markdown editor', Icons.code_outlined),
   docxVisual('DOCX visual editor', Icons.dashboard_customize_outlined),
-  docxRoundTrip('DOCX round-trip', Icons.description_outlined);
+  docxRoundTrip('DOCX round-trip', Icons.description_outlined),
+  docxView('DOCX viewer', Icons.visibility_outlined);
 
   const DocumentEditMode(this.label, this.icon);
 

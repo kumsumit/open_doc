@@ -1,7 +1,10 @@
 // ignore_for_file: use_key_in_widget_constructors
 
 import 'dart:math' as math;
+import 'dart:typed_data';
 
+import '../viewer/docx_view.dart';
+import '../viewer/docx_view_config.dart';
 import 'package:flutter/material.dart';
 import 'package:smart_rich_text_quill/smart_rich_text_quill.dart';
 
@@ -30,6 +33,7 @@ class EditorWorkspace extends StatelessWidget {
     required this.onRemoveMedia,
     required this.onToggleNavigation,
     required this.onToggleInspector,
+    this.sourcePackageBytes,
   });
 
   final SrqController srqController;
@@ -52,6 +56,7 @@ class EditorWorkspace extends StatelessWidget {
   final ValueChanged<String> onRemoveMedia;
   final VoidCallback onToggleNavigation;
   final VoidCallback onToggleInspector;
+  final Uint8List? sourcePackageBytes;
 
   @override
   Widget build(BuildContext context) {
@@ -90,7 +95,9 @@ class EditorWorkspace extends StatelessWidget {
                           label: Text(
                             editMode == DocumentEditMode.docxVisual
                                 ? 'OOXML visual'
-                                : 'Round-trip',
+                                : editMode == DocumentEditMode.docxView
+                                    ? 'DOCX viewer'
+                                    : 'Round-trip',
                           ),
                           visualDensity: VisualDensity.compact,
                         ),
@@ -118,6 +125,21 @@ class EditorWorkspace extends StatelessWidget {
               },
             ),
           ),
+        if (editMode == DocumentEditMode.docxView &&
+            sourcePackageBytes != null)
+          Expanded(
+            child: DocxViewWithSearch(
+              bytes: sourcePackageBytes!,
+              config: const DocxViewConfig(
+                enableSearch: true,
+                enableZoom: true,
+                enableSelection: true,
+                pageMode: DocxPageMode.paged,
+                showPageBreaks: true,
+              ),
+            ),
+          )
+        else
         Expanded(
           child: ColoredBox(
             color: focusMode

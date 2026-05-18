@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
-import 'package:docx_creator/docx_creator.dart' as docx;
+import '../docx/docx.dart' as docx;
 import 'package:xml/xml.dart';
 
 import 'document_export_service.dart';

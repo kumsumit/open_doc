@@ -38,10 +38,21 @@ dependencies:
     git: "https://github.com/sumitsharansatsangi/flutter_file_picker.git"  
   archive: ^4.0.9
   xml: ^7.0.1
-  docx_creator:
-    path: /Users/amitsharan/StudioProjects/docx_creator
+  path: ^1.9.1
+  image:
+    git: "https://github.com/kumsumit/image.git"
+  markdown: ^7.3.1
+  html: ^0.15.6
+  http: ^1.6.0
+  uuid: ^4.5.3
+  equatable: ^2.0.8
+  pointycastle: ^4.0.0
+  crypto: ^3.0.7
+  web: ^1.1.1
   smart_rich_text_quill:
     path: /Users/amitsharan/StudioProjects/smart_rich_text_quill
+  url_launcher:
+    git: "https://github.com/kumsumit/url_launcher.git"
 
 dev_dependencies:
   flutter_test:

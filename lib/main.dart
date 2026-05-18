@@ -358,7 +358,8 @@ class _DocumentStudioState extends State<DocumentStudio> {
         }
         return;
       }
-      if (_editMode == DocumentEditMode.docxRoundTrip &&
+      if ((_editMode == DocumentEditMode.docxRoundTrip ||
+              _editMode == DocumentEditMode.docxView) &&
           _sourcePackageFormat == 'docx' &&
           _sourcePackageBytes != null) {
         final savePath = await FilePicker.saveFile(
@@ -825,7 +826,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
       _editMode = _ooxmlBlocks.isNotEmpty
           ? DocumentEditMode.docxVisual
           : sourcePackageBytes != null && sourcePackageFormat == 'docx'
-          ? DocumentEditMode.docxRoundTrip
+          ? DocumentEditMode.docxView
           : DocumentEditMode.markdown;
       final importedFamily = selectedFontFamily?.trim();
       if (importedFamily != null &&
@@ -2014,6 +2015,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                               characterCount: _characterCount,
                               editMode: _editMode,
                               sourcePackageFormat: _sourcePackageFormat,
+                              sourcePackageBytes: _sourcePackageBytes,
                               ooxmlBlocks: _ooxmlBlocks,
                               onOoxmlBlockChanged: _updateOoxmlBlock,
                               onSwitchToMarkdown: _switchRoundTripToMarkdown,
