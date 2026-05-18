@@ -89,44 +89,6 @@ class ParagraphBuilder {
     List<SearchMatch>? matches,
     Key? key,
   }) {
-    List<(DocxInline, DocxAlign?)> textChildren = [];
-
-    // Separate content
-    for (var child in paragraph.children) {
-      bool isFloating = false;
-      DocxAlign align = DocxAlign.left; // Default logic
-
-      if (child is DocxInlineImage &&
-          child.positionMode == DocxDrawingPosition.floating) {
-        if (excludedFloats?.contains(child) ?? false) {
-          continue; // Skip specific excluded float
-        }
-        isFloating = true;
-        if (child.hAlign == DrawingHAlign.center) {
-          align = DocxAlign.center;
-        } else {
-          align = child.hAlign == DrawingHAlign.right
-              ? DocxAlign.right
-              : DocxAlign.left;
-        }
-      } else if (child is DocxShape &&
-          child.position == DocxDrawingPosition.floating) {
-        if (excludedFloats?.contains(child) ?? false) {
-          continue; // Skip specific excluded float
-        }
-        isFloating = true;
-        if (child.horizontalAlign == DrawingHAlign.center) {
-          align = DocxAlign.center;
-        } else {
-          align = child.horizontalAlign == DrawingHAlign.right
-              ? DocxAlign.right
-              : DocxAlign.left;
-        }
-      }
-
-      textChildren.add((child, isFloating ? align : null));
-    }
-
     // List of block-level widgets (rows or center blocks)
     final List<Widget> columnChildren = [];
 
@@ -288,34 +250,6 @@ class ParagraphBuilder {
     return _wrapWithParagraphStyle(paragraph, finalContent, key: key);
   }
 
-  // ... (keeping internal helper structures same) ...
-  // [Lines 226-433 omitted in replace request to save space if unchanged, assuming tool can handle partial replacments.
-  // Wait, I am replacing a large chunk. I should just update _buildTextSpans separately?
-  // No, I need _buildNativeParagraph to manage currentTextOffset.
-  // So I'll assume lines 226-432 are safe or I'll just use the provided range carefully.]
-  // NOTE: I am replacing `build`, `buildExcludingFloats`, `_buildNativeParagraph` fully.
-  // I need to skip `_buildFloatingLayout`, `_wrapWithParagraphStyle`, `_buildParagraphDecoration`, `_buildBorderSide`.
-  // The provided `_buildNativeParagraph` implementation above ends around line 224 which is correct.
-  // Below I will implement `_buildTextSpans` and `_buildTextSpan`.
-
-  // ... (omitting lines 226-433 in this prompt, I will assume I only replace up to 224 and then replace 433 separately)
-  // THE TOOL replace_file_content replaces a CONTIGUOUS BLOCK.
-  // So I must provide the whole block or do two calls.
-  // `_buildNativeParagraph` spans lines 44 to 224.
-  // `_buildTextSpans` starts at 434.
-  // So I will split this into two calls or one giant call.
-  // Giant call is risky if I miss lines.
-  // I'll do two calls.
-  // Call 1: Update `build` and `_buildNativeParagraph`
-  // Call 2: Update `_buildTextSpans` and `_buildTextSpan`.
-
-  // Let's refine for Call 1: Replace lines 31 to 224.
-  // I will submit specific content for that.
-
-  // Wait, the `blockIndex` is passed to `build`.
-
-  // Okay, in THIS tool call, I will do Call 1: `build` through `_buildNativeParagraph`.
-
   /// Builds a layout that wraps text around left and/or right floating elements.
   ///
   /// Uses IntrinsicHeight with Row for proper alignment of floating images and text.
@@ -350,17 +284,16 @@ class ParagraphBuilder {
       return Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: elements.map((e) {
-          final widget = buildFloatWidget(e) ?? const SizedBox.shrink();
-          final index = elements.indexOf(e);
-          if (index < elements.length - 1) {
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 8.0),
-              child: widget,
-            );
-          }
-          return widget;
-        }).toList(),
+        children: [
+          for (var i = 0; i < elements.length; i++)
+            if (i < elements.length - 1)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8.0),
+                child: buildFloatWidget(elements[i]) ?? const SizedBox.shrink(),
+              )
+            else
+              buildFloatWidget(elements[i]) ?? const SizedBox.shrink(),
+        ],
       );
     }
 
@@ -609,8 +542,6 @@ class ParagraphBuilder {
     return spans;
   }
 
-  // ... (keep checkbox span same) ...
-
   /// Build a TextSpan for a DocxCheckbox.
   TextSpan _buildCheckboxSpan(DocxCheckbox checkbox, {double? lineHeight}) {
     final content = checkbox.isChecked ? '☒ ' : '☐ ';
@@ -758,7 +689,6 @@ class ParagraphBuilder {
       fontSize = (fontSize ?? 14) * 0.85;
     }
 
-    // ... (Shadows/Emboss/Imprint etc logic reused) ...
     List<Shadow>? shadows;
     if (text.isShadow) {
       shadows = [
