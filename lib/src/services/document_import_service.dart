@@ -57,6 +57,8 @@ class DocumentImportService {
         sourcePackageFormat: base.sourcePackageFormat,
         sourcePackageBytes: base.sourcePackageBytes,
         ooxmlBlocks: [..._visualBlocksFromDocx(document), ...partBlocks],
+        wysiwygBlocks: WysiwygDocumentCodec.fromMarkdown(base.text),
+        quillDeltaJson: _quillDeltaFromDocx(document),
       );
     } on Object {
       return ImportedDocument(
@@ -239,6 +241,131 @@ class DocumentImportService {
       }
     }
     return blocks;
+  }
+
+  List<Object?> _quillDeltaFromDocx(docx.DocxBuiltDocument document) {
+    final ops = <Object?>[];
+    for (final node in document.elements) {
+      if (node is docx.DocxParagraph) {
+        for (final child in node.children) {
+          if (child is docx.DocxText) {
+            final attributes = _quillTextAttributes(child);
+            ops.add(
+              attributes.isEmpty
+                  ? {'insert': child.content}
+                  : {'insert': child.content, 'attributes': attributes},
+            );
+          }
+        }
+        final lineAttributes = _quillParagraphAttributes(node);
+        ops.add(
+          lineAttributes.isEmpty
+              ? {'insert': '\n'}
+              : {'insert': '\n', 'attributes': lineAttributes},
+        );
+      } else if (node is docx.DocxList) {
+        for (final item in node.items) {
+          for (final child in item.children) {
+            if (child is docx.DocxText) {
+              final attributes = _quillTextAttributes(child);
+              ops.add(
+                attributes.isEmpty
+                    ? {'insert': child.content}
+                    : {'insert': child.content, 'attributes': attributes},
+              );
+            }
+          }
+          ops.add({
+            'insert': '\n',
+            'attributes': {'list': node.isOrdered ? 'ordered' : 'bullet'},
+          });
+        }
+      } else if (node is docx.DocxTable) {
+        for (final row in node.rows) {
+          final cells = <String>[];
+          for (final cell in row.cells) {
+            cells.add(
+              cell.children
+                  .whereType<docx.DocxParagraph>()
+                  .expand((paragraph) => paragraph.children)
+                  .whereType<docx.DocxText>()
+                  .map((text) => text.content)
+                  .join(),
+            );
+          }
+          ops
+            ..add({'insert': cells.join(' | ')})
+            ..add({'insert': '\n'});
+        }
+      }
+    }
+    if (ops.isEmpty) {
+      return const [];
+    }
+    final last = ops.last;
+    if (last is Map && last['insert'] != '\n') {
+      ops.add({'insert': '\n'});
+    }
+    return ops;
+  }
+
+  Map<String, Object?> _quillTextAttributes(docx.DocxText text) {
+    final attributes = <String, Object?>{};
+    if (text.isBold) {
+      attributes['bold'] = true;
+    }
+    if (text.isItalic) {
+      attributes['italic'] = true;
+    }
+    if (text.isUnderline) {
+      attributes['underline'] = true;
+    }
+    if (text.isStrike) {
+      attributes['strike'] = true;
+    }
+    if (text.color != null) {
+      attributes['color'] = '#${text.color!.hex}';
+    }
+    if (text.shadingFill != null) {
+      attributes['background'] = '#${text.shadingFill}';
+    }
+    if (text.fontSize != null) {
+      attributes['size'] = text.fontSize!.toString();
+    }
+    if (text.href != null && text.href!.isNotEmpty) {
+      attributes['link'] = text.href;
+    }
+    if (text.isSuperscript) {
+      attributes['script'] = 'super';
+    } else if (text.isSubscript) {
+      attributes['script'] = 'sub';
+    }
+    return attributes;
+  }
+
+  Map<String, Object?> _quillParagraphAttributes(docx.DocxParagraph paragraph) {
+    final attributes = <String, Object?>{};
+    final styleId = paragraph.styleId?.toLowerCase();
+    if (styleId == 'heading1' || styleId == 'title') {
+      attributes['header'] = 1;
+    } else if (styleId == 'heading2') {
+      attributes['header'] = 2;
+    } else if (styleId == 'heading3') {
+      attributes['header'] = 3;
+    } else if (styleId == 'quote' || paragraph.indentLeft == 720) {
+      attributes['blockquote'] = true;
+    }
+    switch (paragraph.align) {
+      case docx.DocxAlign.center:
+        attributes['align'] = 'center';
+      case docx.DocxAlign.right:
+        attributes['align'] = 'right';
+      case docx.DocxAlign.justify:
+        attributes['align'] = 'justify';
+      case docx.DocxAlign.left:
+        break;
+    }
+    return attributes;
   }
 
   OoxmlTextAlign _visualAlignFor(docx.DocxAlign align) {

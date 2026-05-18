@@ -836,12 +836,11 @@ class _DocumentStudioState extends State<DocumentStudio> {
       _quillDeltaJson = quillDeltaJson.isNotEmpty
           ? List<Object?>.of(quillDeltaJson)
           : WysiwygDocumentCodec.toQuillDeltaJson(_wysiwygBlocks);
-      _editMode = _ooxmlBlocks.isNotEmpty
-          ? DocumentEditMode.docxVisual
-          : _wysiwygBlocks.isNotEmpty &&
-                sourcePackageFormat != 'docx' &&
-                format == 'Open Doc'
+      final hasQuillDocument = _quillDeltaJson.isNotEmpty;
+      _editMode = hasQuillDocument
           ? DocumentEditMode.wysiwyg
+          : _ooxmlBlocks.isNotEmpty
+          ? DocumentEditMode.docxVisual
           : sourcePackageBytes != null && sourcePackageFormat == 'docx'
           ? DocumentEditMode.docxView
           : DocumentEditMode.markdown;

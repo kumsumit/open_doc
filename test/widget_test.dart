@@ -459,6 +459,30 @@ Open Doc writes real DOCX files now.
     expect(relsXml, contains('TargetMode="External"'));
   });
 
+  test('DOCX import preserves hyperlinks in Quill Delta', () async {
+    final bytes = await exportService.exportDocx(
+      const DocumentExportPayload(
+        title: 'Quill hyperlink import',
+        markdown: 'Fallback',
+        quillDeltaJson: [
+          {'insert': 'Read '},
+          {
+            'insert': 'details',
+            'attributes': {'link': 'https://example.com/details'},
+          },
+          {'insert': '\n'},
+        ],
+      ),
+    );
+
+    final imported = await importService.parseAsync(bytes, 'links.docx');
+    final deltaText = jsonEncode(imported.quillDeltaJson);
+
+    expect(imported.quillDeltaJson, isNotEmpty);
+    expect(deltaText, contains('"link":"https://example.com/details"'));
+    expect(imported.text, contains('[details](https://example.com/details)'));
+  });
+
   test('export service supports page setup and references', () async {
     final bytes = await exportService.exportDocx(
       const DocumentExportPayload(
