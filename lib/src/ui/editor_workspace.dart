@@ -8,7 +8,7 @@ import '../viewer/docx_view_config.dart';
 import 'package:flutter/material.dart';
 import 'package:smart_rich_text_quill/smart_rich_text_quill.dart';
 
-import '../document/document_models.dart';
+import '../services/document_models.dart';
 import 'common_controls.dart';
 
 class EditorWorkspace extends StatelessWidget {

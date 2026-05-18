@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import '../docx/docx.dart';
+import '../engine/docx.dart';
 import 'package:flutter/material.dart';
 
 import 'docx_view_config.dart';

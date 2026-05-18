@@ -5,11 +5,11 @@ import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:open_doc/main.dart';
-import 'package:open_doc/src/document/document_export_service.dart';
-import 'package:open_doc/src/document/document_import_service.dart';
-import 'package:open_doc/src/document/language_support_service.dart';
-import 'package:open_doc/src/document/document_models.dart';
+import 'package:open_doc/app.dart';
+import 'package:open_doc/src/services/document_export_service.dart';
+import 'package:open_doc/src/services/document_import_service.dart';
+import 'package:open_doc/src/services/language_support_service.dart';
+import 'package:open_doc/src/services/document_models.dart';
 
 void main() {
   const exportService = DocumentExportService();

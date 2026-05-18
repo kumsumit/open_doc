@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../docx/core/measurements.dart';
+import '../../engine/core/measurements.dart';
 
 /// A widget that renders content in a page-like container with margins and shadow.
 ///

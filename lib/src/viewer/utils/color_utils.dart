@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../docx/reader/docx_reader/models/docx_theme.dart';
+import '../../engine/reader/docx_reader/models/docx_theme.dart';
 
 /// Parses an OOXML hex color string to a Flutter [Color].
 ///

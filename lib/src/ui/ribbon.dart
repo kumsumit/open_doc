@@ -2,7 +2,7 @@
 
 import 'package:flutter/material.dart';
 
-import '../document/document_export_service.dart';
+import '../services/document_export_service.dart';
 import 'common_controls.dart';
 
 class Ribbon extends StatelessWidget {

@@ -1,6 +1,6 @@
 // ignore_for_file: implementation_imports
 
-import '../docx/exporters/pdf/ttf_parser.dart';
+import '../engine/exporters/pdf/ttf_parser.dart';
 
 import 'document_models.dart';
 

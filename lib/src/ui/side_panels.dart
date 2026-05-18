@@ -2,7 +2,7 @@
 
 import 'package:flutter/material.dart';
 
-import '../document/document_models.dart';
+import '../services/document_models.dart';
 import 'common_controls.dart';
 
 String _formatTime(DateTime value) {

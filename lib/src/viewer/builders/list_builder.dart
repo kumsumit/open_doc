@@ -1,4 +1,4 @@
-import '../../docx/docx.dart';
+import '../../engine/docx.dart';
 import '../docx_view_config.dart';
 import '../theme/docx_view_theme.dart';
 import '../utils/block_index_counter.dart';

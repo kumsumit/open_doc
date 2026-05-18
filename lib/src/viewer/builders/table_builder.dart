@@ -1,4 +1,4 @@
-import '../../docx/docx.dart';
+import '../../engine/docx.dart';
 import '../utils/block_index_counter.dart';
 import '../utils/color_utils.dart';
 import 'package:flutter/material.dart';
