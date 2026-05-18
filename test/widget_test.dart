@@ -230,6 +230,64 @@ Open Doc writes real DOCX files now.
     },
   );
 
+  test(
+    'visual OOXML patches source package and preserves unknown parts',
+    () async {
+      final source = Archive()
+        ..addFile(
+          ArchiveFile.string('word/document.xml', '''
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">
+  <w:body>
+    <w:p><w:r><w:t>Old body</w:t></w:r></w:p>
+    <w:p><w:r><w:drawing><wp:inline/></w:drawing></w:r></w:p>
+    <w:sdt><w:sdtContent><w:p><w:r><w:t>Original control</w:t></w:r></w:p></w:sdtContent></w:sdt>
+  </w:body>
+</w:document>
+'''),
+        )
+        ..addFile(
+          ArchiveFile.string('word/header1.xml', '''
+<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:p><w:r><w:t>Old header</w:t></w:r></w:p>
+</w:hdr>
+'''),
+        );
+      final sourceBytes = Uint8List.fromList(ZipEncoder().encode(source));
+
+      final bytes = await exportService.exportVisualDocx(
+        DocumentExportPayload(
+          title: 'Patch check',
+          markdown: '',
+          sourcePackageFormat: 'docx',
+          sourcePackageBytes: sourceBytes,
+          ooxmlBlocks: const [
+            OoxmlParagraphBlock(text: 'New body'),
+            OoxmlPartTextBlock(
+              partPath: 'word/header1.xml',
+              paragraphIndex: 0,
+              label: 'Header 1',
+              text: 'New header',
+            ),
+          ],
+        ),
+      );
+      final patched = ZipDecoder().decodeBytes(bytes);
+      final documentXml = utf8.decode(
+        patched.findFile('word/document.xml')!.content as List<int>,
+      );
+      final headerXml = utf8.decode(
+        patched.findFile('word/header1.xml')!.content as List<int>,
+      );
+
+      expect(documentXml, contains('New body'));
+      expect(documentXml, contains('<w:drawing>'));
+      expect(documentXml, contains('<w:sdt>'));
+      expect(documentXml, contains('Original control'));
+      expect(headerXml, contains('New header'));
+    },
+  );
+
   test('PDF and HTML exporters produce real document output', () async {
     const payload = DocumentExportPayload(
       title: 'Multi-format check',
@@ -264,6 +322,12 @@ Open Doc writes real DOCX files now.
       DocumentExportPayload(
         title: 'Native package',
         markdown: '# Brief\n\nKeep the rich state.',
+        wysiwygBlocks: WysiwygDocumentCodec.fromMarkdown(
+          '# Brief\n\nKeep the rich state.',
+        ),
+        quillDeltaJson: WysiwygDocumentCodec.toQuillDeltaJson(
+          WysiwygDocumentCodec.fromMarkdown('# Brief\n\nKeep the rich state.'),
+        ),
         selectedFontFamily: 'Brand Sans',
         pageSetup: const DocumentPageSetup(
           pageSize: DocumentPageSize.legal,
@@ -308,6 +372,91 @@ Open Doc writes real DOCX files now.
     expect(imported.customFonts.single.bytes, Uint8List.fromList([4, 5, 6]));
     expect(imported.sourcePackageFormat, 'docx');
     expect(imported.sourcePackageBytes, Uint8List.fromList([7, 8, 9]));
+    expect(imported.wysiwygBlocks, isNotEmpty);
+    expect(imported.wysiwygBlocks.first.type, WysiwygBlockType.title);
+    expect(imported.quillDeltaJson, isNotEmpty);
+  });
+
+  test('WYSIWYG document codec bridges visual blocks to markdown', () {
+    final blocks = WysiwygDocumentCodec.fromMarkdown(
+      '# Title\n\n## Heading\n\n- First\n\n1. Step\n\n- [x] Done',
+    );
+
+    expect(blocks.map((block) => block.type), contains(WysiwygBlockType.title));
+    expect(
+      blocks.map((block) => block.type),
+      contains(WysiwygBlockType.checklist),
+    );
+    expect(WysiwygDocumentCodec.toMarkdown(blocks), contains('# Title'));
+    expect(WysiwygDocumentCodec.toMarkdown(blocks), contains('- [x] Done'));
+  });
+
+  test('WYSIWYG document codec bridges Quill delta to blocks', () {
+    final delta = WysiwygDocumentCodec.toQuillDeltaJson(
+      WysiwygDocumentCodec.fromMarkdown('# Title\n\n- [x] Done'),
+    );
+    final blocks = WysiwygDocumentCodec.fromQuillDeltaJson(delta);
+
+    expect(blocks.first.type, WysiwygBlockType.title);
+    expect(blocks.last.type, WysiwygBlockType.checklist);
+    expect(blocks.last.checked, isTrue);
+    expect(WysiwygDocumentCodec.toMarkdown(blocks), contains('- [x] Done'));
+  });
+
+  test('DOCX export preserves Quill Delta rich text formatting', () async {
+    final bytes = await exportService.exportDocx(
+      const DocumentExportPayload(
+        title: 'Quill fidelity',
+        markdown: 'Fallback',
+        quillDeltaJson: [
+          {
+            'insert': 'Styled Heading',
+            'attributes': {'bold': true},
+          },
+          {
+            'insert': '\n',
+            'attributes': {'header': 1, 'align': 'center'},
+          },
+          {'insert': 'Rich '},
+          {
+            'insert': 'italic underline',
+            'attributes': {
+              'italic': true,
+              'underline': true,
+              'color': '#FF0000',
+              'background': '#FFFF00',
+              'link': 'https://example.com',
+            },
+          },
+          {'insert': '\n'},
+          {'insert': 'First item'},
+          {
+            'insert': '\n',
+            'attributes': {'list': 'bullet'},
+          },
+        ],
+      ),
+    );
+    final archive = ZipDecoder().decodeBytes(bytes);
+    final documentXml = utf8.decode(
+      archive.findFile('word/document.xml')!.content as List<int>,
+    );
+
+    expect(documentXml, contains('Heading1'));
+    expect(documentXml, contains('<w:jc w:val="center"'));
+    expect(documentXml, contains('<w:b/>'));
+    expect(documentXml, contains('<w:i/>'));
+    expect(documentXml, contains('<w:u'));
+    expect(documentXml, contains('w:color w:val="FF0000"'));
+    expect(documentXml, contains('w:fill="FFFF00"'));
+    expect(documentXml, contains('<w:hyperlink r:id="rIdHyperlink1"'));
+    expect(documentXml, contains('<w:numPr>'));
+    final relsXml = utf8.decode(
+      archive.findFile('word/_rels/document.xml.rels')!.content as List<int>,
+    );
+    expect(relsXml, contains('rIdHyperlink1'));
+    expect(relsXml, contains('https://example.com'));
+    expect(relsXml, contains('TargetMode="External"'));
   });
 
   test('export service supports page setup and references', () async {

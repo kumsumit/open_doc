@@ -20,6 +20,8 @@ class ImportedDocument {
     this.sourcePackageFormat,
     this.sourcePackageBytes,
     this.ooxmlBlocks = const [],
+    this.wysiwygBlocks = const [],
+    this.quillDeltaJson = const [],
     this.pageSetup,
   });
 
@@ -32,6 +34,8 @@ class ImportedDocument {
   final String? sourcePackageFormat;
   final Uint8List? sourcePackageBytes;
   final List<OoxmlVisualBlock> ooxmlBlocks;
+  final List<WysiwygBlock> wysiwygBlocks;
+  final List<Object?> quillDeltaJson;
   final DocumentPageSetup? pageSetup;
 }
 
@@ -44,6 +48,7 @@ class DocumentImportService {
     }
 
     final base = parse(bytes, fileName);
+    final partBlocks = _visualPartTextBlocks(bytes);
     try {
       final document = await docx.DocxReader.loadFromBytes(bytes);
       return ImportedDocument(
@@ -51,10 +56,16 @@ class DocumentImportService {
         formatLabel: base.formatLabel,
         sourcePackageFormat: base.sourcePackageFormat,
         sourcePackageBytes: base.sourcePackageBytes,
-        ooxmlBlocks: _visualBlocksFromDocx(document),
+        ooxmlBlocks: [..._visualBlocksFromDocx(document), ...partBlocks],
       );
     } on Object {
-      return base;
+      return ImportedDocument(
+        text: base.text,
+        formatLabel: base.formatLabel,
+        sourcePackageFormat: base.sourcePackageFormat,
+        sourcePackageBytes: base.sourcePackageBytes,
+        ooxmlBlocks: partBlocks,
+      );
     }
   }
 
@@ -182,6 +193,8 @@ class DocumentImportService {
           : null,
       sourcePackageBytes: _decodeNullableBase64(decoded['sourcePackageBase64']),
       ooxmlBlocks: _parseOpenDocVisualBlocks(decoded['ooxmlBlocks']),
+      wysiwygBlocks: _parseOpenDocWysiwygBlocks(decoded['wysiwygBlocks']),
+      quillDeltaJson: _parseOpenDocQuillDelta(decoded['quillDeltaJson']),
     );
   }
 
@@ -247,11 +260,97 @@ class DocumentImportService {
           return switch (json['type']) {
             'paragraph' => OoxmlParagraphBlock.fromJson(json),
             'table' => OoxmlTableBlock.fromJson(json),
+            'partText' => OoxmlPartTextBlock.fromJson(json),
             _ => null,
           };
         })
         .nonNulls
         .toList();
+  }
+
+  List<WysiwygBlock> _parseOpenDocWysiwygBlocks(Object? value) {
+    if (value is! List) {
+      return const [];
+    }
+    return value
+        .whereType<Map<String, Object?>>()
+        .map(WysiwygBlock.fromJson)
+        .toList();
+  }
+
+  List<Object?> _parseOpenDocQuillDelta(Object? value) {
+    if (value is! List) {
+      return const [];
+    }
+    return List<Object?>.of(value);
+  }
+
+  List<OoxmlVisualBlock> _visualPartTextBlocks(Uint8List bytes) {
+    final archive = ZipDecoder().decodeBytes(bytes);
+    final blocks = <OoxmlVisualBlock>[];
+    for (final file in archive.files) {
+      if (!file.isFile || !_isEditableOoxmlPart(file.name)) {
+        continue;
+      }
+      final content = utf8.decode(file.content as List<int>);
+      XmlDocument document;
+      try {
+        document = XmlDocument.parse(content);
+      } on Object {
+        continue;
+      }
+      var index = 0;
+      for (final paragraph in document.descendants.whereType<XmlElement>()) {
+        if (paragraph.name.local != 'p') {
+          continue;
+        }
+        final text = _plainParagraphText(paragraph);
+        if (text.trim().isEmpty) {
+          index += 1;
+          continue;
+        }
+        blocks.add(
+          OoxmlPartTextBlock(
+            partPath: file.name,
+            paragraphIndex: index,
+            label: _partLabel(file.name),
+            text: text,
+          ),
+        );
+        index += 1;
+      }
+    }
+    return blocks;
+  }
+
+  bool _isEditableOoxmlPart(String path) {
+    return RegExp(
+      r'^word/(header\d+|footer\d+|comments|footnotes|endnotes)\.xml$',
+    ).hasMatch(path);
+  }
+
+  String _partLabel(String path) {
+    final name = path.split('/').last.replaceAll('.xml', '');
+    if (name.startsWith('header')) {
+      return 'Header ${name.replaceFirst('header', '')}';
+    }
+    if (name.startsWith('footer')) {
+      return 'Footer ${name.replaceFirst('footer', '')}';
+    }
+    return switch (name) {
+      'comments' => 'Comment',
+      'footnotes' => 'Footnote',
+      'endnotes' => 'Endnote',
+      _ => 'OOXML part',
+    };
+  }
+
+  String _plainParagraphText(XmlElement paragraph) {
+    return paragraph.descendants
+        .whereType<XmlElement>()
+        .where((element) => element.name.local == 't')
+        .map((element) => element.innerText)
+        .join();
   }
 
   Uint8List? _decodeNullableBase64(Object? value) {

@@ -21,6 +21,7 @@ class DocxCollectionManager {
 
     // Process images recursively
     _collectImagesGrouped(state);
+    _collectHyperlinks(state);
 
     final allImages = <DocxInlineImage>{
       ...state.groupedImages['body']!,
@@ -40,6 +41,58 @@ class DocxCollectionManager {
 
     // Process lists recursively
     _collectLists(state);
+  }
+
+  static void _collectHyperlinks(DocxExportState state) {
+    for (final element in state.doc.elements) {
+      _collectHyperlinksFromNode(element, state);
+    }
+    if (state.doc.section?.header != null) {
+      for (final child in state.doc.section!.header!.children) {
+        _collectHyperlinksFromNode(child, state);
+      }
+    }
+    if (state.doc.section?.footer != null) {
+      for (final child in state.doc.section!.footer!.children) {
+        _collectHyperlinksFromNode(child, state);
+      }
+    }
+    DocxHyperlinkRegistry.reset(state.hyperlinks);
+  }
+
+  static void _collectHyperlinksFromNode(DocxNode node, DocxExportState state) {
+    if (node is DocxText && node.href != null && node.href!.isNotEmpty) {
+      state.hyperlinks.putIfAbsent(
+        node.href!,
+        () => 'rIdHyperlink${state.hyperlinks.length + 1}',
+      );
+    } else if (node is DocxParagraph) {
+      for (final child in node.children) {
+        _collectHyperlinksFromNode(child, state);
+      }
+    } else if (node is DocxTable) {
+      for (final row in node.rows) {
+        for (final cell in row.cells) {
+          for (final child in cell.children) {
+            _collectHyperlinksFromNode(child, state);
+          }
+        }
+      }
+    } else if (node is DocxList) {
+      for (final item in node.items) {
+        for (final child in item.children) {
+          _collectHyperlinksFromNode(child, state);
+        }
+      }
+    } else if (node is DocxHeader) {
+      for (final child in node.children) {
+        _collectHyperlinksFromNode(child, state);
+      }
+    } else if (node is DocxFooter) {
+      for (final child in node.children) {
+        _collectHyperlinksFromNode(child, state);
+      }
+    }
   }
 
   static void _collectImagesGrouped(DocxExportState state) {
@@ -69,7 +122,9 @@ class DocxCollectionManager {
   }
 
   static void _collectImagesFromNode(
-      DocxNode node, List<DocxInlineImage> images) {
+    DocxNode node,
+    List<DocxInlineImage> images,
+  ) {
     if (node is DocxImage) {
       images.add(node.asInline);
     } else if (node is DocxInlineImage) {

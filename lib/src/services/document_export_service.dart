@@ -3,6 +3,9 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:archive/archive.dart';
+import 'package:xml/xml.dart';
+
 import '../engine/docx.dart' as docx;
 import '../engine/core/font_manager.dart' as docx_fonts;
 
@@ -44,6 +47,8 @@ class DocumentExportPayload {
     this.sourcePackageFormat,
     this.sourcePackageBytes,
     this.ooxmlBlocks = const [],
+    this.wysiwygBlocks = const [],
+    this.quillDeltaJson = const [],
     this.pageSetup = const DocumentPageSetup(),
   });
 
@@ -55,6 +60,8 @@ class DocumentExportPayload {
   final String? sourcePackageFormat;
   final Uint8List? sourcePackageBytes;
   final List<OoxmlVisualBlock> ooxmlBlocks;
+  final List<WysiwygBlock> wysiwygBlocks;
+  final List<Object?> quillDeltaJson;
   final DocumentPageSetup pageSetup;
 }
 
@@ -121,7 +128,9 @@ class DocumentExportService {
   Future<docx.DocxBuiltDocument> buildDocument(
     DocumentExportPayload payload,
   ) async {
-    final built = await _buildNodes(buildMarkdown(payload));
+    final built = payload.quillDeltaJson.isNotEmpty
+        ? _buildNodesFromQuillDelta(payload.quillDeltaJson)
+        : await _buildNodes(buildMarkdown(payload));
     final selectedFont = _selectedFont(payload);
     final nodes = selectedFont == null
         ? built.nodes
@@ -331,6 +340,202 @@ class DocumentExportService {
     );
   }
 
+  _BuiltExportNodes _buildNodesFromQuillDelta(List<Object?> deltaJson) {
+    final nodes = <docx.DocxNode>[];
+    final lines = _quillLines(deltaJson);
+    var orderedStart = 1;
+    var pendingListItems = <docx.DocxListItem>[];
+    var pendingListOrdered = false;
+
+    void flushList() {
+      if (pendingListItems.isEmpty) {
+        return;
+      }
+      nodes.add(
+        docx.DocxList.items(
+          pendingListItems,
+          ordered: pendingListOrdered,
+          start: pendingListOrdered ? orderedStart : 1,
+        ),
+      );
+      if (pendingListOrdered) {
+        orderedStart += pendingListItems.length;
+      }
+      pendingListItems = [];
+    }
+
+    for (final line in lines) {
+      final listKind = line.attributes['list'];
+      if (listKind == 'bullet' ||
+          listKind == 'ordered' ||
+          listKind == 'checked' ||
+          listKind == 'unchecked') {
+        final ordered = listKind == 'ordered';
+        if (pendingListItems.isNotEmpty && pendingListOrdered != ordered) {
+          flushList();
+        }
+        pendingListOrdered = ordered;
+        final prefix = listKind == 'checked'
+            ? '[x] '
+            : listKind == 'unchecked'
+            ? '[ ] '
+            : '';
+        pendingListItems.add(
+          docx.DocxListItem.rich([
+            if (prefix.isNotEmpty) docx.DocxText(prefix),
+            ..._quillInlines(line.runs),
+          ]),
+        );
+        continue;
+      }
+
+      flushList();
+      orderedStart = 1;
+      if (line.runs.isEmpty ||
+          line.runs.every((run) => run.text.trim().isEmpty)) {
+        continue;
+      }
+      nodes.add(
+        docx.DocxParagraph(
+          children: _quillInlines(line.runs),
+          align: _quillAlign(line.attributes['align']),
+          styleId: _quillStyleId(line.attributes),
+          indentLeft: line.attributes['blockquote'] == true ? 720 : null,
+        ),
+      );
+    }
+    flushList();
+    return _BuiltExportNodes(
+      nodes: nodes,
+      footnotes: const [],
+      endnotes: const [],
+    );
+  }
+
+  List<_QuillLine> _quillLines(List<Object?> deltaJson) {
+    final lines = <_QuillLine>[];
+    var runs = <_QuillRun>[];
+
+    void flush(Map<String, Object?> attributes) {
+      lines.add(_QuillLine(runs: runs, attributes: attributes));
+      runs = [];
+    }
+
+    for (final rawOp in deltaJson) {
+      if (rawOp is! Map) {
+        continue;
+      }
+      final attributes = _quillAttributes(rawOp['attributes']);
+      final insert = rawOp['insert'];
+      if (insert is String) {
+        final parts = insert.split('\n');
+        for (var index = 0; index < parts.length; index += 1) {
+          if (parts[index].isNotEmpty) {
+            runs.add(_QuillRun(parts[index], attributes));
+          }
+          if (index != parts.length - 1) {
+            flush(attributes);
+          }
+        }
+      } else if (insert != null) {
+        runs.add(_QuillRun('[Object]', attributes));
+      }
+    }
+    if (runs.isNotEmpty) {
+      flush(const {});
+    }
+    return lines;
+  }
+
+  List<docx.DocxInline> _quillInlines(List<_QuillRun> runs) {
+    return [
+      for (final run in runs)
+        if (run.text.isNotEmpty) _quillText(run.text, run.attributes),
+    ];
+  }
+
+  docx.DocxText _quillText(String text, Map<String, Object?> attributes) {
+    final decorations = <docx.DocxTextDecoration>[
+      if (attributes['underline'] == true) docx.DocxTextDecoration.underline,
+      if (attributes['strike'] == true) docx.DocxTextDecoration.strikethrough,
+    ];
+    final code = attributes['code'] == true;
+    return docx.DocxText(
+      text,
+      fontWeight: attributes['bold'] == true
+          ? docx.DocxFontWeight.bold
+          : docx.DocxFontWeight.normal,
+      fontStyle: attributes['italic'] == true
+          ? docx.DocxFontStyle.italic
+          : docx.DocxFontStyle.normal,
+      decorations: decorations,
+      color: _quillColor(attributes['color']),
+      shadingFill:
+          _quillHex(attributes['background']) ?? (code ? 'E5E7EB' : null),
+      fontSize: _quillFontSize(attributes['size']),
+      fontFamily: code ? 'Courier New' : null,
+      href: attributes['link'] is String ? attributes['link'] as String : null,
+      isSuperscript: attributes['script'] == 'super',
+      isSubscript: attributes['script'] == 'sub',
+    );
+  }
+
+  Map<String, Object?> _quillAttributes(Object? value) {
+    if (value is! Map) {
+      return const {};
+    }
+    return value.map((key, value) => MapEntry(key.toString(), value));
+  }
+
+  String? _quillStyleId(Map<String, Object?> attributes) {
+    return switch (attributes['header']) {
+      1 => 'Heading1',
+      2 => 'Heading2',
+      3 => 'Heading3',
+      _ => attributes['blockquote'] == true ? 'Quote' : null,
+    };
+  }
+
+  docx.DocxAlign _quillAlign(Object? value) {
+    return switch (value) {
+      'center' => docx.DocxAlign.center,
+      'right' => docx.DocxAlign.right,
+      'justify' => docx.DocxAlign.justify,
+      _ => docx.DocxAlign.left,
+    };
+  }
+
+  docx.DocxColor? _quillColor(Object? value) {
+    final hex = _quillHex(value);
+    return hex == null ? null : docx.DocxColor(hex);
+  }
+
+  String? _quillHex(Object? value) {
+    if (value is! String || value.trim().isEmpty) {
+      return null;
+    }
+    final cleaned = value
+        .trim()
+        .replaceFirst('#', '')
+        .replaceFirst('0x', '')
+        .toUpperCase();
+    if (!RegExp(r'^[0-9A-F]{6}$').hasMatch(cleaned)) {
+      return null;
+    }
+    return cleaned;
+  }
+
+  double? _quillFontSize(Object? value) {
+    return switch (value) {
+      'small' => 10,
+      'large' => 18,
+      'huge' => 24,
+      num() => value.toDouble(),
+      String() => double.tryParse(value),
+      _ => null,
+    };
+  }
+
   docx.DocxShapeBlock _shapeFor(String kind, String? label) {
     final normalized = kind.trim();
     final preset = docx.DocxShapePreset.values
@@ -479,6 +684,12 @@ class DocumentExportService {
         'ooxmlBlocks': [
           for (final block in payload.ooxmlBlocks) block.toJson(),
         ],
+      if (payload.wysiwygBlocks.isNotEmpty)
+        'wysiwygBlocks': [
+          for (final block in payload.wysiwygBlocks) block.toJson(),
+        ],
+      if (payload.quillDeltaJson.isNotEmpty)
+        'quillDeltaJson': payload.quillDeltaJson,
       'pageSetup': {
         'pageSize': payload.pageSetup.pageSize.name,
         'orientation': payload.pageSetup.orientation.name,
@@ -536,6 +747,10 @@ class DocumentExportService {
 
   Future<Uint8List> exportVisualDocx(DocumentExportPayload payload) async {
     ensureLanguageSupport(payload);
+    if (payload.sourcePackageFormat == 'docx' &&
+        payload.sourcePackageBytes != null) {
+      return _exportPatchedVisualDocx(payload);
+    }
     final selectedFont = _selectedFont(payload);
     final elements = payload.ooxmlBlocks
         .map((block) => _visualNodeFor(block, selectedFont))
@@ -591,6 +806,133 @@ class DocumentExportService {
       OoxmlTextAlign.justify => docx.DocxAlign.justify,
       OoxmlTextAlign.left => docx.DocxAlign.left,
     };
+  }
+
+  Uint8List _exportPatchedVisualDocx(DocumentExportPayload payload) {
+    final source = ZipDecoder().decodeBytes(payload.sourcePackageBytes!);
+    final replacements = <String, String>{};
+    final documentFile = source.findFile('word/document.xml');
+    if (documentFile != null) {
+      replacements['word/document.xml'] = _patchDocumentBodyXml(
+        utf8.decode(documentFile.content as List<int>),
+        payload.ooxmlBlocks,
+      );
+    }
+
+    final partTextBlocks = payload.ooxmlBlocks.whereType<OoxmlPartTextBlock>();
+    final blocksByPart = <String, List<OoxmlPartTextBlock>>{};
+    for (final block in partTextBlocks) {
+      blocksByPart.putIfAbsent(block.partPath, () => []).add(block);
+    }
+    for (final entry in blocksByPart.entries) {
+      final file = source.findFile(entry.key);
+      if (file == null) {
+        continue;
+      }
+      replacements[entry.key] = _patchPartParagraphTextXml(
+        replacements[entry.key] ?? utf8.decode(file.content as List<int>),
+        entry.value,
+      );
+    }
+
+    final output = Archive();
+    for (final file in source.files) {
+      final replacement = replacements[file.name];
+      if (replacement != null) {
+        output.addFile(ArchiveFile.string(file.name, replacement));
+      } else {
+        output.addFile(
+          ArchiveFile(file.name, file.size, file.content)..mode = file.mode,
+        );
+      }
+    }
+    return Uint8List.fromList(ZipEncoder().encode(output));
+  }
+
+  String _patchDocumentBodyXml(String xml, List<OoxmlVisualBlock> blocks) {
+    final document = XmlDocument.parse(xml);
+    final body = document.descendants.whereType<XmlElement>().firstWhere(
+      (element) => element.name.local == 'body',
+      orElse: () => document.rootElement,
+    );
+    var blockIndex = 0;
+    for (final child in body.childElements) {
+      if (blockIndex >= blocks.length) {
+        break;
+      }
+      final block = blocks[blockIndex];
+      if (child.name.local == 'p' && block is OoxmlParagraphBlock) {
+        _replaceParagraphText(child, block.text);
+        blockIndex += 1;
+      } else if (child.name.local == 'tbl' && block is OoxmlTableBlock) {
+        _replaceTableText(child, block);
+        blockIndex += 1;
+      }
+    }
+    return document.toXmlString();
+  }
+
+  String _patchPartParagraphTextXml(
+    String xml,
+    List<OoxmlPartTextBlock> blocks,
+  ) {
+    final document = XmlDocument.parse(xml);
+    final byIndex = {
+      for (final block in blocks) block.paragraphIndex: block.text,
+    };
+    var index = 0;
+    for (final paragraph in document.descendants.whereType<XmlElement>()) {
+      if (paragraph.name.local != 'p') {
+        continue;
+      }
+      final text = byIndex[index];
+      if (text != null) {
+        _replaceParagraphText(paragraph, text);
+      }
+      index += 1;
+    }
+    return document.toXmlString();
+  }
+
+  void _replaceTableText(XmlElement table, OoxmlTableBlock block) {
+    final rows = table.childElements
+        .where((element) => element.name.local == 'tr')
+        .toList();
+    for (var rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+      if (rowIndex >= block.rows.length) {
+        break;
+      }
+      final cells = rows[rowIndex].childElements
+          .where((element) => element.name.local == 'tc')
+          .toList();
+      for (var cellIndex = 0; cellIndex < cells.length; cellIndex += 1) {
+        if (cellIndex >= block.rows[rowIndex].length) {
+          break;
+        }
+        final paragraph = cells[cellIndex].descendants
+            .whereType<XmlElement>()
+            .firstWhere(
+              (element) => element.name.local == 'p',
+              orElse: () => cells[cellIndex],
+            );
+        _replaceParagraphText(paragraph, block.rows[rowIndex][cellIndex]);
+      }
+    }
+  }
+
+  void _replaceParagraphText(XmlElement paragraph, String text) {
+    final textNodes = paragraph.descendants
+        .whereType<XmlElement>()
+        .where((element) => element.name.local == 't')
+        .toList();
+    if (textNodes.isEmpty) {
+      return;
+    }
+    for (var index = 0; index < textNodes.length; index += 1) {
+      textNodes[index].children
+        ..clear()
+        ..add(XmlText(index == 0 ? text : ''));
+    }
   }
 
   String? _selectedFont(DocumentExportPayload payload) {
@@ -726,4 +1068,18 @@ class _BuiltExportNodes {
   final List<docx.DocxNode> nodes;
   final List<docx.DocxFootnote> footnotes;
   final List<docx.DocxEndnote> endnotes;
+}
+
+class _QuillLine {
+  const _QuillLine({required this.runs, required this.attributes});
+
+  final List<_QuillRun> runs;
+  final Map<String, Object?> attributes;
+}
+
+class _QuillRun {
+  const _QuillRun(this.text, this.attributes);
+
+  final String text;
+  final Map<String, Object?> attributes;
 }

@@ -54,89 +54,159 @@ class DocxRelationshipsGenerator {
           'xmlns',
           'http://schemas.openxmlformats.org/package/2006/relationships',
         );
-        builder.element('Relationship', nest: () {
-          builder.attribute('Id', 'rId1');
-          builder.attribute('Type',
-              'http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles');
-          builder.attribute('Target', 'styles.xml');
-        });
-        builder.element('Relationship', nest: () {
-          builder.attribute('Id', 'rId2');
-          builder.attribute('Type',
-              'http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings');
-          builder.attribute('Target', 'settings.xml');
-        });
-        builder.element('Relationship', nest: () {
-          builder.attribute('Id', 'rId3');
-          builder.attribute('Type',
-              'http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable');
-          builder.attribute('Target', 'fontTable.xml');
-        });
-        builder.element('Relationship', nest: () {
-          builder.attribute('Id', 'rId4');
-          builder.attribute('Type',
-              'http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering');
-          builder.attribute('Target', 'numbering.xml');
-        });
-        builder.element('Relationship', nest: () {
-          builder.attribute('Id', 'rIdTheme');
-          builder.attribute('Type',
-              'http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme');
-          builder.attribute('Target', 'theme/theme1.xml');
-        });
+        builder.element(
+          'Relationship',
+          nest: () {
+            builder.attribute('Id', 'rId1');
+            builder.attribute(
+              'Type',
+              'http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles',
+            );
+            builder.attribute('Target', 'styles.xml');
+          },
+        );
+        builder.element(
+          'Relationship',
+          nest: () {
+            builder.attribute('Id', 'rId2');
+            builder.attribute(
+              'Type',
+              'http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings',
+            );
+            builder.attribute('Target', 'settings.xml');
+          },
+        );
+        builder.element(
+          'Relationship',
+          nest: () {
+            builder.attribute('Id', 'rId3');
+            builder.attribute(
+              'Type',
+              'http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable',
+            );
+            builder.attribute('Target', 'fontTable.xml');
+          },
+        );
+        builder.element(
+          'Relationship',
+          nest: () {
+            builder.attribute('Id', 'rId4');
+            builder.attribute(
+              'Type',
+              'http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering',
+            );
+            builder.attribute('Target', 'numbering.xml');
+          },
+        );
+        builder.element(
+          'Relationship',
+          nest: () {
+            builder.attribute('Id', 'rIdTheme');
+            builder.attribute(
+              'Type',
+              'http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme',
+            );
+            builder.attribute('Target', 'theme/theme1.xml');
+          },
+        );
 
         if (state.doc.section?.header != null) {
-          builder.element('Relationship', nest: () {
-            builder.attribute('Id', 'rId5');
-            builder.attribute('Type',
-                'http://schemas.openxmlformats.org/officeDocument/2006/relationships/header');
-            builder.attribute('Target', 'header1.xml');
-          });
+          builder.element(
+            'Relationship',
+            nest: () {
+              builder.attribute('Id', 'rId5');
+              builder.attribute(
+                'Type',
+                'http://schemas.openxmlformats.org/officeDocument/2006/relationships/header',
+              );
+              builder.attribute('Target', 'header1.xml');
+            },
+          );
         }
 
         if (state.doc.section?.footer != null) {
-          builder.element('Relationship', nest: () {
-            builder.attribute('Id', 'rId6');
-            builder.attribute('Type',
-                'http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer');
-            builder.attribute('Target', 'footer1.xml');
-          });
+          builder.element(
+            'Relationship',
+            nest: () {
+              builder.attribute('Id', 'rId6');
+              builder.attribute(
+                'Type',
+                'http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer',
+              );
+              builder.attribute('Target', 'footer1.xml');
+            },
+          );
         }
 
         if (state.backgroundImage != null) {
-          builder.element('Relationship', nest: () {
-            builder.attribute('Id', 'rIdBg');
-            builder.attribute('Type',
-                'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image');
-            final ext = state.backgroundImage!.normalizedExtension;
-            builder.attribute('Target', 'media/background.$ext');
-          });
-          builder.element('Relationship', nest: () {
-            builder.attribute('Id', 'rIdBgHdr');
-            builder.attribute('Type',
-                'http://schemas.openxmlformats.org/officeDocument/2006/relationships/header');
-            builder.attribute('Target', 'header_bg.xml');
-          });
+          builder.element(
+            'Relationship',
+            nest: () {
+              builder.attribute('Id', 'rIdBg');
+              builder.attribute(
+                'Type',
+                'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',
+              );
+              final ext = state.backgroundImage!.normalizedExtension;
+              builder.attribute('Target', 'media/background.$ext');
+            },
+          );
+          builder.element(
+            'Relationship',
+            nest: () {
+              builder.attribute('Id', 'rIdBgHdr');
+              builder.attribute(
+                'Type',
+                'http://schemas.openxmlformats.org/officeDocument/2006/relationships/header',
+              );
+              builder.attribute('Target', 'header_bg.xml');
+            },
+          );
         }
 
         if ((state.doc.footnotes != null && state.doc.footnotes!.isNotEmpty) ||
             state.doc.footnotesXml != null) {
-          builder.element('Relationship', nest: () {
-            builder.attribute('Id', 'rIdFootnotes');
-            builder.attribute('Type',
-                'http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes');
-            builder.attribute('Target', 'footnotes.xml');
-          });
+          builder.element(
+            'Relationship',
+            nest: () {
+              builder.attribute('Id', 'rIdFootnotes');
+              builder.attribute(
+                'Type',
+                'http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes',
+              );
+              builder.attribute('Target', 'footnotes.xml');
+            },
+          );
         }
 
         if ((state.doc.endnotes != null && state.doc.endnotes!.isNotEmpty) ||
             state.doc.endnotesXml != null) {
-          builder.element('Relationship', nest: () {
-            builder.attribute('Id', 'rIdEndnotes');
-            builder.attribute('Type',
-                'http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes');
-            builder.attribute('Target', 'endnotes.xml');
-          });
+          builder.element(
+            'Relationship',
+            nest: () {
+              builder.attribute('Id', 'rIdEndnotes');
+              builder.attribute(
+                'Type',
+                'http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes',
+              );
+              builder.attribute('Target', 'endnotes.xml');
+            },
+          );
+        }
+
+        for (final entry in state.hyperlinks.entries) {
+          builder.element(
+            'Relationship',
+            nest: () {
+              builder.attribute('Id', entry.value);
+              builder.attribute(
+                'Type',
+                'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink',
+              );
+              builder.attribute('Target', entry.key);
+              builder.attribute('TargetMode', 'External');
+            },
+          );
         }
 
         final uniqueBodyImages = <String, dynamic>{};
@@ -150,12 +220,20 @@ class DocxRelationshipsGenerator {
           final relId = img.relationshipId;
           final mediaPath = state.imageMediaPaths[img];
           if (relId != null && mediaPath != null) {
-            builder.element('Relationship', nest: () {
-              builder.attribute('Id', relId);
-              builder.attribute('Type',
-                  'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image');
-              builder.attribute('Target', mediaPath.replaceFirst('word/', ''));
-            });
+            builder.element(
+              'Relationship',
+              nest: () {
+                builder.attribute('Id', relId);
+                builder.attribute(
+                  'Type',
+                  'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',
+                );
+                builder.attribute(
+                  'Target',
+                  mediaPath.replaceFirst('word/', ''),
+                );
+              },
+            );
           }
         }
       },
@@ -178,7 +256,9 @@ class DocxRelationshipsGenerator {
     }
     final builder = XmlBuilder();
     builder.processing(
-        'xml', 'version="1.0" encoding="UTF-8" standalone="yes"');
+      'xml',
+      'version="1.0" encoding="UTF-8" standalone="yes"',
+    );
     builder.element(
       'Relationships',
       nest: () {

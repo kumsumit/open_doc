@@ -29,6 +29,9 @@ class DocxExportState {
   /// Tracks the media path for inline images.
   final Map<DocxInlineImage, String> imageMediaPaths = {};
 
+  /// External hyperlinks referenced by body text, mapped URL -> relationship ID.
+  final Map<String, String> hyperlinks = {};
+
   /// References the background image (if any).
   DocxBackgroundImage? backgroundImage;
 

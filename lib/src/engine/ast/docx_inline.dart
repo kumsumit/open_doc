@@ -4,6 +4,23 @@ import '../core/enums.dart';
 import '../reader/docx_reader/models/docx_font.dart';
 import 'docx_node.dart';
 
+class DocxHyperlinkRegistry {
+  static final Map<String, String> _hrefToId = {};
+
+  static void reset(Map<String, String> relationships) {
+    _hrefToId
+      ..clear()
+      ..addAll(relationships);
+  }
+
+  static String? idFor(String? href) {
+    if (href == null || href.isEmpty) {
+      return null;
+    }
+    return _hrefToId[href];
+  }
+}
+
 /// A styled text run within a paragraph.
 ///
 /// ## Basic
@@ -112,24 +129,24 @@ class DocxText extends DocxInline {
     this.themeFillTint,
     this.themeFillShade,
     super.id,
-  })  : fontWeight = DocxFontWeight.bold,
-        fontStyle = DocxFontStyle.normal,
-        decorations = const [],
-        characterSpacing = null,
-        href = null,
-        themeColor = null,
-        themeTint = null,
-        themeShade = null,
-        isSuperscript = false,
-        isSubscript = false,
-        isAllCaps = false,
-        isSmallCaps = false,
-        isDoubleStrike = false,
-        isOutline = false,
-        isShadow = false,
-        isEmboss = false,
-        isImprint = false,
-        textBorder = null;
+  }) : fontWeight = DocxFontWeight.bold,
+       fontStyle = DocxFontStyle.normal,
+       decorations = const [],
+       characterSpacing = null,
+       href = null,
+       themeColor = null,
+       themeTint = null,
+       themeShade = null,
+       isSuperscript = false,
+       isSubscript = false,
+       isAllCaps = false,
+       isSmallCaps = false,
+       isDoubleStrike = false,
+       isOutline = false,
+       isShadow = false,
+       isEmboss = false,
+       isImprint = false,
+       textBorder = null;
 
   /// Italic text.
   const DocxText.italic(
@@ -144,24 +161,24 @@ class DocxText extends DocxInline {
     this.themeFillTint,
     this.themeFillShade,
     super.id,
-  })  : fontWeight = DocxFontWeight.normal,
-        fontStyle = DocxFontStyle.italic,
-        decorations = const [],
-        characterSpacing = null,
-        href = null,
-        themeColor = null,
-        themeTint = null,
-        themeShade = null,
-        isSuperscript = false,
-        isSubscript = false,
-        isAllCaps = false,
-        isSmallCaps = false,
-        isDoubleStrike = false,
-        isOutline = false,
-        isShadow = false,
-        isEmboss = false,
-        isImprint = false,
-        textBorder = null;
+  }) : fontWeight = DocxFontWeight.normal,
+       fontStyle = DocxFontStyle.italic,
+       decorations = const [],
+       characterSpacing = null,
+       href = null,
+       themeColor = null,
+       themeTint = null,
+       themeShade = null,
+       isSuperscript = false,
+       isSubscript = false,
+       isAllCaps = false,
+       isSmallCaps = false,
+       isDoubleStrike = false,
+       isOutline = false,
+       isShadow = false,
+       isEmboss = false,
+       isImprint = false,
+       textBorder = null;
 
   /// Bold and italic text.
   const DocxText.boldItalic(
@@ -176,24 +193,24 @@ class DocxText extends DocxInline {
     this.themeFillTint,
     this.themeFillShade,
     super.id,
-  })  : fontWeight = DocxFontWeight.bold,
-        fontStyle = DocxFontStyle.italic,
-        decorations = const [],
-        characterSpacing = null,
-        href = null,
-        themeColor = null,
-        themeTint = null,
-        themeShade = null,
-        isSuperscript = false,
-        isSubscript = false,
-        isAllCaps = false,
-        isSmallCaps = false,
-        isDoubleStrike = false,
-        isOutline = false,
-        isShadow = false,
-        isEmboss = false,
-        isImprint = false,
-        textBorder = null;
+  }) : fontWeight = DocxFontWeight.bold,
+       fontStyle = DocxFontStyle.italic,
+       decorations = const [],
+       characterSpacing = null,
+       href = null,
+       themeColor = null,
+       themeTint = null,
+       themeShade = null,
+       isSuperscript = false,
+       isSubscript = false,
+       isAllCaps = false,
+       isSmallCaps = false,
+       isDoubleStrike = false,
+       isOutline = false,
+       isShadow = false,
+       isEmboss = false,
+       isImprint = false,
+       textBorder = null;
 
   /// Underlined text.
   const DocxText.underline(
@@ -208,24 +225,24 @@ class DocxText extends DocxInline {
     this.themeFillTint,
     this.themeFillShade,
     super.id,
-  })  : fontWeight = DocxFontWeight.normal,
-        fontStyle = DocxFontStyle.normal,
-        decorations = const [DocxTextDecoration.underline],
-        characterSpacing = null,
-        href = null,
-        themeColor = null,
-        themeTint = null,
-        themeShade = null,
-        isSuperscript = false,
-        isSubscript = false,
-        isAllCaps = false,
-        isSmallCaps = false,
-        isDoubleStrike = false,
-        isOutline = false,
-        isShadow = false,
-        isEmboss = false,
-        isImprint = false,
-        textBorder = null;
+  }) : fontWeight = DocxFontWeight.normal,
+       fontStyle = DocxFontStyle.normal,
+       decorations = const [DocxTextDecoration.underline],
+       characterSpacing = null,
+       href = null,
+       themeColor = null,
+       themeTint = null,
+       themeShade = null,
+       isSuperscript = false,
+       isSubscript = false,
+       isAllCaps = false,
+       isSmallCaps = false,
+       isDoubleStrike = false,
+       isOutline = false,
+       isShadow = false,
+       isEmboss = false,
+       isImprint = false,
+       textBorder = null;
 
   /// Strikethrough text.
   const DocxText.strike(
@@ -240,24 +257,24 @@ class DocxText extends DocxInline {
     this.themeFillTint,
     this.themeFillShade,
     super.id,
-  })  : fontWeight = DocxFontWeight.normal,
-        fontStyle = DocxFontStyle.normal,
-        decorations = const [DocxTextDecoration.strikethrough],
-        characterSpacing = null,
-        href = null,
-        themeColor = null,
-        themeTint = null,
-        themeShade = null,
-        isSuperscript = false,
-        isSubscript = false,
-        isAllCaps = false,
-        isSmallCaps = false,
-        isDoubleStrike = false,
-        isOutline = false,
-        isShadow = false,
-        isEmboss = false,
-        isImprint = false,
-        textBorder = null;
+  }) : fontWeight = DocxFontWeight.normal,
+       fontStyle = DocxFontStyle.normal,
+       decorations = const [DocxTextDecoration.strikethrough],
+       characterSpacing = null,
+       href = null,
+       themeColor = null,
+       themeTint = null,
+       themeShade = null,
+       isSuperscript = false,
+       isSubscript = false,
+       isAllCaps = false,
+       isSmallCaps = false,
+       isDoubleStrike = false,
+       isOutline = false,
+       isShadow = false,
+       isEmboss = false,
+       isImprint = false,
+       textBorder = null;
 
   /// Hyperlink text.
   const DocxText.link(
@@ -271,56 +288,57 @@ class DocxText extends DocxInline {
     this.themeFillTint,
     this.themeFillShade,
     super.id,
-  })  : fontWeight = DocxFontWeight.normal,
-        fontStyle = DocxFontStyle.normal,
-        decorations = const [DocxTextDecoration.underline],
-        color = DocxColor.blue,
-        highlight = DocxHighlight.none,
-        characterSpacing = null,
-        themeColor = null,
-        themeTint = null,
-        themeShade = null,
-        isSuperscript = false,
-        isSubscript = false,
-        isAllCaps = false,
-        isSmallCaps = false,
-        isDoubleStrike = false,
-        isOutline = false,
-        isShadow = false,
-        isEmboss = false,
-        isImprint = false,
-        textBorder = null;
+  }) : fontWeight = DocxFontWeight.normal,
+       fontStyle = DocxFontStyle.normal,
+       decorations = const [DocxTextDecoration.underline],
+       color = DocxColor.blue,
+       highlight = DocxHighlight.none,
+       characterSpacing = null,
+       themeColor = null,
+       themeTint = null,
+       themeShade = null,
+       isSuperscript = false,
+       isSubscript = false,
+       isAllCaps = false,
+       isSmallCaps = false,
+       isDoubleStrike = false,
+       isOutline = false,
+       isShadow = false,
+       isEmboss = false,
+       isImprint = false,
+       textBorder = null;
 
   /// Inline code text.
-  const DocxText.code(this.content,
-      {this.fontSize,
-      this.shadingFill,
-      this.color,
-      this.themeFill,
-      this.themeFillTint,
-      this.themeFillShade,
-      super.id})
-      : fontWeight = DocxFontWeight.normal,
-        fontStyle = DocxFontStyle.normal,
-        decorations = const [],
-        highlight = DocxHighlight.none,
-        fontFamily = 'Courier New',
-        fonts = null,
-        characterSpacing = null,
-        href = null,
-        themeColor = null,
-        themeTint = null,
-        themeShade = null,
-        isSuperscript = false,
-        isSubscript = false,
-        isAllCaps = false,
-        isSmallCaps = false,
-        isDoubleStrike = false,
-        isOutline = false,
-        isShadow = false,
-        isEmboss = false,
-        isImprint = false,
-        textBorder = null;
+  const DocxText.code(
+    this.content, {
+    this.fontSize,
+    this.shadingFill,
+    this.color,
+    this.themeFill,
+    this.themeFillTint,
+    this.themeFillShade,
+    super.id,
+  }) : fontWeight = DocxFontWeight.normal,
+       fontStyle = DocxFontStyle.normal,
+       decorations = const [],
+       highlight = DocxHighlight.none,
+       fontFamily = 'Courier New',
+       fonts = null,
+       characterSpacing = null,
+       href = null,
+       themeColor = null,
+       themeTint = null,
+       themeShade = null,
+       isSuperscript = false,
+       isSubscript = false,
+       isAllCaps = false,
+       isSmallCaps = false,
+       isDoubleStrike = false,
+       isOutline = false,
+       isShadow = false,
+       isEmboss = false,
+       isImprint = false,
+       textBorder = null;
 
   /// Highlighted text.
   const DocxText.highlighted(
@@ -335,86 +353,88 @@ class DocxText extends DocxInline {
     this.themeFillTint,
     this.themeFillShade,
     super.id,
-  })  : fontWeight = DocxFontWeight.normal,
-        fontStyle = DocxFontStyle.normal,
-        decorations = const [],
-        characterSpacing = null,
-        href = null,
-        themeColor = null,
-        themeTint = null,
-        themeShade = null,
-        isSuperscript = false,
-        isSubscript = false,
-        isAllCaps = false,
-        isSmallCaps = false,
-        isDoubleStrike = false,
-        isOutline = false,
-        isShadow = false,
-        isEmboss = false,
-        isImprint = false,
-        textBorder = null;
+  }) : fontWeight = DocxFontWeight.normal,
+       fontStyle = DocxFontStyle.normal,
+       decorations = const [],
+       characterSpacing = null,
+       href = null,
+       themeColor = null,
+       themeTint = null,
+       themeShade = null,
+       isSuperscript = false,
+       isSubscript = false,
+       isAllCaps = false,
+       isSmallCaps = false,
+       isDoubleStrike = false,
+       isOutline = false,
+       isShadow = false,
+       isEmboss = false,
+       isImprint = false,
+       textBorder = null;
 
   /// Superscript text (e.g., x²).
-  const DocxText.superscript(this.content,
-      {this.fontSize,
-      this.shadingFill,
-      this.themeFill,
-      this.themeFillTint,
-      this.themeFillShade,
-      super.id})
-      : fontWeight = DocxFontWeight.normal,
-        fontStyle = DocxFontStyle.normal,
-        decorations = const [],
-        color = null,
-        highlight = DocxHighlight.none,
-        fontFamily = null,
-        fonts = null,
-        characterSpacing = null,
-        href = null,
-        themeColor = null,
-        themeTint = null,
-        themeShade = null,
-        isSuperscript = true,
-        isSubscript = false,
-        isAllCaps = false,
-        isSmallCaps = false,
-        isDoubleStrike = false,
-        isOutline = false,
-        isShadow = false,
-        isEmboss = false,
-        isImprint = false,
-        textBorder = null;
+  const DocxText.superscript(
+    this.content, {
+    this.fontSize,
+    this.shadingFill,
+    this.themeFill,
+    this.themeFillTint,
+    this.themeFillShade,
+    super.id,
+  }) : fontWeight = DocxFontWeight.normal,
+       fontStyle = DocxFontStyle.normal,
+       decorations = const [],
+       color = null,
+       highlight = DocxHighlight.none,
+       fontFamily = null,
+       fonts = null,
+       characterSpacing = null,
+       href = null,
+       themeColor = null,
+       themeTint = null,
+       themeShade = null,
+       isSuperscript = true,
+       isSubscript = false,
+       isAllCaps = false,
+       isSmallCaps = false,
+       isDoubleStrike = false,
+       isOutline = false,
+       isShadow = false,
+       isEmboss = false,
+       isImprint = false,
+       textBorder = null;
 
   /// Subscript text (e.g., H₂O).
-  const DocxText.subscript(this.content,
-      {this.fontSize,
-      this.shadingFill,
-      this.themeFill,
-      this.themeFillTint,
-      this.themeFillShade,
-      super.id})
-      : fontWeight = DocxFontWeight.normal,
-        fontStyle = DocxFontStyle.normal,
-        decorations = const [],
-        color = null,
-        highlight = DocxHighlight.none,
-        fontFamily = null,
-        fonts = null,
-        characterSpacing = null,
-        href = null,
-        themeColor = null,
-        themeTint = null,
-        themeShade = null,
-        isSuperscript = false,
-        isSubscript = true,
-        isAllCaps = false,
-        isSmallCaps = false,
-        isDoubleStrike = false,
-        isOutline = false,
-        isShadow = false,
-        isEmboss = false,
-        isImprint = false,
-        textBorder = null;
+  const DocxText.subscript(
+    this.content, {
+    this.fontSize,
+    this.shadingFill,
+    this.themeFill,
+    this.themeFillTint,
+    this.themeFillShade,
+    super.id,
+  }) : fontWeight = DocxFontWeight.normal,
+       fontStyle = DocxFontStyle.normal,
+       decorations = const [],
+       color = null,
+       highlight = DocxHighlight.none,
+       fontFamily = null,
+       fonts = null,
+       characterSpacing = null,
+       href = null,
+       themeColor = null,
+       themeTint = null,
+       themeShade = null,
+       isSuperscript = false,
+       isSubscript = true,
+       isAllCaps = false,
+       isSmallCaps = false,
+       isDoubleStrike = false,
+       isOutline = false,
+       isShadow = false,
+       isEmboss = false,
+       isImprint = false,
+       textBorder = null;
 
   /// ALL CAPS text.
   const DocxText.allCaps(
@@ -427,26 +447,26 @@ class DocxText extends DocxInline {
     this.themeFillTint,
     this.themeFillShade,
     super.id,
-  })  : fontWeight = DocxFontWeight.normal,
-        fontStyle = DocxFontStyle.normal,
-        decorations = const [],
-        color = null,
-        highlight = DocxHighlight.none,
-        characterSpacing = null,
-        href = null,
-        themeColor = null,
-        themeTint = null,
-        themeShade = null,
-        isSuperscript = false,
-        isSubscript = false,
-        isAllCaps = true,
-        isSmallCaps = false,
-        isDoubleStrike = false,
-        isOutline = false,
-        isShadow = false,
-        isEmboss = false,
-        isImprint = false,
-        textBorder = null;
+  }) : fontWeight = DocxFontWeight.normal,
+       fontStyle = DocxFontStyle.normal,
+       decorations = const [],
+       color = null,
+       highlight = DocxHighlight.none,
+       characterSpacing = null,
+       href = null,
+       themeColor = null,
+       themeTint = null,
+       themeShade = null,
+       isSuperscript = false,
+       isSubscript = false,
+       isAllCaps = true,
+       isSmallCaps = false,
+       isDoubleStrike = false,
+       isOutline = false,
+       isShadow = false,
+       isEmboss = false,
+       isImprint = false,
+       textBorder = null;
 
   /// Small Caps text.
   const DocxText.smallCaps(
@@ -459,26 +479,26 @@ class DocxText extends DocxInline {
     this.themeFillTint,
     this.themeFillShade,
     super.id,
-  })  : fontWeight = DocxFontWeight.normal,
-        fontStyle = DocxFontStyle.normal,
-        decorations = const [],
-        color = null,
-        highlight = DocxHighlight.none,
-        characterSpacing = null,
-        href = null,
-        themeColor = null,
-        themeTint = null,
-        themeShade = null,
-        isSuperscript = false,
-        isSubscript = false,
-        isAllCaps = false,
-        isSmallCaps = true,
-        isDoubleStrike = false,
-        isOutline = false,
-        isShadow = false,
-        isEmboss = false,
-        isImprint = false,
-        textBorder = null;
+  }) : fontWeight = DocxFontWeight.normal,
+       fontStyle = DocxFontStyle.normal,
+       decorations = const [],
+       color = null,
+       highlight = DocxHighlight.none,
+       characterSpacing = null,
+       href = null,
+       themeColor = null,
+       themeTint = null,
+       themeShade = null,
+       isSuperscript = false,
+       isSubscript = false,
+       isAllCaps = false,
+       isSmallCaps = true,
+       isDoubleStrike = false,
+       isOutline = false,
+       isShadow = false,
+       isEmboss = false,
+       isImprint = false,
+       textBorder = null;
 
   // ============================================================
   // COPYWITH
@@ -570,6 +590,21 @@ class DocxText extends DocxInline {
 
   @override
   void buildXml(XmlBuilder builder) {
+    final hyperlinkId = DocxHyperlinkRegistry.idFor(href);
+    if (hyperlinkId != null) {
+      builder.element(
+        'w:hyperlink',
+        nest: () {
+          builder.attribute('r:id', hyperlinkId);
+          _buildRunXml(builder);
+        },
+      );
+      return;
+    }
+    _buildRunXml(builder);
+  }
+
+  void _buildRunXml(XmlBuilder builder) {
     builder.element(
       'w:r',
       nest: () {
@@ -578,7 +613,8 @@ class DocxText extends DocxInline {
             'w:rPr',
             nest: () {
               // 1. rFonts
-              final effectiveFonts = fonts ??
+              final effectiveFonts =
+                  fonts ??
                   (fontFamily != null ? DocxFont.family(fontFamily!) : null);
               if (effectiveFonts != null) {
                 builder.element(
@@ -601,18 +637,24 @@ class DocxText extends DocxInline {
                     }
                     if (effectiveFonts.asciiTheme != null) {
                       builder.attribute(
-                          'w:asciiTheme', effectiveFonts.asciiTheme!);
+                        'w:asciiTheme',
+                        effectiveFonts.asciiTheme!,
+                      );
                     }
                     if (effectiveFonts.hAnsiTheme != null) {
                       builder.attribute(
-                          'w:hAnsiTheme', effectiveFonts.hAnsiTheme!);
+                        'w:hAnsiTheme',
+                        effectiveFonts.hAnsiTheme!,
+                      );
                     }
                     if (effectiveFonts.csTheme != null) {
                       builder.attribute('w:csTheme', effectiveFonts.csTheme!);
                     }
                     if (effectiveFonts.eastAsiaTheme != null) {
                       builder.attribute(
-                          'w:eastAsiaTheme', effectiveFonts.eastAsiaTheme!);
+                        'w:eastAsiaTheme',
+                        effectiveFonts.eastAsiaTheme!,
+                      );
                     }
                   },
                 );
@@ -867,14 +909,14 @@ class DocxCheckbox extends DocxInline {
 
   @override
   void accept(DocxVisitor visitor) => visitor.visitText(
-        DocxText(
-          isChecked ? '☒' : '☐',
-          fontWeight: fontWeight,
-          fontStyle: fontStyle,
-          color: color,
-          fontSize: fontSize,
-        ),
-      );
+    DocxText(
+      isChecked ? '☒' : '☐',
+      fontWeight: fontWeight,
+      fontStyle: fontStyle,
+      color: color,
+      fontSize: fontSize,
+    ),
+  );
 
   @override
   void buildXml(XmlBuilder builder) {
@@ -887,17 +929,26 @@ class DocxCheckbox extends DocxInline {
             builder.element(
               'w14:checkbox',
               nest: () {
-                builder.element('w14:checked', nest: () {
-                  builder.attribute('w14:val', isChecked ? '1' : '0');
-                });
+                builder.element(
+                  'w14:checked',
+                  nest: () {
+                    builder.attribute('w14:val', isChecked ? '1' : '0');
+                  },
+                );
               },
             );
-            builder.element('w:alias', nest: () {
-              builder.attribute('w:val', 'Checkbox');
-            });
-            builder.element('w:tag', nest: () {
-              builder.attribute('w:val', 'checkbox');
-            });
+            builder.element(
+              'w:alias',
+              nest: () {
+                builder.attribute('w:val', 'Checkbox');
+              },
+            );
+            builder.element(
+              'w:tag',
+              nest: () {
+                builder.attribute('w:val', 'checkbox');
+              },
+            );
           },
         );
         builder.element(
@@ -931,9 +982,12 @@ class DocxCheckbox extends DocxInline {
                         builder.element('w:i');
                       }
                       if (color != null) {
-                        builder.element('w:color', nest: () {
-                          builder.attribute('w:val', color!.hex);
-                        });
+                        builder.element(
+                          'w:color',
+                          nest: () {
+                            builder.attribute('w:val', color!.hex);
+                          },
+                        );
                       }
                     },
                   );

@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import '../viewer/docx_view.dart';
 import '../viewer/docx_view_config.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:smart_rich_text_quill/smart_rich_text_quill.dart';
 
 import '../services/document_models.dart';
@@ -28,6 +29,13 @@ class EditorWorkspace extends StatelessWidget {
     required this.sourcePackageFormat,
     required this.ooxmlBlocks,
     required this.onOoxmlBlockChanged,
+    required this.wysiwygBlocks,
+    required this.quillDeltaJson,
+    required this.onWysiwygBlockChanged,
+    required this.onQuillDeltaChanged,
+    required this.onAddWysiwygBlockAfter,
+    required this.onRemoveWysiwygBlock,
+    required this.onSwitchToWysiwyg,
     required this.onSwitchToMarkdown,
     required this.mediaBlocks,
     required this.onRemoveMedia,
@@ -51,6 +59,13 @@ class EditorWorkspace extends StatelessWidget {
   final String? sourcePackageFormat;
   final List<OoxmlVisualBlock> ooxmlBlocks;
   final void Function(int index, OoxmlVisualBlock block) onOoxmlBlockChanged;
+  final List<WysiwygBlock> wysiwygBlocks;
+  final List<Object?> quillDeltaJson;
+  final void Function(int index, WysiwygBlock block) onWysiwygBlockChanged;
+  final ValueChanged<List<Object?>> onQuillDeltaChanged;
+  final ValueChanged<int> onAddWysiwygBlockAfter;
+  final ValueChanged<int> onRemoveWysiwygBlock;
+  final VoidCallback onSwitchToWysiwyg;
   final VoidCallback onSwitchToMarkdown;
   final List<MediaBlock> mediaBlocks;
   final ValueChanged<String> onRemoveMedia;
@@ -95,9 +110,11 @@ class EditorWorkspace extends StatelessWidget {
                           label: Text(
                             editMode == DocumentEditMode.docxVisual
                                 ? 'OOXML visual'
+                                : editMode == DocumentEditMode.wysiwyg
+                                ? 'WYSIWYG'
                                 : editMode == DocumentEditMode.docxView
-                                    ? 'DOCX viewer'
-                                    : 'Round-trip',
+                                ? 'DOCX viewer'
+                                : 'Round-trip',
                           ),
                           visualDensity: VisualDensity.compact,
                         ),
@@ -107,6 +124,14 @@ class EditorWorkspace extends StatelessWidget {
                         onPressed: onSwitchToMarkdown,
                         icon: const Icon(Icons.edit_note_outlined, size: 18),
                         label: const Text('Edit Markdown'),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    if (editMode == DocumentEditMode.markdown) ...[
+                      TextButton.icon(
+                        onPressed: onSwitchToWysiwyg,
+                        icon: const Icon(Icons.edit_document, size: 18),
+                        label: const Text('WYSIWYG'),
                       ),
                       const SizedBox(width: 8),
                     ],
@@ -125,8 +150,7 @@ class EditorWorkspace extends StatelessWidget {
               },
             ),
           ),
-        if (editMode == DocumentEditMode.docxView &&
-            sourcePackageBytes != null)
+        if (editMode == DocumentEditMode.docxView && sourcePackageBytes != null)
           Expanded(
             child: DocxViewWithSearch(
               bytes: sourcePackageBytes!,
@@ -140,124 +164,134 @@ class EditorWorkspace extends StatelessWidget {
             ),
           )
         else
-        Expanded(
-          child: ColoredBox(
-            color: focusMode
-                ? const Color(0xfff8fafc)
-                : const Color(0xffe9eff7),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final compact = constraints.maxWidth < 560;
-                final edgePadding = compact ? 10.0 : 22.0;
-                final availableWidth = math.max(
-                  280.0,
-                  constraints.maxWidth - (edgePadding * 2),
-                );
-                final pageWidth = math.min(760.0, availableWidth / zoom);
-                final pageHeight = math.max(
-                  constraints.maxHeight - 56,
-                  pageWidth * 1.29,
-                );
-                final pageInset = compact
-                    ? 24.0
-                    : pageWidth < 620
-                    ? 42.0
-                    : 72.0;
+          Expanded(
+            child: ColoredBox(
+              color: focusMode
+                  ? const Color(0xfff8fafc)
+                  : const Color(0xffe9eff7),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final compact = constraints.maxWidth < 560;
+                  final edgePadding = compact ? 10.0 : 22.0;
+                  final availableWidth = math.max(
+                    280.0,
+                    constraints.maxWidth - (edgePadding * 2),
+                  );
+                  final pageWidth = math.min(760.0, availableWidth / zoom);
+                  final pageHeight = math.max(
+                    constraints.maxHeight - 56,
+                    pageWidth * 1.29,
+                  );
+                  final pageInset = compact
+                      ? 24.0
+                      : pageWidth < 620
+                      ? 42.0
+                      : 72.0;
 
-                return Center(
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.fromLTRB(
-                      edgePadding,
-                      compact ? 14 : 28,
-                      edgePadding,
-                      40,
-                    ),
-                    child: Transform.scale(
-                      scale: zoom,
-                      alignment: Alignment.topCenter,
-                      child: Container(
-                        width: pageWidth,
-                        constraints: BoxConstraints(minHeight: pageHeight),
-                        decoration: BoxDecoration(
-                          color: pageColor,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xffd6dee9)),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0x1f0f172a),
-                              blurRadius: 28,
-                              offset: Offset(0, 16),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          children: [
-                            if (showRuler) const Ruler(),
-                            Padding(
-                              padding: EdgeInsets.fromLTRB(
-                                pageInset,
-                                compact ? 30 : 56,
-                                pageInset,
-                                compact ? 42 : 72,
+                  return Center(
+                    child: SingleChildScrollView(
+                      padding: EdgeInsets.fromLTRB(
+                        edgePadding,
+                        compact ? 14 : 28,
+                        edgePadding,
+                        40,
+                      ),
+                      child: Transform.scale(
+                        scale: zoom,
+                        alignment: Alignment.topCenter,
+                        child: Container(
+                          width: pageWidth,
+                          constraints: BoxConstraints(minHeight: pageHeight),
+                          decoration: BoxDecoration(
+                            color: pageColor,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xffd6dee9)),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x1f0f172a),
+                                blurRadius: 28,
+                                offset: Offset(0, 16),
                               ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  for (final block in mediaBlocks) ...[
-                                    _MediaDocumentBlock(
-                                      block: block,
-                                      onRemove: () => onRemoveMedia(block.id),
-                                    ),
-                                    const SizedBox(height: 18),
-                                  ],
-                                  if (editMode !=
-                                      DocumentEditMode.markdown) ...[
-                                    _RoundTripNotice(
-                                      editMode: editMode,
-                                      sourcePackageFormat: sourcePackageFormat,
-                                      onSwitchToMarkdown: onSwitchToMarkdown,
-                                    ),
-                                    const SizedBox(height: 18),
-                                  ],
-                                  if (editMode == DocumentEditMode.docxVisual)
-                                    _OoxmlVisualEditor(
-                                      blocks: ooxmlBlocks,
-                                      style: editorStyle,
-                                      onBlockChanged: onOoxmlBlockChanged,
-                                    )
-                                  else
-                                    TextField(
-                                      key: const ValueKey('document-editor'),
-                                      controller: srqController.textController,
-                                      focusNode: editorFocusNode,
-                                      maxLines: null,
-                                      minLines: 28,
-                                      readOnly:
-                                          editMode ==
-                                          DocumentEditMode.docxRoundTrip,
-                                      keyboardType: TextInputType.multiline,
-                                      textAlign: textAlign,
-                                      style: editorStyle,
-                                      cursorColor: const Color(0xff2563eb),
-                                      decoration: const InputDecoration(
-                                        border: InputBorder.none,
-                                        hintText:
-                                            'Start writing your document...',
+                            ],
+                          ),
+                          child: Column(
+                            children: [
+                              if (showRuler) const Ruler(),
+                              Padding(
+                                padding: EdgeInsets.fromLTRB(
+                                  pageInset,
+                                  compact ? 30 : 56,
+                                  pageInset,
+                                  compact ? 42 : 72,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    for (final block in mediaBlocks) ...[
+                                      _MediaDocumentBlock(
+                                        block: block,
+                                        onRemove: () => onRemoveMedia(block.id),
                                       ),
-                                    ),
-                                ],
+                                      const SizedBox(height: 18),
+                                    ],
+                                    if (editMode !=
+                                        DocumentEditMode.markdown) ...[
+                                      _RoundTripNotice(
+                                        editMode: editMode,
+                                        sourcePackageFormat:
+                                            sourcePackageFormat,
+                                        onSwitchToMarkdown: onSwitchToMarkdown,
+                                      ),
+                                      const SizedBox(height: 18),
+                                    ],
+                                    if (editMode == DocumentEditMode.docxVisual)
+                                      _OoxmlVisualEditor(
+                                        blocks: ooxmlBlocks,
+                                        style: editorStyle,
+                                        onBlockChanged: onOoxmlBlockChanged,
+                                      )
+                                    else if (editMode ==
+                                        DocumentEditMode.wysiwyg)
+                                      _QuillWysiwygEditor(
+                                        blocks: wysiwygBlocks,
+                                        deltaJson: quillDeltaJson,
+                                        onDeltaChanged: onQuillDeltaChanged,
+                                      )
+                                    else
+                                      TextField(
+                                        key: const ValueKey('document-editor'),
+                                        controller:
+                                            srqController.textController,
+                                        focusNode: editorFocusNode,
+                                        maxLines: null,
+                                        minLines: 28,
+                                        readOnly:
+                                            editMode ==
+                                            DocumentEditMode.docxRoundTrip,
+                                        keyboardType: TextInputType.multiline,
+                                        textAlign: textAlign,
+                                        style: editorStyle,
+                                        cursorColor: const Color(0xff2563eb),
+                                        decoration: const InputDecoration(
+                                          border: InputBorder.none,
+                                          hintText:
+                                              'Start writing your document...',
+                                        ),
+                                      ),
+                                  ],
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
           ),
-        ),
       ],
     );
   }
@@ -358,6 +392,8 @@ class _RoundTripNotice extends StatelessWidget {
             child: Text(
               editMode == DocumentEditMode.docxVisual
                   ? 'This ${sourcePackageFormat?.toUpperCase() ?? 'DOCX'} is in visual OOXML mode. Paragraph and table blocks are editable while style IDs, alignment, page breaks, and table structure are preserved for DOCX export.'
+                  : editMode == DocumentEditMode.wysiwyg
+                  ? 'This document is in WYSIWYG mode. Blocks are edited visually and bridged back to Markdown for export and compatibility.'
                   : 'This ${sourcePackageFormat?.toUpperCase() ?? 'DOCX'} is in round-trip mode. The original styled package is preserved for export; switch to Markdown when you want to flatten it into the native editor.',
               style: Theme.of(
                 context,
@@ -432,6 +468,22 @@ class _OoxmlVisualEditor extends StatelessWidget {
         style: style,
         onChanged: (updated) => onBlockChanged(index, updated),
       ),
+      OoxmlPartTextBlock() => TextFormField(
+        key: ValueKey('ooxml-part-${block.partPath}-${block.paragraphIndex}'),
+        initialValue: block.text,
+        maxLines: null,
+        keyboardType: TextInputType.multiline,
+        style: style,
+        decoration: InputDecoration(
+          labelText: '${block.label} • ${block.partPath}',
+          alignLabelWithHint: true,
+          border: const OutlineInputBorder(),
+          isDense: true,
+        ),
+        onChanged: (value) {
+          onBlockChanged(index, block.copyWith(text: value));
+        },
+      ),
       _ => const SizedBox.shrink(),
     };
   }
@@ -443,6 +495,130 @@ class _OoxmlVisualEditor extends StatelessWidget {
       OoxmlTextAlign.justify => TextAlign.justify,
       OoxmlTextAlign.left => TextAlign.left,
     };
+  }
+}
+
+class _QuillWysiwygEditor extends StatefulWidget {
+  const _QuillWysiwygEditor({
+    required this.blocks,
+    required this.deltaJson,
+    required this.onDeltaChanged,
+  });
+
+  final List<WysiwygBlock> blocks;
+  final List<Object?> deltaJson;
+  final ValueChanged<List<Object?>> onDeltaChanged;
+
+  @override
+  State<_QuillWysiwygEditor> createState() => _QuillWysiwygEditorState();
+}
+
+class _QuillWysiwygEditorState extends State<_QuillWysiwygEditor> {
+  late quill.QuillController _controller;
+  late FocusNode _focusNode;
+  late ScrollController _scrollController;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode = FocusNode();
+    _scrollController = ScrollController();
+    _controller = _controllerFromWidget();
+    _controller.addListener(_notifyDeltaChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _QuillWysiwygEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.deltaJson != widget.deltaJson &&
+        !_sameDelta(oldWidget.deltaJson, widget.deltaJson)) {
+      _controller
+        ..removeListener(_notifyDeltaChanged)
+        ..dispose();
+      _controller = _controllerFromWidget();
+      _controller.addListener(_notifyDeltaChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller
+      ..removeListener(_notifyDeltaChanged)
+      ..dispose();
+    _focusNode.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: const Color(0xfff8fafc),
+            border: Border.all(color: const Color(0xffdbe3ef)),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(6),
+            child: quill.QuillToolbar.basic(
+              controller: _controller,
+              showFontFamily: false,
+              showFontSize: true,
+              showInlineCode: false,
+              showCodeBlock: false,
+              showSearchButton: false,
+              showDirection: false,
+              showAlignmentButtons: true,
+              multiRowsDisplay: true,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        quill.QuillEditor(
+          controller: _controller,
+          focusNode: _focusNode,
+          scrollController: _scrollController,
+          scrollable: false,
+          padding: EdgeInsets.zero,
+          autoFocus: false,
+          readOnly: false,
+          expands: false,
+          minHeight: 420,
+          placeholder: 'Start writing your document...',
+        ),
+      ],
+    );
+  }
+
+  quill.QuillController _controllerFromWidget() {
+    final deltaJson = widget.deltaJson.isNotEmpty
+        ? widget.deltaJson
+        : WysiwygDocumentCodec.toQuillDeltaJson(widget.blocks);
+    return quill.QuillController(
+      document: quill.Document.fromJson(deltaJson),
+      selection: const TextSelection.collapsed(offset: 0),
+    );
+  }
+
+  void _notifyDeltaChanged() {
+    widget.onDeltaChanged(
+      List<Object?>.of(_controller.document.toDelta().toJson()),
+    );
+  }
+
+  bool _sameDelta(List<Object?> left, List<Object?> right) {
+    if (left.length != right.length) {
+      return false;
+    }
+    for (var index = 0; index < left.length; index += 1) {
+      if (left[index].toString() != right[index].toString()) {
+        return false;
+      }
+    }
+    return true;
   }
 }
 

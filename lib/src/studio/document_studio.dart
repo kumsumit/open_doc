@@ -71,6 +71,12 @@ class _DocumentStudioState extends State<DocumentStudio> {
   Uint8List? _sourcePackageBytes;
   DocumentEditMode _editMode = DocumentEditMode.markdown;
   List<OoxmlVisualBlock> _ooxmlBlocks = [];
+  List<WysiwygBlock> _wysiwygBlocks = WysiwygDocumentCodec.fromMarkdown(
+    starterDocument,
+  );
+  List<Object?> _quillDeltaJson = WysiwygDocumentCodec.toQuillDeltaJson(
+    WysiwygDocumentCodec.fromMarkdown(starterDocument),
+  );
   final List<DocumentVersion> _versions = [];
   final List<Collaborator> _collaborators = const [
     Collaborator('Asha', 'Editing', Color(0xff2563eb)),
@@ -119,7 +125,11 @@ class _DocumentStudioState extends State<DocumentStudio> {
 
   // ─── Document text helpers ────────────────────────────────────────────────────
 
-  String get _markdownText => _srqController.markdown;
+  String get _markdownText => _editMode == DocumentEditMode.wysiwyg
+      ? WysiwygDocumentCodec.toMarkdown(
+          WysiwygDocumentCodec.fromQuillDeltaJson(_quillDeltaJson),
+        )
+      : _srqController.markdown;
 
   String get _plainText {
     return _markdownText
@@ -438,6 +448,12 @@ class _DocumentStudioState extends State<DocumentStudio> {
       sourcePackageFormat: _sourcePackageFormat,
       sourcePackageBytes: _sourcePackageBytes,
       ooxmlBlocks: _ooxmlBlocks,
+      wysiwygBlocks: _editMode == DocumentEditMode.wysiwyg
+          ? WysiwygDocumentCodec.fromQuillDeltaJson(_quillDeltaJson)
+          : const [],
+      quillDeltaJson: _editMode == DocumentEditMode.wysiwyg
+          ? List<Object?>.of(_quillDeltaJson)
+          : const [],
     );
   }
 
@@ -479,6 +495,21 @@ class _DocumentStudioState extends State<DocumentStudio> {
   );
 
   void _insertText(String value) {
+    if (_editMode == DocumentEditMode.wysiwyg) {
+      setState(() {
+        _wysiwygBlocks = [
+          ...WysiwygDocumentCodec.fromQuillDeltaJson(_quillDeltaJson),
+          WysiwygBlock(
+            id: DateTime.now().microsecondsSinceEpoch.toString(),
+            type: WysiwygBlockType.paragraph,
+            text: value.trim(),
+          ),
+        ];
+        _quillDeltaJson = WysiwygDocumentCodec.toQuillDeltaJson(_wysiwygBlocks);
+        _saved = false;
+      });
+      return;
+    }
     final selection = _srqController.textController.selection;
     if (selection.isValid) {
       _srqController.insertAtCursor(value);
@@ -523,6 +554,8 @@ class _DocumentStudioState extends State<DocumentStudio> {
       _mediaBlocks.clear();
       _customFonts.clear();
       _ooxmlBlocks = [];
+      _wysiwygBlocks = WysiwygDocumentCodec.fromMarkdown('');
+      _quillDeltaJson = WysiwygDocumentCodec.toQuillDeltaJson(_wysiwygBlocks);
       _sourcePackageFormat = null;
       _sourcePackageBytes = null;
       _editMode = DocumentEditMode.markdown;
@@ -769,6 +802,8 @@ class _DocumentStudioState extends State<DocumentStudio> {
     String? sourcePackageFormat,
     Uint8List? sourcePackageBytes,
     List<OoxmlVisualBlock> ooxmlBlocks = const [],
+    List<WysiwygBlock> wysiwygBlocks = const [],
+    List<Object?> quillDeltaJson = const [],
     DocumentPageSetup? pageSetup,
   }) async {
     final cleanText = text.trim();
@@ -795,8 +830,18 @@ class _DocumentStudioState extends State<DocumentStudio> {
       _sourcePackageFormat = sourcePackageFormat;
       _sourcePackageBytes = sourcePackageBytes;
       _ooxmlBlocks = List<OoxmlVisualBlock>.of(ooxmlBlocks);
+      _wysiwygBlocks = wysiwygBlocks.isNotEmpty
+          ? List<WysiwygBlock>.of(wysiwygBlocks)
+          : WysiwygDocumentCodec.fromMarkdown(cleanText);
+      _quillDeltaJson = quillDeltaJson.isNotEmpty
+          ? List<Object?>.of(quillDeltaJson)
+          : WysiwygDocumentCodec.toQuillDeltaJson(_wysiwygBlocks);
       _editMode = _ooxmlBlocks.isNotEmpty
           ? DocumentEditMode.docxVisual
+          : _wysiwygBlocks.isNotEmpty &&
+                sourcePackageFormat != 'docx' &&
+                format == 'Open Doc'
+          ? DocumentEditMode.wysiwyg
           : sourcePackageBytes != null && sourcePackageFormat == 'docx'
           ? DocumentEditMode.docxView
           : DocumentEditMode.markdown;
@@ -855,6 +900,8 @@ class _DocumentStudioState extends State<DocumentStudio> {
         sourcePackageFormat: imported.sourcePackageFormat,
         sourcePackageBytes: imported.sourcePackageBytes,
         ooxmlBlocks: imported.ooxmlBlocks,
+        wysiwygBlocks: imported.wysiwygBlocks,
+        quillDeltaJson: imported.quillDeltaJson,
       );
     } on FormatException catch (error) {
       _showSnack(error.message);
@@ -1289,6 +1336,13 @@ class _DocumentStudioState extends State<DocumentStudio> {
 
   void _switchRoundTripToMarkdown() {
     setState(() {
+      if (_editMode == DocumentEditMode.wysiwyg) {
+        _srqController.setMarkdownSilently(
+          WysiwygDocumentCodec.toMarkdown(
+            WysiwygDocumentCodec.fromQuillDeltaJson(_quillDeltaJson),
+          ),
+        );
+      }
       _editMode = DocumentEditMode.markdown;
       _ooxmlBlocks = [];
       _sourcePackageFormat = null;
@@ -1301,12 +1355,71 @@ class _DocumentStudioState extends State<DocumentStudio> {
     );
   }
 
+  void _switchToWysiwyg() {
+    setState(() {
+      _wysiwygBlocks = WysiwygDocumentCodec.fromMarkdown(_markdownText);
+      _quillDeltaJson = WysiwygDocumentCodec.toQuillDeltaJson(_wysiwygBlocks);
+      _editMode = DocumentEditMode.wysiwyg;
+      _ooxmlBlocks = [];
+      _sourcePackageFormat = null;
+      _sourcePackageBytes = null;
+      _saved = false;
+    });
+    _showSnack('Switched to WYSIWYG editing.');
+  }
+
   void _updateOoxmlBlock(int index, OoxmlVisualBlock block) {
     if (index < 0 || index >= _ooxmlBlocks.length) {
       return;
     }
     setState(() {
       _ooxmlBlocks = List<OoxmlVisualBlock>.of(_ooxmlBlocks)..[index] = block;
+      _saved = false;
+    });
+  }
+
+  void _updateWysiwygBlock(int index, WysiwygBlock block) {
+    if (index < 0 || index >= _wysiwygBlocks.length) {
+      return;
+    }
+    setState(() {
+      _wysiwygBlocks = List<WysiwygBlock>.of(_wysiwygBlocks)..[index] = block;
+      _quillDeltaJson = WysiwygDocumentCodec.toQuillDeltaJson(_wysiwygBlocks);
+      _saved = false;
+    });
+  }
+
+  void _updateQuillDelta(List<Object?> deltaJson) {
+    setState(() {
+      _quillDeltaJson = List<Object?>.of(deltaJson);
+      _wysiwygBlocks = WysiwygDocumentCodec.fromQuillDeltaJson(_quillDeltaJson);
+      _saved = false;
+    });
+  }
+
+  void _addWysiwygBlockAfter(int index) {
+    final next = WysiwygBlock(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      type: WysiwygBlockType.paragraph,
+      text: '',
+    );
+    setState(() {
+      final blocks = List<WysiwygBlock>.of(_wysiwygBlocks);
+      blocks.insert((index + 1).clamp(0, blocks.length), next);
+      _wysiwygBlocks = blocks;
+      _quillDeltaJson = WysiwygDocumentCodec.toQuillDeltaJson(_wysiwygBlocks);
+      _saved = false;
+    });
+  }
+
+  void _removeWysiwygBlock(int index) {
+    if (_wysiwygBlocks.length <= 1) {
+      _updateWysiwygBlock(index, _wysiwygBlocks[index].copyWith(text: ''));
+      return;
+    }
+    setState(() {
+      _wysiwygBlocks = List<WysiwygBlock>.of(_wysiwygBlocks)..removeAt(index);
+      _quillDeltaJson = WysiwygDocumentCodec.toQuillDeltaJson(_wysiwygBlocks);
       _saved = false;
     });
   }
@@ -1990,6 +2103,13 @@ class _DocumentStudioState extends State<DocumentStudio> {
                               sourcePackageBytes: _sourcePackageBytes,
                               ooxmlBlocks: _ooxmlBlocks,
                               onOoxmlBlockChanged: _updateOoxmlBlock,
+                              wysiwygBlocks: _wysiwygBlocks,
+                              quillDeltaJson: _quillDeltaJson,
+                              onWysiwygBlockChanged: _updateWysiwygBlock,
+                              onQuillDeltaChanged: _updateQuillDelta,
+                              onAddWysiwygBlockAfter: _addWysiwygBlockAfter,
+                              onRemoveWysiwygBlock: _removeWysiwygBlock,
+                              onSwitchToWysiwyg: _switchToWysiwyg,
                               onSwitchToMarkdown: _switchRoundTripToMarkdown,
                               mediaBlocks: _mediaBlocks,
                               onRemoveMedia: _removeMediaBlock,
