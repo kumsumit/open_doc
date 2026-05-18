@@ -23,6 +23,8 @@ class EditorWorkspace extends StatelessWidget {
     required this.characterCount,
     required this.editMode,
     required this.sourcePackageFormat,
+    required this.ooxmlBlocks,
+    required this.onOoxmlBlockChanged,
     required this.onSwitchToMarkdown,
     required this.mediaBlocks,
     required this.onRemoveMedia,
@@ -43,6 +45,8 @@ class EditorWorkspace extends StatelessWidget {
   final int characterCount;
   final DocumentEditMode editMode;
   final String? sourcePackageFormat;
+  final List<OoxmlVisualBlock> ooxmlBlocks;
+  final void Function(int index, OoxmlVisualBlock block) onOoxmlBlockChanged;
   final VoidCallback onSwitchToMarkdown;
   final List<MediaBlock> mediaBlocks;
   final ValueChanged<String> onRemoveMedia;
@@ -77,13 +81,17 @@ class EditorWorkspace extends StatelessWidget {
                       onTap: onToggleInspector,
                     ),
                     const Spacer(),
-                    if (editMode == DocumentEditMode.docxRoundTrip) ...[
+                    if (editMode != DocumentEditMode.markdown) ...[
                       Tooltip(
                         message:
                             'Preserving original ${sourcePackageFormat?.toUpperCase() ?? 'DOCX'} package',
                         child: Chip(
                           avatar: Icon(editMode.icon, size: 16),
-                          label: const Text('Round-trip'),
+                          label: Text(
+                            editMode == DocumentEditMode.docxVisual
+                                ? 'OOXML visual'
+                                : 'Round-trip',
+                          ),
                           visualDensity: VisualDensity.compact,
                         ),
                       ),
@@ -180,33 +188,41 @@ class EditorWorkspace extends StatelessWidget {
                                     ),
                                     const SizedBox(height: 18),
                                   ],
-                                  if (editMode ==
-                                      DocumentEditMode.docxRoundTrip) ...[
+                                  if (editMode !=
+                                      DocumentEditMode.markdown) ...[
                                     _RoundTripNotice(
+                                      editMode: editMode,
                                       sourcePackageFormat: sourcePackageFormat,
                                       onSwitchToMarkdown: onSwitchToMarkdown,
                                     ),
                                     const SizedBox(height: 18),
                                   ],
-                                  TextField(
-                                    key: const ValueKey('document-editor'),
-                                    controller: srqController.textController,
-                                    focusNode: editorFocusNode,
-                                    maxLines: null,
-                                    minLines: 28,
-                                    readOnly:
-                                        editMode ==
-                                        DocumentEditMode.docxRoundTrip,
-                                    keyboardType: TextInputType.multiline,
-                                    textAlign: textAlign,
-                                    style: editorStyle,
-                                    cursorColor: const Color(0xff2563eb),
-                                    decoration: const InputDecoration(
-                                      border: InputBorder.none,
-                                      hintText:
-                                          'Start writing your document...',
+                                  if (editMode == DocumentEditMode.docxVisual)
+                                    _OoxmlVisualEditor(
+                                      blocks: ooxmlBlocks,
+                                      style: editorStyle,
+                                      onBlockChanged: onOoxmlBlockChanged,
+                                    )
+                                  else
+                                    TextField(
+                                      key: const ValueKey('document-editor'),
+                                      controller: srqController.textController,
+                                      focusNode: editorFocusNode,
+                                      maxLines: null,
+                                      minLines: 28,
+                                      readOnly:
+                                          editMode ==
+                                          DocumentEditMode.docxRoundTrip,
+                                      keyboardType: TextInputType.multiline,
+                                      textAlign: textAlign,
+                                      style: editorStyle,
+                                      cursorColor: const Color(0xff2563eb),
+                                      decoration: const InputDecoration(
+                                        border: InputBorder.none,
+                                        hintText:
+                                            'Start writing your document...',
+                                      ),
                                     ),
-                                  ),
                                 ],
                               ),
                             ),
@@ -293,10 +309,12 @@ class _MediaDocumentBlock extends StatelessWidget {
 
 class _RoundTripNotice extends StatelessWidget {
   const _RoundTripNotice({
+    required this.editMode,
     required this.sourcePackageFormat,
     required this.onSwitchToMarkdown,
   });
 
+  final DocumentEditMode editMode;
   final String? sourcePackageFormat;
   final VoidCallback onSwitchToMarkdown;
 
@@ -316,7 +334,9 @@ class _RoundTripNotice extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'This ${sourcePackageFormat?.toUpperCase() ?? 'DOCX'} is in round-trip mode. The original styled package is preserved for export; switch to Markdown when you want to flatten it into the native editor.',
+              editMode == DocumentEditMode.docxVisual
+                  ? 'This ${sourcePackageFormat?.toUpperCase() ?? 'DOCX'} is in visual OOXML mode. Paragraph and table blocks are editable while style IDs, alignment, page breaks, and table structure are preserved for DOCX export.'
+                  : 'This ${sourcePackageFormat?.toUpperCase() ?? 'DOCX'} is in round-trip mode. The original styled package is preserved for export; switch to Markdown when you want to flatten it into the native editor.',
               style: Theme.of(
                 context,
               ).textTheme.bodyMedium?.copyWith(color: const Color(0xff1e3a8a)),
@@ -325,6 +345,161 @@ class _RoundTripNotice extends StatelessWidget {
           const SizedBox(width: 10),
           TextButton(onPressed: onSwitchToMarkdown, child: const Text('Edit')),
         ],
+      ),
+    );
+  }
+}
+
+class _OoxmlVisualEditor extends StatelessWidget {
+  const _OoxmlVisualEditor({
+    required this.blocks,
+    required this.style,
+    required this.onBlockChanged,
+  });
+
+  final List<OoxmlVisualBlock> blocks;
+  final TextStyle style;
+  final void Function(int index, OoxmlVisualBlock block) onBlockChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    if (blocks.isEmpty) {
+      return Text(
+        'No editable OOXML blocks were detected in this document.',
+        style: Theme.of(
+          context,
+        ).textTheme.bodyMedium?.copyWith(color: const Color(0xff64748b)),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var index = 0; index < blocks.length; index++) ...[
+          _buildBlock(context, index, blocks[index]),
+          if (index != blocks.length - 1) const SizedBox(height: 16),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildBlock(BuildContext context, int index, OoxmlVisualBlock block) {
+    return switch (block) {
+      OoxmlParagraphBlock() => TextFormField(
+        key: ValueKey('ooxml-paragraph-$index'),
+        initialValue: block.text,
+        maxLines: null,
+        keyboardType: TextInputType.multiline,
+        style: style,
+        textAlign: _flutterAlignFor(block.align),
+        decoration: InputDecoration(
+          labelText: block.styleId?.isEmpty == false
+              ? block.styleId
+              : 'Paragraph',
+          alignLabelWithHint: true,
+          border: InputBorder.none,
+          contentPadding: EdgeInsets.zero,
+        ),
+        onChanged: (value) {
+          onBlockChanged(index, block.copyWith(text: value));
+        },
+      ),
+      OoxmlTableBlock() => _OoxmlTableEditor(
+        index: index,
+        block: block,
+        style: style,
+        onChanged: (updated) => onBlockChanged(index, updated),
+      ),
+      _ => const SizedBox.shrink(),
+    };
+  }
+
+  TextAlign _flutterAlignFor(OoxmlTextAlign align) {
+    return switch (align) {
+      OoxmlTextAlign.center => TextAlign.center,
+      OoxmlTextAlign.right => TextAlign.right,
+      OoxmlTextAlign.justify => TextAlign.justify,
+      OoxmlTextAlign.left => TextAlign.left,
+    };
+  }
+}
+
+class _OoxmlTableEditor extends StatelessWidget {
+  const _OoxmlTableEditor({
+    required this.index,
+    required this.block,
+    required this.style,
+    required this.onChanged,
+  });
+
+  final int index;
+  final OoxmlTableBlock block;
+  final TextStyle style;
+  final ValueChanged<OoxmlTableBlock> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    if (block.rows.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xffcbd5e1)),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: Table(
+          border: TableBorder.all(color: const Color(0xffcbd5e1)),
+          defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+          children: [
+            for (var rowIndex = 0; rowIndex < block.rows.length; rowIndex++)
+              TableRow(
+                decoration: BoxDecoration(
+                  color: block.hasHeader && rowIndex == 0
+                      ? const Color(0xfff1f5f9)
+                      : Colors.transparent,
+                ),
+                children: [
+                  for (
+                    var columnIndex = 0;
+                    columnIndex < block.rows[rowIndex].length;
+                    columnIndex++
+                  )
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      child: TextFormField(
+                        key: ValueKey(
+                          'ooxml-table-$index-$rowIndex-$columnIndex',
+                        ),
+                        initialValue: block.rows[rowIndex][columnIndex],
+                        maxLines: null,
+                        style: style.copyWith(
+                          fontWeight: block.hasHeader && rowIndex == 0
+                              ? FontWeight.w700
+                              : style.fontWeight,
+                        ),
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          isDense: true,
+                        ),
+                        onChanged: (value) {
+                          final rows = block.rows
+                              .map((row) => List<String>.of(row))
+                              .toList();
+                          rows[rowIndex][columnIndex] = value;
+                          onChanged(block.copyWith(rows: rows));
+                        },
+                      ),
+                    ),
+                ],
+              ),
+          ],
+        ),
       ),
     );
   }

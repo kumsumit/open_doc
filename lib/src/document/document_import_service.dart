@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
+import 'package:docx_creator/docx_creator.dart' as docx;
 import 'package:xml/xml.dart';
 
 import 'document_export_service.dart';
@@ -18,6 +19,7 @@ class ImportedDocument {
     this.customFonts = const [],
     this.sourcePackageFormat,
     this.sourcePackageBytes,
+    this.ooxmlBlocks = const [],
     this.pageSetup,
   });
 
@@ -29,11 +31,32 @@ class ImportedDocument {
   final List<CustomFontFile> customFonts;
   final String? sourcePackageFormat;
   final Uint8List? sourcePackageBytes;
+  final List<OoxmlVisualBlock> ooxmlBlocks;
   final DocumentPageSetup? pageSetup;
 }
 
 class DocumentImportService {
   const DocumentImportService();
+
+  Future<ImportedDocument> parseAsync(Uint8List bytes, String fileName) async {
+    if (fileExtension(fileName) != 'docx') {
+      return parse(bytes, fileName);
+    }
+
+    final base = parse(bytes, fileName);
+    try {
+      final document = await docx.DocxReader.loadFromBytes(bytes);
+      return ImportedDocument(
+        text: base.text,
+        formatLabel: base.formatLabel,
+        sourcePackageFormat: base.sourcePackageFormat,
+        sourcePackageBytes: base.sourcePackageBytes,
+        ooxmlBlocks: _visualBlocksFromDocx(document),
+      );
+    } on Object {
+      return base;
+    }
+  }
 
   ImportedDocument parse(Uint8List bytes, String fileName) {
     final extension = fileExtension(fileName);
@@ -158,7 +181,77 @@ class DocumentImportService {
           ? decoded['sourcePackageFormat'] as String
           : null,
       sourcePackageBytes: _decodeNullableBase64(decoded['sourcePackageBase64']),
+      ooxmlBlocks: _parseOpenDocVisualBlocks(decoded['ooxmlBlocks']),
     );
+  }
+
+  List<OoxmlVisualBlock> _visualBlocksFromDocx(
+    docx.DocxBuiltDocument document,
+  ) {
+    final blocks = <OoxmlVisualBlock>[];
+    for (final node in document.elements) {
+      if (node is docx.DocxParagraph) {
+        final text = node.children
+            .whereType<docx.DocxText>()
+            .map((text) => text.content)
+            .join();
+        if (text.trim().isNotEmpty || node.styleId != null) {
+          blocks.add(
+            OoxmlParagraphBlock(
+              text: text,
+              styleId: node.styleId,
+              align: _visualAlignFor(node.align),
+              pageBreakBefore: node.pageBreakBefore,
+            ),
+          );
+        }
+      } else if (node is docx.DocxTable) {
+        blocks.add(
+          OoxmlTableBlock(
+            hasHeader: node.hasHeader,
+            rows: [
+              for (final row in node.rows)
+                [
+                  for (final cell in row.cells)
+                    cell.children
+                        .whereType<docx.DocxParagraph>()
+                        .expand((paragraph) => paragraph.children)
+                        .whereType<docx.DocxText>()
+                        .map((text) => text.content)
+                        .join(),
+                ],
+            ],
+          ),
+        );
+      }
+    }
+    return blocks;
+  }
+
+  OoxmlTextAlign _visualAlignFor(docx.DocxAlign align) {
+    return switch (align) {
+      docx.DocxAlign.center => OoxmlTextAlign.center,
+      docx.DocxAlign.right => OoxmlTextAlign.right,
+      docx.DocxAlign.justify => OoxmlTextAlign.justify,
+      docx.DocxAlign.left => OoxmlTextAlign.left,
+    };
+  }
+
+  List<OoxmlVisualBlock> _parseOpenDocVisualBlocks(Object? value) {
+    if (value is! List) {
+      return const [];
+    }
+    return value
+        .whereType<Map<String, Object?>>()
+        .map((json) {
+          return switch (json['type']) {
+            'paragraph' => OoxmlParagraphBlock.fromJson(json),
+            'table' => OoxmlTableBlock.fromJson(json),
+            _ => null,
+          };
+        })
+        .nonNulls
+        .toList();
   }
 
   Uint8List? _decodeNullableBase64(Object? value) {

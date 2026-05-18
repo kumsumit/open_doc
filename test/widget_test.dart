@@ -196,6 +196,40 @@ Open Doc writes real DOCX files now.
     );
   });
 
+  test(
+    'visual OOXML export writes editable paragraph and table blocks',
+    () async {
+      final bytes = await exportService.exportVisualDocx(
+        const DocumentExportPayload(
+          title: 'Visual OOXML check',
+          markdown: 'Fallback text',
+          ooxmlBlocks: [
+            OoxmlParagraphBlock(
+              text: 'Styled visual paragraph',
+              styleId: 'Heading1',
+              align: OoxmlTextAlign.center,
+            ),
+            OoxmlTableBlock(
+              rows: [
+                ['Name', 'Status'],
+                ['Open Doc', 'Ready'],
+              ],
+            ),
+          ],
+        ),
+      );
+      final archive = ZipDecoder().decodeBytes(bytes);
+      final documentXml = archive.findFile('word/document.xml');
+
+      expect(documentXml, isNotNull);
+      final xml = utf8.decode(documentXml!.content as List<int>);
+      expect(xml, contains('Styled visual paragraph'));
+      expect(xml, contains('Heading1'));
+      expect(xml, contains('Open Doc'));
+      expect(xml, contains('Ready'));
+    },
+  );
+
   test('PDF and HTML exporters produce real document output', () async {
     const payload = DocumentExportPayload(
       title: 'Multi-format check',

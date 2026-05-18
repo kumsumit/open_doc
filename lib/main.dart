@@ -98,6 +98,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
   String? _sourcePackageFormat;
   Uint8List? _sourcePackageBytes;
   DocumentEditMode _editMode = DocumentEditMode.markdown;
+  List<OoxmlVisualBlock> _ooxmlBlocks = [];
   final List<DocumentVersion> _versions = [];
   final List<Collaborator> _collaborators = const [
     Collaborator('Asha', 'Editing', Color(0xff2563eb)),
@@ -344,6 +345,19 @@ class _DocumentStudioState extends State<DocumentStudio> {
 
   Future<void> _exportToDocx(String title) async {
     try {
+      if (_editMode == DocumentEditMode.docxVisual) {
+        final bytes = await _exportService.exportVisualDocx(_exportPayload);
+        final savePath = await FilePicker.saveFile(
+          dialogTitle: 'Save DOCX file',
+          fileName: '$title.docx',
+          bytes: bytes,
+        );
+        if (savePath != null) {
+          await File(savePath).writeAsBytes(bytes);
+          _showSnack('Saved visual DOCX to $savePath');
+        }
+        return;
+      }
       if (_editMode == DocumentEditMode.docxRoundTrip &&
           _sourcePackageFormat == 'docx' &&
           _sourcePackageBytes != null) {
@@ -450,6 +464,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
       selectedFontFamily: _fontFamily,
       sourcePackageFormat: _sourcePackageFormat,
       sourcePackageBytes: _sourcePackageBytes,
+      ooxmlBlocks: _ooxmlBlocks,
     );
   }
 
@@ -534,6 +549,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
       _template = 'Blank';
       _mediaBlocks.clear();
       _customFonts.clear();
+      _ooxmlBlocks = [];
       _sourcePackageFormat = null;
       _sourcePackageBytes = null;
       _editMode = DocumentEditMode.markdown;
@@ -779,6 +795,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
     List<CustomFontFile> customFonts = const [],
     String? sourcePackageFormat,
     Uint8List? sourcePackageBytes,
+    List<OoxmlVisualBlock> ooxmlBlocks = const [],
     DocumentPageSetup? pageSetup,
   }) async {
     final cleanText = text.trim();
@@ -804,7 +821,10 @@ class _DocumentStudioState extends State<DocumentStudio> {
         ..addAll(customFonts);
       _sourcePackageFormat = sourcePackageFormat;
       _sourcePackageBytes = sourcePackageBytes;
-      _editMode = sourcePackageBytes != null && sourcePackageFormat == 'docx'
+      _ooxmlBlocks = List<OoxmlVisualBlock>.of(ooxmlBlocks);
+      _editMode = _ooxmlBlocks.isNotEmpty
+          ? DocumentEditMode.docxVisual
+          : sourcePackageBytes != null && sourcePackageFormat == 'docx'
           ? DocumentEditMode.docxRoundTrip
           : DocumentEditMode.markdown;
       final importedFamily = selectedFontFamily?.trim();
@@ -849,7 +869,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
         return;
       }
 
-      final imported = _importService.parse(bytes, picked.name);
+      final imported = await _importService.parseAsync(bytes, picked.name);
       await _applyImportedDocument(
         name: picked.name,
         text: imported.text,
@@ -861,6 +881,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
         customFonts: imported.customFonts,
         sourcePackageFormat: imported.sourcePackageFormat,
         sourcePackageBytes: imported.sourcePackageBytes,
+        ooxmlBlocks: imported.ooxmlBlocks,
       );
     } on FormatException catch (error) {
       _showSnack(error.message);
@@ -982,6 +1003,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                           _template = entry.key;
                           _titleController.text = entry.key;
                           _mediaBlocks.clear();
+                          _ooxmlBlocks = [];
                           _sourcePackageFormat = null;
                           _sourcePackageBytes = null;
                           _editMode = DocumentEditMode.markdown;
@@ -1295,6 +1317,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
   void _switchRoundTripToMarkdown() {
     setState(() {
       _editMode = DocumentEditMode.markdown;
+      _ooxmlBlocks = [];
       _sourcePackageFormat = null;
       _sourcePackageBytes = null;
       _saved = false;
@@ -1303,6 +1326,16 @@ class _DocumentStudioState extends State<DocumentStudio> {
     _showSnack(
       'Switched to Markdown editing. Future exports use the edited content.',
     );
+  }
+
+  void _updateOoxmlBlock(int index, OoxmlVisualBlock block) {
+    if (index < 0 || index >= _ooxmlBlocks.length) {
+      return;
+    }
+    setState(() {
+      _ooxmlBlocks = List<OoxmlVisualBlock>.of(_ooxmlBlocks)..[index] = block;
+      _saved = false;
+    });
   }
 
   void _showAdvancedTableSheet() {
@@ -1981,6 +2014,8 @@ class _DocumentStudioState extends State<DocumentStudio> {
                               characterCount: _characterCount,
                               editMode: _editMode,
                               sourcePackageFormat: _sourcePackageFormat,
+                              ooxmlBlocks: _ooxmlBlocks,
+                              onOoxmlBlockChanged: _updateOoxmlBlock,
                               onSwitchToMarkdown: _switchRoundTripToMarkdown,
                               mediaBlocks: _mediaBlocks,
                               onRemoveMedia: _removeMediaBlock,

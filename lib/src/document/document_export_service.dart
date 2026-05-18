@@ -43,6 +43,7 @@ class DocumentExportPayload {
     this.selectedFontFamily,
     this.sourcePackageFormat,
     this.sourcePackageBytes,
+    this.ooxmlBlocks = const [],
     this.pageSetup = const DocumentPageSetup(),
   });
 
@@ -53,6 +54,7 @@ class DocumentExportPayload {
   final String? selectedFontFamily;
   final String? sourcePackageFormat;
   final Uint8List? sourcePackageBytes;
+  final List<OoxmlVisualBlock> ooxmlBlocks;
   final DocumentPageSetup pageSetup;
 }
 
@@ -473,6 +475,10 @@ class DocumentExportService {
         'sourcePackageFormat': payload.sourcePackageFormat,
       if (payload.sourcePackageBytes != null)
         'sourcePackageBase64': base64Encode(payload.sourcePackageBytes!),
+      if (payload.ooxmlBlocks.isNotEmpty)
+        'ooxmlBlocks': [
+          for (final block in payload.ooxmlBlocks) block.toJson(),
+        ],
       'pageSetup': {
         'pageSize': payload.pageSetup.pageSize.name,
         'orientation': payload.pageSetup.orientation.name,
@@ -526,6 +532,65 @@ class DocumentExportService {
     }
 
     return buffer.toString();
+  }
+
+  Future<Uint8List> exportVisualDocx(DocumentExportPayload payload) async {
+    ensureLanguageSupport(payload);
+    final selectedFont = _selectedFont(payload);
+    final elements = payload.ooxmlBlocks
+        .map((block) => _visualNodeFor(block, selectedFont))
+        .whereType<docx.DocxNode>()
+        .toList();
+    final document = docx.DocxBuiltDocument(
+      elements: elements,
+      section: _sectionFor(payload.pageSetup),
+      fonts: _embeddedFonts(payload.customFonts),
+    );
+    return docx.DocxExporter().exportToBytes(document);
+  }
+
+  docx.DocxNode? _visualNodeFor(OoxmlVisualBlock block, String? fontFamily) {
+    if (block is OoxmlParagraphBlock) {
+      final inline = docx.DocxText(block.text);
+      return docx.DocxParagraph(
+        styleId: block.styleId,
+        align: _docxAlignFor(block.align),
+        pageBreakBefore: block.pageBreakBefore,
+        children: [
+          fontFamily == null ? inline : _applyFontToInline(inline, fontFamily),
+        ],
+      );
+    }
+    if (block is OoxmlTableBlock) {
+      return docx.DocxTable(
+        hasHeader: block.hasHeader,
+        rows: [
+          for (var rowIndex = 0; rowIndex < block.rows.length; rowIndex += 1)
+            docx.DocxTableRow(
+              cells: [
+                for (final cell in block.rows[rowIndex])
+                  docx.DocxTableCell.text(
+                    cell,
+                    isBold: block.hasHeader && rowIndex == 0,
+                    shadingFill: block.hasHeader && rowIndex == 0
+                        ? 'DBEAFE'
+                        : null,
+                  ),
+              ],
+            ),
+        ],
+      );
+    }
+    return null;
+  }
+
+  docx.DocxAlign _docxAlignFor(OoxmlTextAlign align) {
+    return switch (align) {
+      OoxmlTextAlign.center => docx.DocxAlign.center,
+      OoxmlTextAlign.right => docx.DocxAlign.right,
+      OoxmlTextAlign.justify => docx.DocxAlign.justify,
+      OoxmlTextAlign.left => docx.DocxAlign.left,
+    };
   }
 
   String? _selectedFont(DocumentExportPayload payload) {
