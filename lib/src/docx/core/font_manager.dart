@@ -86,13 +86,10 @@ class EmbeddedFont {
     final keyBytes = _parseGuid(obfuscationKey);
     final data = Uint8List.fromList(bytes); // usage copy
 
-    // XOR first 32 bytes
+    // XOR first 32 bytes with the 16-byte GUID key, repeated twice.
+    // Per ECMA-376 §17.8.1, the key is applied sequentially (not reversed).
     for (var i = 0; i < 32 && i < data.length; i++) {
-      // Reverse key bytes access! (i % 16 -> 15 - (i % 16))?
-      // Checking open-source implementations (e.g. POI):
-      // "XOR with the obfuscation key (reversed)"
-      // "key[15 - (i % 16)]"
-      data[i] = data[i] ^ keyBytes[15 - (i % 16)];
+      data[i] = data[i] ^ keyBytes[i % 16];
     }
     return data;
   }

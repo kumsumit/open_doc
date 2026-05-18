@@ -1131,26 +1131,7 @@ class ParagraphBuilder {
 
   Color? _parseHexColor(String hex) {
     if (hex == 'auto') return theme.defaultTextStyle.color;
-    try {
-      final buffer = StringBuffer();
-      if (hex.length == 6 || hex.length == 8) {
-        if (hex.length == 6) buffer.write('ff');
-        buffer.write(hex);
-        final color = Color(int.parse(buffer.toString(), radix: 16));
-
-        // Smart inversion for dark mode:
-        // If background is dark and text is dark (black), invert text to white.
-        // Leaves other colors (red, green, etc.) untouched.
-        final bg = theme.backgroundColor;
-        if (bg != null && bg.computeLuminance() < 0.5) {
-          if (color.computeLuminance() < 0.179) {
-            return Colors.white;
-          }
-        }
-        return color;
-      }
-    } catch (_) {}
-    return null;
+    return parseDocxHexColor(hex, themeBackground: theme.backgroundColor);
   }
 
   Color? _highlightToColor(DocxHighlight highlight) {
