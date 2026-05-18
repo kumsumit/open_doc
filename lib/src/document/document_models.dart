@@ -2,6 +2,16 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+enum DocumentEditMode {
+  markdown('Markdown editor', Icons.code_outlined),
+  docxRoundTrip('DOCX round-trip', Icons.description_outlined);
+
+  const DocumentEditMode(this.label, this.icon);
+
+  final String label;
+  final IconData icon;
+}
+
 class DocumentVersion {
   const DocumentVersion(
     this.id,
@@ -53,6 +63,18 @@ class MediaBlock {
   final String source;
   final String caption;
   final Uint8List? bytes;
+}
+
+class CustomFontFile {
+  const CustomFontFile({
+    required this.family,
+    required this.source,
+    required this.bytes,
+  });
+
+  final String family;
+  final String source;
+  final Uint8List bytes;
 }
 
 class Collaborator {

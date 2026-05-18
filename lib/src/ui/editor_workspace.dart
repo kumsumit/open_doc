@@ -21,6 +21,9 @@ class EditorWorkspace extends StatelessWidget {
     required this.wordCount,
     required this.readingMinutes,
     required this.characterCount,
+    required this.editMode,
+    required this.sourcePackageFormat,
+    required this.onSwitchToMarkdown,
     required this.mediaBlocks,
     required this.onRemoveMedia,
     required this.onToggleNavigation,
@@ -38,6 +41,9 @@ class EditorWorkspace extends StatelessWidget {
   final int wordCount;
   final int readingMinutes;
   final int characterCount;
+  final DocumentEditMode editMode;
+  final String? sourcePackageFormat;
+  final VoidCallback onSwitchToMarkdown;
   final List<MediaBlock> mediaBlocks;
   final ValueChanged<String> onRemoveMedia;
   final VoidCallback onToggleNavigation;
@@ -71,6 +77,24 @@ class EditorWorkspace extends StatelessWidget {
                       onTap: onToggleInspector,
                     ),
                     const Spacer(),
+                    if (editMode == DocumentEditMode.docxRoundTrip) ...[
+                      Tooltip(
+                        message:
+                            'Preserving original ${sourcePackageFormat?.toUpperCase() ?? 'DOCX'} package',
+                        child: Chip(
+                          avatar: Icon(editMode.icon, size: 16),
+                          label: const Text('Round-trip'),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      TextButton.icon(
+                        onPressed: onSwitchToMarkdown,
+                        icon: const Icon(Icons.edit_note_outlined, size: 18),
+                        label: const Text('Edit Markdown'),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
                     Flexible(
                       child: Text(
                         stats,
@@ -156,12 +180,23 @@ class EditorWorkspace extends StatelessWidget {
                                     ),
                                     const SizedBox(height: 18),
                                   ],
+                                  if (editMode ==
+                                      DocumentEditMode.docxRoundTrip) ...[
+                                    _RoundTripNotice(
+                                      sourcePackageFormat: sourcePackageFormat,
+                                      onSwitchToMarkdown: onSwitchToMarkdown,
+                                    ),
+                                    const SizedBox(height: 18),
+                                  ],
                                   TextField(
                                     key: const ValueKey('document-editor'),
                                     controller: srqController.textController,
                                     focusNode: editorFocusNode,
                                     maxLines: null,
                                     minLines: 28,
+                                    readOnly:
+                                        editMode ==
+                                        DocumentEditMode.docxRoundTrip,
                                     keyboardType: TextInputType.multiline,
                                     textAlign: textAlign,
                                     style: editorStyle,
@@ -250,6 +285,45 @@ class _MediaDocumentBlock extends StatelessWidget {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RoundTripNotice extends StatelessWidget {
+  const _RoundTripNotice({
+    required this.sourcePackageFormat,
+    required this.onSwitchToMarkdown,
+  });
+
+  final String? sourcePackageFormat;
+  final VoidCallback onSwitchToMarkdown;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xffeff6ff),
+        border: Border.all(color: const Color(0xffbfdbfe)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.description_outlined, color: Color(0xff1d4ed8)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'This ${sourcePackageFormat?.toUpperCase() ?? 'DOCX'} is in round-trip mode. The original styled package is preserved for export; switch to Markdown when you want to flatten it into the native editor.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: const Color(0xff1e3a8a)),
+            ),
+          ),
+          const SizedBox(width: 10),
+          TextButton(onPressed: onSwitchToMarkdown, child: const Text('Edit')),
         ],
       ),
     );

@@ -18,6 +18,7 @@ class Ribbon extends StatelessWidget {
     required this.fontSize,
     required this.zoom,
     required this.fontFamily,
+    required this.fontFamilies,
     required this.style,
     required this.alignment,
     required this.audienceProfile,
@@ -37,6 +38,7 @@ class Ribbon extends StatelessWidget {
     required this.onFontSize,
     required this.onZoom,
     required this.onFontFamily,
+    required this.onImportFont,
     required this.onStyle,
     required this.onAlignment,
     required this.onAudienceProfile,
@@ -55,6 +57,11 @@ class Ribbon extends StatelessWidget {
     required this.onInsertPageBreak,
     required this.onInsertToc,
     required this.onInsertFootnote,
+    required this.onInsertEndnote,
+    required this.onInsertHorizontalRule,
+    required this.onInsertDropCap,
+    required this.onInsertShape,
+    required this.onInsertLink,
     required this.onInsertSignature,
     required this.onUndo,
     required this.onRedo,
@@ -76,6 +83,7 @@ class Ribbon extends StatelessWidget {
   final double fontSize;
   final double zoom;
   final String fontFamily;
+  final List<String> fontFamilies;
   final String style;
   final String alignment;
   final String audienceProfile;
@@ -95,6 +103,7 @@ class Ribbon extends StatelessWidget {
   final ValueChanged<double> onFontSize;
   final ValueChanged<double> onZoom;
   final ValueChanged<String> onFontFamily;
+  final VoidCallback onImportFont;
   final ValueChanged<String> onStyle;
   final ValueChanged<String> onAlignment;
   final ValueChanged<String> onAudienceProfile;
@@ -113,6 +122,11 @@ class Ribbon extends StatelessWidget {
   final VoidCallback onInsertPageBreak;
   final VoidCallback onInsertToc;
   final VoidCallback onInsertFootnote;
+  final VoidCallback onInsertEndnote;
+  final VoidCallback onInsertHorizontalRule;
+  final VoidCallback onInsertDropCap;
+  final VoidCallback onInsertShape;
+  final VoidCallback onInsertLink;
   final VoidCallback onInsertSignature;
   final VoidCallback onUndo;
   final VoidCallback onRedo;
@@ -194,6 +208,31 @@ class Ribbon extends StatelessWidget {
                         onTap: onInsertFootnote,
                       ),
                       ToolButton(
+                        icon: Icons.notes_outlined,
+                        label: 'Endnote',
+                        onTap: onInsertEndnote,
+                      ),
+                      ToolButton(
+                        icon: Icons.horizontal_rule_outlined,
+                        label: 'Rule',
+                        onTap: onInsertHorizontalRule,
+                      ),
+                      ToolButton(
+                        icon: Icons.format_size_outlined,
+                        label: 'Drop',
+                        onTap: onInsertDropCap,
+                      ),
+                      ToolButton(
+                        icon: Icons.category_outlined,
+                        label: 'Shape',
+                        onTap: onInsertShape,
+                      ),
+                      ToolButton(
+                        icon: Icons.link_outlined,
+                        label: 'Link',
+                        onTap: onInsertLink,
+                      ),
+                      ToolButton(
                         icon: Icons.draw_outlined,
                         label: 'Sign',
                         onTap: onInsertSignature,
@@ -214,9 +253,14 @@ class Ribbon extends StatelessWidget {
                       const SizedBox(width: 8),
                       DropdownChip(
                         value: fontFamily,
-                        width: 112,
-                        values: const ['Aptos', 'Arial', 'Georgia', 'Times'],
+                        width: 132,
+                        values: fontFamilies,
                         onChanged: onFontFamily,
+                      ),
+                      IconAction(
+                        icon: Icons.upload_file_outlined,
+                        label: 'Import font',
+                        onTap: onImportFont,
                       ),
                       const SizedBox(width: 8),
                       StepperChip(

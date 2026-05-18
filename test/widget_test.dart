@@ -8,6 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:open_doc/main.dart';
 import 'package:open_doc/src/document/document_export_service.dart';
 import 'package:open_doc/src/document/document_import_service.dart';
+import 'package:open_doc/src/document/language_support_service.dart';
+import 'package:open_doc/src/document/document_models.dart';
 
 void main() {
   const exportService = DocumentExportService();
@@ -63,6 +65,67 @@ void main() {
     expect(imported.text, contains('| Item | Amount |'));
     expect(imported.text, contains('| --- | --- |'));
     expect(imported.text, contains('| Design | 1200 |'));
+    expect(imported.sourcePackageFormat, 'docx');
+    expect(imported.sourcePackageBytes, bytes);
+  });
+
+  test('DOCX import converts Word structure to editor markdown', () {
+    final archive = Archive()
+      ..addFile(
+        ArchiveFile.string('word/document.xml', '''
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <w:body>
+    <w:p>
+      <w:pPr><w:pStyle w:val="Heading1"/></w:pPr>
+      <w:r><w:t>Launch plan</w:t></w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:numPr><w:ilvl w:val="0"/><w:numId w:val="7"/></w:numPr>
+      </w:pPr>
+      <w:r><w:t>Approve scope</w:t></w:r>
+    </w:p>
+    <w:p>
+      <w:pPr><w:pageBreakBefore/></w:pPr>
+      <w:r><w:t>Next page has </w:t></w:r>
+      <w:r><w:rPr><w:b/></w:rPr><w:t>bold</w:t></w:r>
+      <w:r><w:t> and </w:t></w:r>
+      <w:r><w:rPr><w:i/></w:rPr><w:t>italic</w:t></w:r>
+      <w:hyperlink r:id="rId5"><w:r><w:t>details</w:t></w:r></w:hyperlink>
+    </w:p>
+  </w:body>
+</w:document>
+'''),
+      )
+      ..addFile(
+        ArchiveFile.string('word/_rels/document.xml.rels', '''
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId5"
+    Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"
+    Target="https://example.com/details" TargetMode="External"/>
+</Relationships>
+'''),
+      )
+      ..addFile(
+        ArchiveFile.string('word/numbering.xml', '''
+<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:abstractNum w:abstractNumId="3">
+    <w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/></w:lvl>
+  </w:abstractNum>
+  <w:num w:numId="7"><w:abstractNumId w:val="3"/></w:num>
+</w:numbering>
+'''),
+      );
+    final bytes = Uint8List.fromList(ZipEncoder().encode(archive));
+
+    final imported = importService.parse(bytes, 'structured.docx');
+
+    expect(imported.text, contains('# Launch plan'));
+    expect(imported.text, contains('- Approve scope'));
+    expect(imported.text, contains('[[PAGE_BREAK]]'));
+    expect(imported.text, contains('Next page has **bold** and *italic*'));
+    expect(imported.text, contains('[details](https://example.com/details)'));
   });
 
   test('CSV import creates markdown tables and handles quoted cells', () {
@@ -150,6 +213,69 @@ Open Doc writes real DOCX files now.
     );
   });
 
+  test('export blocks multilingual text without a covering embedded font', () {
+    const payload = DocumentExportPayload(
+      title: 'Hindi check',
+      markdown: 'नमस्ते दुनिया',
+    );
+
+    expect(
+      exportService.exportPdf(payload),
+      throwsA(isA<LanguageSupportException>()),
+    );
+  });
+
+  test('Open Doc export and import preserve native project data', () async {
+    final bytes = await exportService.exportOpenDoc(
+      DocumentExportPayload(
+        title: 'Native package',
+        markdown: '# Brief\n\nKeep the rich state.',
+        selectedFontFamily: 'Brand Sans',
+        pageSetup: const DocumentPageSetup(
+          pageSize: DocumentPageSize.legal,
+          orientation: DocumentPageOrientation.landscape,
+          marginPreset: DocumentMarginPreset.narrow,
+        ),
+        mediaBlocks: [
+          ExportMediaBlock(
+            type: ExportMediaType.image,
+            source: 'diagram.png',
+            caption: 'Architecture diagram',
+            hasBytes: true,
+            bytes: Uint8List.fromList([1, 2, 3]),
+          ),
+        ],
+        customFonts: [
+          CustomFontFile(
+            family: 'Brand Sans',
+            source: 'brand-sans.ttf',
+            bytes: Uint8List.fromList([4, 5, 6]),
+          ),
+        ],
+        sourcePackageFormat: 'docx',
+        sourcePackageBytes: Uint8List.fromList([7, 8, 9]),
+      ),
+    );
+
+    final imported = importService.parse(bytes, 'native.odoc');
+
+    expect(imported.formatLabel, 'Open Doc');
+    expect(imported.title, 'Native package');
+    expect(imported.selectedFontFamily, 'Brand Sans');
+    expect(imported.text, contains('# Brief'));
+    expect(imported.pageSetup?.pageSize, DocumentPageSize.legal);
+    expect(imported.pageSetup?.orientation, DocumentPageOrientation.landscape);
+    expect(imported.pageSetup?.marginPreset, DocumentMarginPreset.narrow);
+    expect(imported.mediaBlocks.single.type, MediaType.image);
+    expect(imported.mediaBlocks.single.caption, 'Architecture diagram');
+    expect(imported.mediaBlocks.single.bytes, Uint8List.fromList([1, 2, 3]));
+    expect(imported.customFonts.single.family, 'Brand Sans');
+    expect(imported.customFonts.single.source, 'brand-sans.ttf');
+    expect(imported.customFonts.single.bytes, Uint8List.fromList([4, 5, 6]));
+    expect(imported.sourcePackageFormat, 'docx');
+    expect(imported.sourcePackageBytes, Uint8List.fromList([7, 8, 9]));
+  });
+
   test('export service supports page setup and references', () async {
     final bytes = await exportService.exportDocx(
       const DocumentExportPayload(
@@ -171,6 +297,20 @@ Text before the break.
 Second page content.
 
 [[FOOTNOTE:Reference note generated by Open Doc.]]
+
+[[ENDNOTE:Closing note generated by Open Doc.]]
+
+[[HR]]
+
+[[DROP_CAP:Once upon a time in Open Doc.]]
+
+[[SHAPE:ellipse:Milestone]]
+
+[[SHAPE:actionButtonHome:Home]]
+
+[[ADV_TABLE:rows=3;cols=3;mergeHeader=true;shadeHeader=true;perCellBorders=true;border=double]]
+
+[[LINK:Open Doc|https://open-doc.local]]
 ''',
       ),
     );
@@ -181,13 +321,25 @@ Second page content.
     final footnotesXml = utf8.decode(
       archive.findFile('word/footnotes.xml')!.content as List<int>,
     );
+    final endnotesXml = utf8.decode(
+      archive.findFile('word/endnotes.xml')!.content as List<int>,
+    );
 
     expect(documentXml, contains('Table of Contents'));
     expect(documentXml, contains('w:pageBreakBefore'));
     expect(documentXml, contains('w:footnoteReference'));
+    expect(documentXml, contains('w:endnoteReference'));
+    expect(documentXml, contains('w:framePr'));
+    expect(documentXml, contains('Milestone'));
+    expect(documentXml, contains('Home'));
+    expect(documentXml, contains('w:gridSpan'));
+    expect(documentXml, contains('w:tcBorders'));
+    expect(documentXml, contains('w:val="double"'));
+    expect(documentXml, contains('Open Doc'));
     expect(documentXml, contains('w:orient="landscape"'));
     expect(documentXml, contains('w:left="720"'));
     expect(footnotesXml, contains('Reference note generated by Open Doc.'));
+    expect(endnotesXml, contains('Closing note generated by Open Doc.'));
   });
 
   testWidgets('Open Doc editor loads and inserts content', (tester) async {

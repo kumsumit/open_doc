@@ -94,6 +94,10 @@ class _DocumentStudioState extends State<DocumentStudio> {
   Color _pageColor = Colors.white;
   DateTime _savedAt = DateTime.now();
   final List<MediaBlock> _mediaBlocks = [];
+  final List<CustomFontFile> _customFonts = [];
+  String? _sourcePackageFormat;
+  Uint8List? _sourcePackageBytes;
+  DocumentEditMode _editMode = DocumentEditMode.markdown;
   final List<DocumentVersion> _versions = [];
   final List<Collaborator> _collaborators = const [
     Collaborator('Asha', 'Editing', Color(0xff2563eb)),
@@ -309,6 +313,10 @@ class _DocumentStudioState extends State<DocumentStudio> {
       await _exportToHtml(title.isEmpty ? 'Untitled document' : title);
       return;
     }
+    if (format == 'odoc') {
+      await _exportToOpenDoc(title.isEmpty ? 'Untitled document' : title);
+      return;
+    }
 
     String content;
     String ext;
@@ -336,6 +344,20 @@ class _DocumentStudioState extends State<DocumentStudio> {
 
   Future<void> _exportToDocx(String title) async {
     try {
+      if (_editMode == DocumentEditMode.docxRoundTrip &&
+          _sourcePackageFormat == 'docx' &&
+          _sourcePackageBytes != null) {
+        final savePath = await FilePicker.saveFile(
+          dialogTitle: 'Save DOCX file',
+          fileName: '$title.docx',
+          bytes: _sourcePackageBytes!,
+        );
+        if (savePath != null) {
+          await File(savePath).writeAsBytes(_sourcePackageBytes!);
+          _showSnack('Saved original styled DOCX to $savePath');
+        }
+        return;
+      }
       final bytes = await _exportService.exportDocx(_exportPayload);
       final savePath = await FilePicker.saveFile(
         dialogTitle: 'Save DOCX file',
@@ -385,6 +407,23 @@ class _DocumentStudioState extends State<DocumentStudio> {
     }
   }
 
+  Future<void> _exportToOpenDoc(String title) async {
+    try {
+      final bytes = await _exportService.exportOpenDoc(_exportPayload);
+      final savePath = await FilePicker.saveFile(
+        dialogTitle: 'Save Open Doc file',
+        fileName: '$title.odoc',
+        bytes: bytes,
+      );
+      if (savePath != null) {
+        await File(savePath).writeAsBytes(bytes);
+        _showSnack('Saved Open Doc to $savePath');
+      }
+    } catch (e) {
+      _showSnack('Open Doc export failed: $e');
+    }
+  }
+
   DocumentExportPayload get _exportPayload {
     return DocumentExportPayload(
       title: _titleController.text,
@@ -403,11 +442,24 @@ class _DocumentStudioState extends State<DocumentStudio> {
               source: block.source,
               caption: block.caption,
               hasBytes: block.bytes != null,
+              bytes: block.bytes,
             ),
           )
           .toList(),
+      customFonts: List<CustomFontFile>.of(_customFonts),
+      selectedFontFamily: _fontFamily,
+      sourcePackageFormat: _sourcePackageFormat,
+      sourcePackageBytes: _sourcePackageBytes,
     );
   }
+
+  List<String> get _fontFamilies => [
+    'Aptos',
+    'Arial',
+    'Georgia',
+    'Times',
+    for (final font in _customFonts) font.family,
+  ];
 
   List<String> get _headings {
     return _markdownText
@@ -481,6 +533,10 @@ class _DocumentStudioState extends State<DocumentStudio> {
       _zoom = 1;
       _template = 'Blank';
       _mediaBlocks.clear();
+      _customFonts.clear();
+      _sourcePackageFormat = null;
+      _sourcePackageBytes = null;
+      _editMode = DocumentEditMode.markdown;
       _captureVersion('Started blank document');
     });
     _editorFocusNode.requestFocus();
@@ -530,6 +586,53 @@ class _DocumentStudioState extends State<DocumentStudio> {
             : 'Could not insert that video.',
       );
     }
+  }
+
+  Future<void> _pickAndImportFont() async {
+    try {
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['ttf', 'otf'],
+        withData: true,
+      );
+      final picked = result?.files.single;
+      final bytes = picked?.bytes;
+      if (picked == null || bytes == null) {
+        return;
+      }
+
+      final font = CustomFontFile(
+        family: _fontFamilyFromFileName(picked.name),
+        source: picked.name,
+        bytes: bytes,
+      );
+      await _registerCustomFont(font);
+      setState(() {
+        _customFonts.removeWhere((existing) => existing.family == font.family);
+        _customFonts.add(font);
+        _fontFamily = font.family;
+        _saved = false;
+      });
+      _showSnack('Imported font ${font.family}.');
+    } catch (e) {
+      _showSnack('Could not import that font: $e');
+    }
+  }
+
+  Future<void> _registerCustomFont(CustomFontFile font) async {
+    final loader = FontLoader(font.family)
+      ..addFont(Future.value(ByteData.sublistView(font.bytes)));
+    await loader.load();
+  }
+
+  String _fontFamilyFromFileName(String fileName) {
+    final baseName = fileName.split(RegExp(r'[/\\]')).last;
+    final withoutExtension = baseName.replaceFirst(RegExp(r'\.[^.]+$'), '');
+    final cleaned = withoutExtension
+        .replaceAll(RegExp(r'[-_]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    return cleaned.isEmpty ? 'Custom Font' : cleaned;
   }
 
   void _showMediaSheet(MediaType type) {
@@ -666,11 +769,18 @@ class _DocumentStudioState extends State<DocumentStudio> {
     _showSnack('Media removed from document.');
   }
 
-  void _applyImportedDocument({
+  Future<void> _applyImportedDocument({
     required String name,
     required String text,
     required String format,
-  }) {
+    String? title,
+    String? selectedFontFamily,
+    List<MediaBlock> mediaBlocks = const [],
+    List<CustomFontFile> customFonts = const [],
+    String? sourcePackageFormat,
+    Uint8List? sourcePackageBytes,
+    DocumentPageSetup? pageSetup,
+  }) async {
     final cleanText = text.trim();
     if (cleanText.isEmpty) {
       _showSnack('No readable text found in $name.');
@@ -678,10 +788,38 @@ class _DocumentStudioState extends State<DocumentStudio> {
     }
 
     _srqController.setMarkdownSilently(cleanText);
+    for (final font in customFonts) {
+      await _registerCustomFont(font);
+    }
     setState(() {
-      _titleController.text = _importService.titleFromFileName(name);
+      _titleController.text = title?.trim().isNotEmpty == true
+          ? title!.trim()
+          : _importService.titleFromFileName(name);
       _template = 'Imported $format';
-      _mediaBlocks.clear();
+      _mediaBlocks
+        ..clear()
+        ..addAll(mediaBlocks);
+      _customFonts
+        ..clear()
+        ..addAll(customFonts);
+      _sourcePackageFormat = sourcePackageFormat;
+      _sourcePackageBytes = sourcePackageBytes;
+      _editMode = sourcePackageBytes != null && sourcePackageFormat == 'docx'
+          ? DocumentEditMode.docxRoundTrip
+          : DocumentEditMode.markdown;
+      final importedFamily = selectedFontFamily?.trim();
+      if (importedFamily != null &&
+          importedFamily.isNotEmpty &&
+          _fontFamilies.contains(importedFamily)) {
+        _fontFamily = importedFamily;
+      } else if (_customFonts.isNotEmpty) {
+        _fontFamily = _customFonts.first.family;
+      }
+      if (pageSetup != null) {
+        _pageSize = pageSetup.pageSize;
+        _pageOrientation = pageSetup.orientation;
+        _marginPreset = pageSetup.marginPreset;
+      }
       _captureVersion('Imported $format file');
     });
     _editorFocusNode.requestFocus();
@@ -701,6 +839,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
           'html',
           'htm',
           'csv',
+          'odoc',
         ],
         withData: true,
       );
@@ -711,10 +850,17 @@ class _DocumentStudioState extends State<DocumentStudio> {
       }
 
       final imported = _importService.parse(bytes, picked.name);
-      _applyImportedDocument(
+      await _applyImportedDocument(
         name: picked.name,
         text: imported.text,
         format: imported.formatLabel,
+        title: imported.title,
+        selectedFontFamily: imported.selectedFontFamily,
+        mediaBlocks: imported.mediaBlocks,
+        pageSetup: imported.pageSetup,
+        customFonts: imported.customFonts,
+        sourcePackageFormat: imported.sourcePackageFormat,
+        sourcePackageBytes: imported.sourcePackageBytes,
       );
     } on FormatException catch (error) {
       _showSnack(error.message);
@@ -836,6 +982,9 @@ class _DocumentStudioState extends State<DocumentStudio> {
                           _template = entry.key;
                           _titleController.text = entry.key;
                           _mediaBlocks.clear();
+                          _sourcePackageFormat = null;
+                          _sourcePackageBytes = null;
+                          _editMode = DocumentEditMode.markdown;
                           _style = 'Body';
                           _captureVersion('Applied ${entry.key} template');
                         });
@@ -1119,6 +1268,290 @@ class _DocumentStudioState extends State<DocumentStudio> {
     _showSnack('Footnote placeholder inserted.');
   }
 
+  void _insertEndnote() {
+    _insertText('\n\n[[ENDNOTE:Add appendix note or closing reference.]]\n\n');
+    _showSnack('Endnote placeholder inserted.');
+  }
+
+  void _insertHorizontalRule() {
+    _insertText('\n\n[[HR]]\n\n');
+    _showSnack('Horizontal rule inserted.');
+  }
+
+  void _insertDropCap() {
+    _insertText('\n\n[[DROP_CAP:Once upon a time, start this section.]]\n\n');
+    _showSnack('Drop cap block inserted.');
+  }
+
+  void _insertShape() {
+    _showShapePaletteSheet();
+  }
+
+  void _insertLink() {
+    _insertText('\n\n[[LINK:Reference|https://example.com]]\n\n');
+    _showSnack('Link placeholder inserted.');
+  }
+
+  void _switchRoundTripToMarkdown() {
+    setState(() {
+      _editMode = DocumentEditMode.markdown;
+      _sourcePackageFormat = null;
+      _sourcePackageBytes = null;
+      _saved = false;
+    });
+    _editorFocusNode.requestFocus();
+    _showSnack(
+      'Switched to Markdown editing. Future exports use the edited content.',
+    );
+  }
+
+  void _showAdvancedTableSheet() {
+    var rows = 4;
+    var columns = 4;
+    var mergeHeader = true;
+    var shadeHeader = true;
+    var perCellBorders = true;
+    var borderStyle = 'single';
+
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            Widget stepper({
+              required String label,
+              required int value,
+              required ValueChanged<int> onChanged,
+              required int min,
+              required int max,
+            }) {
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(label),
+                  IconButton(
+                    tooltip: 'Decrease $label',
+                    onPressed: value <= min ? null : () => onChanged(value - 1),
+                    icon: const Icon(Icons.remove_circle_outline),
+                  ),
+                  SizedBox(width: 28, child: Center(child: Text('$value'))),
+                  IconButton(
+                    tooltip: 'Increase $label',
+                    onPressed: value >= max ? null : () => onChanged(value + 1),
+                    icon: const Icon(Icons.add_circle_outline),
+                  ),
+                ],
+              );
+            }
+
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Advanced table',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 14),
+                  Wrap(
+                    spacing: 14,
+                    runSpacing: 10,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      stepper(
+                        label: 'Rows',
+                        value: rows,
+                        min: 1,
+                        max: 12,
+                        onChanged: (value) => setSheetState(() => rows = value),
+                      ),
+                      stepper(
+                        label: 'Columns',
+                        value: columns,
+                        min: 1,
+                        max: 8,
+                        onChanged: (value) =>
+                            setSheetState(() => columns = value),
+                      ),
+                      DropdownChip(
+                        value: borderStyle,
+                        values: const ['single', 'double', 'dashed', 'dotted'],
+                        width: 120,
+                        onChanged: (value) =>
+                            setSheetState(() => borderStyle = value),
+                      ),
+                      FilterChip(
+                        label: const Text('Merged header'),
+                        selected: mergeHeader,
+                        onSelected: (value) =>
+                            setSheetState(() => mergeHeader = value),
+                      ),
+                      FilterChip(
+                        label: const Text('Header fill'),
+                        selected: shadeHeader,
+                        onSelected: (value) =>
+                            setSheetState(() => shadeHeader = value),
+                      ),
+                      FilterChip(
+                        label: const Text('Per-cell borders'),
+                        selected: perCellBorders,
+                        onSelected: (value) =>
+                            setSheetState(() => perCellBorders = value),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        _insertText(
+                          '\n\n[[ADV_TABLE:rows=$rows;cols=$columns;mergeHeader=$mergeHeader;shadeHeader=$shadeHeader;perCellBorders=$perCellBorders;border=$borderStyle]]\n\n',
+                        );
+                        _showSnack('Advanced table inserted.');
+                      },
+                      icon: const Icon(Icons.table_chart_outlined),
+                      label: const Text('Insert'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showShapePaletteSheet() {
+    const presets = [
+      'rect',
+      'roundRect',
+      'ellipse',
+      'triangle',
+      'rtTriangle',
+      'parallelogram',
+      'trapezoid',
+      'diamond',
+      'pentagon',
+      'hexagon',
+      'heptagon',
+      'octagon',
+      'star4',
+      'star5',
+      'star6',
+      'heart',
+      'cloud',
+      'lightning',
+      'arrow',
+      'leftArrow',
+      'rightArrow',
+      'upArrow',
+      'downArrow',
+      'leftRightArrow',
+      'upDownArrow',
+      'line',
+      'straightConnector1',
+      'bentConnector2',
+      'bentConnector3',
+      'curvedConnector2',
+      'curvedConnector3',
+      'callout1',
+      'callout2',
+      'callout3',
+      'borderCallout1',
+      'borderCallout2',
+      'borderCallout3',
+      'ribbon',
+      'ribbon2',
+      'chevron',
+      'plus',
+      'minus',
+      'cross',
+      'cube',
+      'can',
+      'donut',
+      'noSmoking',
+      'blockArc',
+      'wedgeRectCallout',
+      'wedgeRoundRectCallout',
+      'wedgeEllipseCallout',
+      'flowChartProcess',
+      'flowChartAlternateProcess',
+      'flowChartDecision',
+      'flowChartInputOutput',
+      'flowChartPredefinedProcess',
+      'flowChartDocument',
+      'flowChartMultidocument',
+      'flowChartTerminator',
+      'flowChartConnector',
+      'flowChartExtract',
+      'flowChartMerge',
+      'bevel',
+      'foldedCorner',
+      'smileyFace',
+      'sun',
+      'moon',
+      'bracePair',
+      'bracketPair',
+      'actionButtonHome',
+      'actionButtonHelp',
+      'actionButtonInformation',
+    ];
+
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) {
+        return SizedBox(
+          height: MediaQuery.of(context).size.height * .72,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Shape palette',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: GridView.builder(
+                    gridDelegate:
+                        const SliverGridDelegateWithMaxCrossAxisExtent(
+                          maxCrossAxisExtent: 180,
+                          mainAxisExtent: 48,
+                          mainAxisSpacing: 8,
+                          crossAxisSpacing: 8,
+                        ),
+                    itemCount: presets.length,
+                    itemBuilder: (context, index) {
+                      final preset = presets[index];
+                      return OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          _insertText('\n\n[[SHAPE:$preset:$preset]]\n\n');
+                          _showSnack('Shape inserted.');
+                        },
+                        icon: const Icon(Icons.category_outlined, size: 18),
+                        label: Text(preset, overflow: TextOverflow.ellipsis),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildNavigationPanel({required VoidCallback onClose}) {
     return NavigationRailPanel(
       headings: _headings,
@@ -1245,6 +1678,11 @@ class _DocumentStudioState extends State<DocumentStudio> {
                     onTap: () => _finishExport(context, 'DOCX'),
                   ),
                   ExportTile(
+                    icon: Icons.inventory_2_outlined,
+                    label: 'Open Doc',
+                    onTap: () => _finishExport(context, 'Open Doc'),
+                  ),
+                  ExportTile(
                     icon: Icons.picture_as_pdf_outlined,
                     label: 'PDF',
                     onTap: () => _finishExport(context, 'PDF'),
@@ -1282,6 +1720,8 @@ class _DocumentStudioState extends State<DocumentStudio> {
     Navigator.of(sheetContext).pop();
     if (type == 'DOCX') {
       _exportToFile('docx');
+    } else if (type == 'Open Doc') {
+      _exportToFile('odoc');
     } else if (type == 'PDF') {
       _exportToFile('pdf');
     } else if (type == 'HTML') {
@@ -1413,6 +1853,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                         fontSize: _fontSize,
                         zoom: _zoom,
                         fontFamily: _fontFamily,
+                        fontFamilies: _fontFamilies,
                         style: _style,
                         alignment: _alignment,
                         audienceProfile: _audienceProfile,
@@ -1448,6 +1889,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                         onZoom: (value) => setState(() => _zoom = value),
                         onFontFamily: (value) =>
                             setState(() => _fontFamily = value),
+                        onImportFont: _pickAndImportFont,
                         onStyle: (value) {
                           setState(() {
                             _style = value;
@@ -1484,9 +1926,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                             setState(() => _inkColor = value),
                         onPageColor: (value) =>
                             setState(() => _pageColor = value),
-                        onInsertTable: () => _insertText(
-                          '\n| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n| Detail | Owner | Status |\n| Detail | Owner | Status |\n',
-                        ),
+                        onInsertTable: _showAdvancedTableSheet,
                         onInsertImage: () => _showMediaSheet(MediaType.image),
                         onInsertVideo: () => _showMediaSheet(MediaType.video),
                         onInsertChecklist: () =>
@@ -1498,6 +1938,11 @@ class _DocumentStudioState extends State<DocumentStudio> {
                         onInsertPageBreak: _insertPageBreak,
                         onInsertToc: _insertTableOfContents,
                         onInsertFootnote: _insertFootnote,
+                        onInsertEndnote: _insertEndnote,
+                        onInsertHorizontalRule: _insertHorizontalRule,
+                        onInsertDropCap: _insertDropCap,
+                        onInsertShape: _insertShape,
+                        onInsertLink: _insertLink,
                         onInsertSignature: () => _insertText(
                           '\n\nRegards,\n${_titleController.text.split(' ').first}\n',
                         ),
@@ -1534,6 +1979,9 @@ class _DocumentStudioState extends State<DocumentStudio> {
                               wordCount: _wordCount,
                               readingMinutes: _readingMinutes,
                               characterCount: _characterCount,
+                              editMode: _editMode,
+                              sourcePackageFormat: _sourcePackageFormat,
+                              onSwitchToMarkdown: _switchRoundTripToMarkdown,
                               mediaBlocks: _mediaBlocks,
                               onRemoveMedia: _removeMediaBlock,
                               onToggleNavigation: compact
