@@ -52,17 +52,7 @@ class OpenXmlDocument {
   });
 
   factory OpenXmlDocument.plain(String text) {
-    final blocks = text
-        .split(RegExp(r'\n{2,}'))
-        .map((value) => value.trim())
-        .where((value) => value.isNotEmpty)
-        .map(
-          (value) => OpenXmlParagraphBlock(
-            runs: [OpenXmlRun(value)],
-            style: _styleFromPlainText(value),
-          ),
-        )
-        .toList();
+    final blocks = _openXmlBlocksFromReadableText(text);
     return OpenXmlDocument(
       blocks: blocks.isEmpty
           ? const [
@@ -346,6 +336,251 @@ OpenXmlTextStyle _styleFromPlainText(String text) {
     return OpenXmlTextStyle.heading1;
   }
   return OpenXmlTextStyle.normal;
+}
+
+List<OpenXmlBlock> _openXmlBlocksFromReadableText(String text) {
+  final lines = text.replaceAll('\r\n', '\n').split('\n');
+  final blocks = <OpenXmlBlock>[];
+  final paragraph = StringBuffer();
+
+  void flushParagraph() {
+    final value = paragraph.toString().trim();
+    if (value.isNotEmpty) {
+      blocks.add(
+        OpenXmlParagraphBlock(
+          runs: [OpenXmlRun(_cleanInlineMarkdown(value))],
+          style: _styleFromPlainText(value),
+        ),
+      );
+    }
+    paragraph.clear();
+  }
+
+  var index = 0;
+  while (index < lines.length) {
+    final rawLine = lines[index].trimRight();
+    final trimmed = rawLine.trim();
+    if (trimmed.isEmpty) {
+      flushParagraph();
+      index += 1;
+      continue;
+    }
+
+    if (_looksLikeMarkdownTableStart(lines, index)) {
+      flushParagraph();
+      final tableLines = <String>[];
+      while (index < lines.length && _isMarkdownTableLine(lines[index])) {
+        tableLines.add(lines[index].trim());
+        index += 1;
+      }
+      final rows = _openXmlRowsFromMarkdownTable(tableLines);
+      if (rows.isNotEmpty) {
+        blocks.add(OpenXmlTableBlock(rows: rows));
+      }
+      continue;
+    }
+
+    final specialBlock = _openXmlSpecialBlockFromLine(trimmed);
+    if (specialBlock != null) {
+      flushParagraph();
+      blocks.add(specialBlock);
+      index += 1;
+      continue;
+    }
+
+    final heading = RegExp(r'^(#{1,6})\s+(.+)$').firstMatch(trimmed);
+    if (heading != null) {
+      flushParagraph();
+      blocks.add(
+        OpenXmlParagraphBlock(
+          runs: [OpenXmlRun(_cleanInlineMarkdown(heading.group(2) ?? ''))],
+          style: switch ((heading.group(1) ?? '').length) {
+            1 => OpenXmlTextStyle.title,
+            2 => OpenXmlTextStyle.heading1,
+            3 => OpenXmlTextStyle.heading2,
+            4 => OpenXmlTextStyle.heading3,
+            5 => OpenXmlTextStyle.heading4,
+            _ => OpenXmlTextStyle.heading5,
+          },
+        ),
+      );
+      index += 1;
+      continue;
+    }
+
+    final checklist = RegExp(r'^[-*]\s+\[[ xX]\]\s+(.+)$').firstMatch(trimmed);
+    if (checklist != null) {
+      flushParagraph();
+      blocks.add(
+        OpenXmlParagraphBlock(
+          runs: [OpenXmlRun(_cleanInlineMarkdown(checklist.group(1) ?? ''))],
+        ),
+      );
+      index += 1;
+      continue;
+    }
+
+    final bullet = RegExp(r'^[-*]\s+(.+)$').firstMatch(trimmed);
+    if (bullet != null) {
+      flushParagraph();
+      blocks.add(
+        OpenXmlParagraphBlock(
+          runs: [OpenXmlRun(_cleanInlineMarkdown(bullet.group(1) ?? ''))],
+        ),
+      );
+      index += 1;
+      continue;
+    }
+
+    final ordered = RegExp(r'^\d+\.\s+(.+)$').firstMatch(trimmed);
+    if (ordered != null) {
+      flushParagraph();
+      blocks.add(
+        OpenXmlParagraphBlock(
+          runs: [OpenXmlRun(_cleanInlineMarkdown(ordered.group(1) ?? ''))],
+        ),
+      );
+      index += 1;
+      continue;
+    }
+
+    final quote = RegExp(r'^>\s+(.+)$').firstMatch(trimmed);
+    if (quote != null) {
+      flushParagraph();
+      blocks.add(
+        OpenXmlParagraphBlock(
+          runs: [OpenXmlRun(_cleanInlineMarkdown(quote.group(1) ?? ''))],
+          style: OpenXmlTextStyle.quote,
+        ),
+      );
+      index += 1;
+      continue;
+    }
+
+    if (paragraph.isNotEmpty) {
+      paragraph.write(' ');
+    }
+    paragraph.write(trimmed);
+    index += 1;
+  }
+
+  flushParagraph();
+  return blocks;
+}
+
+OpenXmlBlock? _openXmlSpecialBlockFromLine(String line) {
+  if (line == '[[TOC]]') {
+    return const OpenXmlParagraphBlock(
+      runs: [OpenXmlRun('Table of contents')],
+      style: OpenXmlTextStyle.heading1,
+    );
+  }
+  if (line == '[[PAGE_BREAK]]') {
+    return const OpenXmlParagraphBlock(
+      runs: [OpenXmlRun('')],
+      pageBreakBefore: true,
+    );
+  }
+  if (line == '[[HR]]') {
+    return const OpenXmlParagraphBlock(runs: [OpenXmlRun('')]);
+  }
+  final tagged = RegExp(r'^\[\[([A-Z_]+):(.+)\]\]$').firstMatch(line);
+  if (tagged == null) {
+    return null;
+  }
+  final tag = tagged.group(1) ?? '';
+  final body = tagged.group(2) ?? '';
+  return switch (tag) {
+    'SUBTITLE' => OpenXmlParagraphBlock(
+      runs: [OpenXmlRun(body)],
+      style: OpenXmlTextStyle.subtitle,
+    ),
+    'CAPTION' => OpenXmlParagraphBlock(
+      runs: [OpenXmlRun(body)],
+      style: OpenXmlTextStyle.caption,
+    ),
+    'FOOTNOTE' => OpenXmlParagraphBlock(
+      runs: [OpenXmlRun('Footnote: $body')],
+      style: OpenXmlTextStyle.caption,
+    ),
+    'ENDNOTE' => OpenXmlParagraphBlock(
+      runs: [OpenXmlRun('Endnote: $body')],
+      style: OpenXmlTextStyle.caption,
+    ),
+    'DROP_CAP' => OpenXmlParagraphBlock(runs: [OpenXmlRun(body)]),
+    'LINK' => _openXmlLinkBlock(body),
+    'CITATION' => OpenXmlParagraphBlock(
+      runs: [OpenXmlRun(body.replaceAll('|', ': '))],
+      style: OpenXmlTextStyle.caption,
+    ),
+    'SHAPE' => OpenXmlParagraphBlock(
+      runs: [OpenXmlRun('Shape: ${body.split(':').last}')],
+      style: OpenXmlTextStyle.caption,
+    ),
+    _ => null,
+  };
+}
+
+OpenXmlParagraphBlock _openXmlLinkBlock(String body) {
+  final parts = body.split('|');
+  final label = parts.isEmpty ? body : parts.first;
+  final href = parts.length > 1 ? parts.sublist(1).join('|') : null;
+  return OpenXmlParagraphBlock(runs: [OpenXmlRun(label, href: href)]);
+}
+
+bool _looksLikeMarkdownTableStart(List<String> lines, int index) {
+  if (index + 1 >= lines.length) {
+    return false;
+  }
+  return _isMarkdownTableLine(lines[index]) &&
+      RegExp(r'^\s*\|?[\s:\-|]+\|[\s:\-|]*$').hasMatch(lines[index + 1]);
+}
+
+bool _isMarkdownTableLine(String line) {
+  final trimmed = line.trim();
+  return trimmed.contains('|') && trimmed.replaceAll('|', '').trim().isNotEmpty;
+}
+
+List<List<String>> _openXmlRowsFromMarkdownTable(List<String> lines) {
+  final rows = <List<String>>[];
+  for (var index = 0; index < lines.length; index += 1) {
+    if (index == 1 &&
+        RegExp(r'^\s*\|?[\s:\-|]+\|[\s:\-|]*$').hasMatch(lines[index])) {
+      continue;
+    }
+    final cells = lines[index]
+        .trim()
+        .replaceFirst(RegExp(r'^\|'), '')
+        .replaceFirst(RegExp(r'\|$'), '')
+        .split('|')
+        .map((cell) => _cleanInlineMarkdown(cell.trim()))
+        .toList();
+    if (cells.isNotEmpty) {
+      rows.add(cells);
+    }
+  }
+  return rows;
+}
+
+String _cleanInlineMarkdown(String value) {
+  return value
+      .replaceAllMapped(
+        RegExp(r'\[([^\]]+)\]\(([^)]+)\)'),
+        (match) => match.group(1) ?? '',
+      )
+      .replaceAllMapped(
+        RegExp(r'\*\*(.*?)\*\*|__(.*?)__'),
+        (match) => match.group(1) ?? match.group(2) ?? '',
+      )
+      .replaceAllMapped(
+        RegExp(r'\*(.*?)\*|_(.*?)_'),
+        (match) => match.group(1) ?? match.group(2) ?? '',
+      )
+      .replaceAllMapped(RegExp(r'~~(.*?)~~'), (match) => match.group(1) ?? '')
+      .replaceAllMapped(RegExp(r'`([^`]+)`'), (match) => match.group(1) ?? '')
+      .replaceAll('<u>', '')
+      .replaceAll('</u>', '')
+      .trim();
 }
 
 List<OpenXmlRun> _openXmlRunsFromJson(Object? value) {
