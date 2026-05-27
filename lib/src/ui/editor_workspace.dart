@@ -635,11 +635,27 @@ class _OoxmlTableEditor extends StatelessWidget {
   final TextStyle style;
   final ValueChanged<OoxmlTableBlock> onChanged;
 
+  static const double _twipsPerPixel = 15;
+  static const int _defaultColumnWidth = 1800;
+  static const int _defaultRowHeight = 660;
+  static const int _minColumnWidth = 720;
+  static const int _minRowHeight = 420;
+
   @override
   Widget build(BuildContext context) {
     if (block.rows.isEmpty) {
       return const SizedBox.shrink();
     }
+
+    final columnCount = block.rows.fold<int>(
+      0,
+      (count, row) => math.max(count, row.length),
+    );
+    if (columnCount == 0) {
+      return const SizedBox.shrink();
+    }
+    final columnWidths = _resolvedColumnWidths(columnCount);
+    final rowHeights = _resolvedRowHeights();
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -648,54 +664,181 @@ class _OoxmlTableEditor extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(6),
-        child: Table(
-          border: TableBorder.all(color: const Color(0xffcbd5e1)),
-          defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-          children: [
-            for (var rowIndex = 0; rowIndex < block.rows.length; rowIndex++)
-              TableRow(
-                decoration: BoxDecoration(
-                  color: block.hasHeader && rowIndex == 0
-                      ? const Color(0xfff1f5f9)
-                      : Colors.transparent,
-                ),
-                children: [
-                  for (
-                    var columnIndex = 0;
-                    columnIndex < block.rows[rowIndex].length;
-                    columnIndex++
-                  )
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      child: TextFormField(
-                        key: ValueKey(
-                          'ooxml-table-$index-$rowIndex-$columnIndex',
-                        ),
-                        initialValue: block.rows[rowIndex][columnIndex],
-                        maxLines: null,
-                        style: style.copyWith(
-                          fontWeight: block.hasHeader && rowIndex == 0
-                              ? FontWeight.w700
-                              : style.fontWeight,
-                        ),
-                        decoration: const InputDecoration(
-                          border: InputBorder.none,
-                          isDense: true,
-                        ),
-                        onChanged: (value) {
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var rowIndex = 0; rowIndex < block.rows.length; rowIndex++)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (
+                      var columnIndex = 0;
+                      columnIndex < columnCount;
+                      columnIndex++
+                    )
+                      _ResizableOoxmlTableCell(
+                        tableIndex: index,
+                        rowIndex: rowIndex,
+                        columnIndex: columnIndex,
+                        value: columnIndex < block.rows[rowIndex].length
+                            ? block.rows[rowIndex][columnIndex]
+                            : '',
+                        width: _twipsToPixels(columnWidths[columnIndex]),
+                        height: _twipsToPixels(rowHeights[rowIndex]),
+                        isHeader: block.hasHeader && rowIndex == 0,
+                        style: style,
+                        onTextChanged: (value) {
                           final rows = block.rows
                               .map((row) => List<String>.of(row))
                               .toList();
+                          while (rows[rowIndex].length <= columnIndex) {
+                            rows[rowIndex].add('');
+                          }
                           rows[rowIndex][columnIndex] = value;
                           onChanged(block.copyWith(rows: rows));
                         },
+                        onColumnDrag: (delta) {
+                          final widths = List<int>.of(columnWidths);
+                          widths[columnIndex] = math.max(
+                            _minColumnWidth,
+                            widths[columnIndex] +
+                                _pixelsToTwips(delta.delta.dx),
+                          );
+                          onChanged(block.copyWith(columnWidths: widths));
+                        },
+                        onRowDrag: (delta) {
+                          final heights = List<int>.of(rowHeights);
+                          heights[rowIndex] = math.max(
+                            _minRowHeight,
+                            heights[rowIndex] + _pixelsToTwips(delta.delta.dy),
+                          );
+                          onChanged(block.copyWith(rowHeights: heights));
+                        },
                       ),
-                    ),
-                ],
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<int> _resolvedColumnWidths(int columnCount) {
+    return [
+      for (var index = 0; index < columnCount; index += 1)
+        index < block.columnWidths.length && block.columnWidths[index] > 0
+            ? block.columnWidths[index]
+            : _defaultColumnWidth,
+    ];
+  }
+
+  List<int> _resolvedRowHeights() {
+    return [
+      for (var index = 0; index < block.rows.length; index += 1)
+        index < block.rowHeights.length && block.rowHeights[index] > 0
+            ? block.rowHeights[index]
+            : _defaultRowHeight,
+    ];
+  }
+
+  double _twipsToPixels(int twips) => twips / _twipsPerPixel;
+
+  int _pixelsToTwips(double pixels) => (pixels * _twipsPerPixel).round();
+}
+
+class _ResizableOoxmlTableCell extends StatelessWidget {
+  const _ResizableOoxmlTableCell({
+    required this.tableIndex,
+    required this.rowIndex,
+    required this.columnIndex,
+    required this.value,
+    required this.width,
+    required this.height,
+    required this.isHeader,
+    required this.style,
+    required this.onTextChanged,
+    required this.onColumnDrag,
+    required this.onRowDrag,
+  });
+
+  final int tableIndex;
+  final int rowIndex;
+  final int columnIndex;
+  final String value;
+  final double width;
+  final double height;
+  final bool isHeader;
+  final TextStyle style;
+  final ValueChanged<String> onTextChanged;
+  final GestureDragUpdateCallback onColumnDrag;
+  final GestureDragUpdateCallback onRowDrag;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      height: height,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: isHeader ? const Color(0xfff1f5f9) : Colors.transparent,
+          border: const Border(
+            right: BorderSide(color: Color(0xffcbd5e1)),
+            bottom: BorderSide(color: Color(0xffcbd5e1)),
+          ),
+        ),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: TextFormField(
+                  key: ValueKey(
+                    'ooxml-table-$tableIndex-$rowIndex-$columnIndex',
+                  ),
+                  initialValue: value,
+                  maxLines: null,
+                  expands: true,
+                  style: style.copyWith(
+                    fontWeight: isHeader ? FontWeight.w700 : style.fontWeight,
+                  ),
+                  decoration: const InputDecoration(
+                    border: InputBorder.none,
+                    isDense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  onChanged: onTextChanged,
+                ),
               ),
+            ),
+            Positioned(
+              top: 0,
+              right: 0,
+              bottom: 0,
+              width: 8,
+              child: MouseRegion(
+                cursor: SystemMouseCursors.resizeColumn,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onHorizontalDragUpdate: onColumnDrag,
+                ),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: 8,
+              child: MouseRegion(
+                cursor: SystemMouseCursors.resizeRow,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onVerticalDragUpdate: onRowDrag,
+                ),
+              ),
+            ),
           ],
         ),
       ),

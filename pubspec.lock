@@ -80,10 +80,10 @@ packages:
     dependency: transitive
     description:
       name: code_assets
-      sha256: "83ccdaa064c980b5596c35dd64a8d3ecc68620174ab9b90b6343b753aa721687"
+      sha256: dad6bf6b9f4f378b0a69edbf42584d336efd1a9ce15deb1ba591cbb1b5ff440f
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.0"
+    version: "1.1.0"
   collection:
     dependency: transitive
     description:
@@ -146,7 +146,7 @@ packages:
     description:
       path: "."
       ref: HEAD
-      resolved-ref: "4f0f66089277101c049b67b5643eae4011fc6424"
+      resolved-ref: "6c7da3a509e79af5385ecd5856abcf07d1d07e9c"
       url: "https://github.com/kumsumit/device_info_plus.git"
     source: git
     version: "13.1.0"
@@ -228,7 +228,7 @@ packages:
     description:
       path: "."
       ref: HEAD
-      resolved-ref: "6fb6f482339089402b5c4be7bbcc9c291f469308"
+      resolved-ref: "168c544cdb2686d099b2ac26bf58abf2688592bc"
       url: "https://github.com/sumitsharansatsangi/flutter_file_picker.git"
     source: git
     version: "12.0.0"
@@ -294,7 +294,7 @@ packages:
     description:
       path: "."
       ref: HEAD
-      resolved-ref: df176204221c320f856c706b4566c8f7cdc2d714
+      resolved-ref: cc6e4a02d3a1a31898922d32e64588b882fa15ef
       url: "https://github.com/kumsumit/flutter_keyboard_visibility.git"
     source: git
     version: "5.4.3"
@@ -364,7 +364,7 @@ packages:
     description:
       path: "."
       ref: HEAD
-      resolved-ref: "43ddcde21e64550ad0d2f48e4d6fd4c914f2388b"
+      resolved-ref: "0d0e3ec7e6a75697cf54e6f59c19e670c4ddc7c2"
       url: "https://github.com/kumsumit/flutter_plugin_android_lifecycle.git"
     source: git
     version: "2.0.27"
@@ -373,7 +373,7 @@ packages:
     description:
       path: "."
       ref: HEAD
-      resolved-ref: "0b9f9b7c48952647be34fbdb1bc95fe179fea0fb"
+      resolved-ref: "956ca85f2315256d727dc5b7ad0be936e1bbd2a6"
       url: "https://github.com/sumitsharansatsangi/flutter-quill.git"
     source: git
     version: "6.3.4"
@@ -395,14 +395,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.2.0"
-  glob:
-    dependency: transitive
-    description:
-      name: glob
-      sha256: c3f1ee72c96f8f78935e18aa8cecced9ab132419e8625dc187e1c2408efc20de
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.1.3"
   hive_ce:
     dependency: transitive
     description:
@@ -415,10 +407,10 @@ packages:
     dependency: transitive
     description:
       name: hooks
-      sha256: "025f060e86d2d4c3c47b56e33caf7f93bf9283340f26d23424ebcfccf34f621e"
+      sha256: a41af4e8fc687cd6d33de9751eb936c8c0204ebe2bcb6c15ecf707504bf47f31
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.3"
+    version: "2.0.0"
   html:
     dependency: "direct main"
     description:
@@ -444,13 +436,11 @@ packages:
     source: hosted
     version: "4.1.2"
   i18n_extension:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      path: "."
-      ref: HEAD
-      resolved-ref: "5effc49127e2f4e58341d6a5aa0817d15d1187d0"
-      url: "https://github.com/sumitsharansatsangi/i18n_extension.git"
-    source: git
+      path: "third_party/i18n_extension"
+      relative: true
+    source: path
     version: "15.1.0"
   i18n_extension_core:
     dependency: transitive
@@ -483,7 +473,7 @@ packages:
     description:
       path: "."
       ref: HEAD
-      resolved-ref: a3bed6273adfaf26eff740b08cac56a99fd14b6b
+      resolved-ref: eea66c295ac474f343064c7a7427a169760f42a6
       url: "https://github.com/kumsumit/image_picker_android.git"
     source: git
     version: "0.8.13+17"
@@ -562,7 +552,7 @@ packages:
     description:
       path: "."
       ref: HEAD
-      resolved-ref: "7f02ac81334c7ee959276d051ef722a3bb4263db"
+      resolved-ref: "7066eb931fd304f47269120ea292c09d31f1f9d0"
       url: "https://github.com/kumsumit/jni.git"
     source: git
     version: "1.0.1-wip"
@@ -571,7 +561,7 @@ packages:
     description:
       path: "."
       ref: HEAD
-      resolved-ref: cf0200754dd6e55887131e4574a1135eb5ebc9b7
+      resolved-ref: "1688605a05937ad49eb74626a2192291749146b0"
       url: "https://github.com/kumsumit/jni_flutter.git"
     source: git
     version: "1.0.1"
@@ -635,10 +625,10 @@ packages:
     dependency: transitive
     description:
       name: matcher
-      sha256: dc0b7dc7651697ea4ff3e69ef44b0407ea32c487a39fff6a4004fa585e901861
+      sha256: "31bd099b47c10cd1aeb55146a2d46ce0277630ecef3f7dae54ad7873f36696cd"
       url: "https://pub.dev"
     source: hosted
-    version: "0.12.19"
+    version: "0.12.20"
   material_color_utilities:
     dependency: transitive
     description:
@@ -651,10 +641,10 @@ packages:
     dependency: transitive
     description:
       name: meta
-      sha256: "23f08335362185a5ea2ad3a4e597f1375e78bce8a040df5c600c8d3552ef2394"
+      sha256: df0c643f44ad098eb37988027a8e2b2b5a031fd3977f06bbfd3a76637e8df739
       url: "https://pub.dev"
     source: hosted
-    version: "1.17.0"
+    version: "1.18.2"
   mime:
     dependency: transitive
     description:
@@ -663,22 +653,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.0"
-  native_toolchain_c:
-    dependency: transitive
-    description:
-      name: native_toolchain_c
-      sha256: "6ba77bb18063eebe9de401f5e6437e95e1438af0a87a3a39084fbd37c90df572"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.17.6"
   objective_c:
     dependency: transitive
     description:
       name: objective_c
-      sha256: "100a1c87616ab6ed41ec263b083c0ef3261ee6cd1dc3b0f35f8ddfa4f996fe52"
+      sha256: "6cb691c686fa2838c6deb34980d426145c2a5d537491cb83d463c33cdbc726ed"
       url: "https://pub.dev"
     source: hosted
-    version: "9.3.0"
+    version: "9.4.1"
   octo_image:
     dependency: transitive
     description:
@@ -692,7 +674,7 @@ packages:
     description:
       path: "."
       ref: HEAD
-      resolved-ref: d18e5d0b29c0ae8d0af03eb7a115e66883668a2a
+      resolved-ref: edb28f34038124479fd22acf4c88cb47e2079fd4
       url: "https://github.com/sumitsharansatsangi/open_file.git"
     source: git
     version: "4.6.0"
@@ -707,10 +689,11 @@ packages:
   pasteboard:
     dependency: transitive
     description:
-      name: pasteboard
-      sha256: fedbe8da188d2f713aa8b01260737342e6e1087534a3ab26e1a719f8d3e8f32f
-      url: "https://pub.dev"
-    source: hosted
+      path: "."
+      ref: HEAD
+      resolved-ref: "5b25802e6d5413226b2f67729a4f144881eef075"
+      url: "https://github.com/kumsumit/pasteboard.git"
+    source: git
     version: "0.5.0"
   path:
     dependency: "direct main"
@@ -853,7 +836,7 @@ packages:
     description:
       path: "."
       ref: HEAD
-      resolved-ref: "6667b33d50ff17f01f1768e9df11c874e683d92f"
+      resolved-ref: f8427faecfae26da92efcea31cbafa75db1599e0
       url: "https://github.com/kumsumit/shared_preferences_android.git"
     source: git
     version: "2.4.21"
@@ -966,10 +949,10 @@ packages:
     dependency: transitive
     description:
       name: test_api
-      sha256: "8161c84903fd860b26bfdefb7963b3f0b68fee7adea0f59ef805ecca346f0c7a"
+      sha256: "2a122cbe059f8b610d3a5415f42e255b6c17b1f21eee1d960f31080237fb4f11"
       url: "https://pub.dev"
     source: hosted
-    version: "0.7.10"
+    version: "0.7.12"
   tuple:
     dependency: transitive
     description:
@@ -1000,10 +983,10 @@ packages:
     description:
       path: "."
       ref: HEAD
-      resolved-ref: "5288affb7883fd440b21bef8ac5a98076947b44f"
+      resolved-ref: be1dee351d0b445f6bf99205d0f99ea7ed72550e
       url: "https://github.com/kumsumit/url_launcher_android.git"
     source: git
-    version: "6.3.14"
+    version: "6.3.30"
   url_launcher_ios:
     dependency: transitive
     description:
@@ -1070,10 +1053,10 @@ packages:
     dependency: transitive
     description:
       name: vector_math
-      sha256: d530bd74fea330e6e364cda7a85019c434070188383e1cd8d9777ee586914c5b
+      sha256: "47a1b32ee755c3fcffa33db52a7258c137f97bdb2209a1075be847809fac4ccf"
       url: "https://pub.dev"
     source: hosted
-    version: "2.2.0"
+    version: "2.3.0"
   vm_service:
     dependency: transitive
     description:
@@ -1094,10 +1077,10 @@ packages:
     dependency: transitive
     description:
       name: win32
-      sha256: a1fc9eb9248baa05dfc12ed5b66e377b3e23f095eec078e0371622b9033810d9
+      sha256: ba6f4bba816c8d7e3c1580e170f3786d216951cc6b94babc3b814c08d2cb2738
       url: "https://pub.dev"
     source: hosted
-    version: "6.2.0"
+    version: "6.3.0"
   win32_registry:
     dependency: transitive
     description:
@@ -1131,5 +1114,5 @@ packages:
     source: hosted
     version: "3.1.3"
 sdks:
-  dart: ">=3.11.5 <4.0.0"
-  flutter: ">=3.41.1"
+  dart: ">=3.12.0 <4.0.0"
+  flutter: ">=3.44.0"

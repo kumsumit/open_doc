@@ -128,7 +128,9 @@ class DocumentExportService {
   Future<docx.DocxBuiltDocument> buildDocument(
     DocumentExportPayload payload,
   ) async {
-    final built = payload.quillDeltaJson.isNotEmpty
+    final built = payload.ooxmlBlocks.isNotEmpty
+        ? _buildNodesFromOoxmlBlocks(payload)
+        : payload.quillDeltaJson.isNotEmpty
         ? _buildNodesFromQuillDelta(payload.quillDeltaJson)
         : await _buildNodes(buildMarkdown(payload));
     final selectedFont = _selectedFont(payload);
@@ -165,6 +167,18 @@ class DocumentExportService {
       endnotes: endnotes.isEmpty ? null : endnotes,
       section: _sectionFor(payload.pageSetup),
       fonts: _embeddedFonts(payload.customFonts),
+    );
+  }
+
+  _BuiltExportNodes _buildNodesFromOoxmlBlocks(DocumentExportPayload payload) {
+    final nodes = payload.ooxmlBlocks
+        .map((block) => _visualNodeFor(block, null))
+        .whereType<docx.DocxNode>()
+        .toList();
+    return _BuiltExportNodes(
+      nodes: nodes,
+      footnotes: const [],
+      endnotes: const [],
     );
   }
 
@@ -777,18 +791,33 @@ class DocumentExportService {
       );
     }
     if (block is OoxmlTableBlock) {
+      final columnWidths = block.columnWidths;
       return docx.DocxTable(
         hasHeader: block.hasHeader,
+        gridColumns: columnWidths.isEmpty ? null : columnWidths,
         rows: [
           for (var rowIndex = 0; rowIndex < block.rows.length; rowIndex += 1)
             docx.DocxTableRow(
+              height:
+                  rowIndex < block.rowHeights.length &&
+                      block.rowHeights[rowIndex] > 0
+                  ? block.rowHeights[rowIndex]
+                  : null,
               cells: [
-                for (final cell in block.rows[rowIndex])
+                for (
+                  var columnIndex = 0;
+                  columnIndex < block.rows[rowIndex].length;
+                  columnIndex += 1
+                )
                   docx.DocxTableCell.text(
-                    cell,
+                    block.rows[rowIndex][columnIndex],
                     isBold: block.hasHeader && rowIndex == 0,
                     shadingFill: block.hasHeader && rowIndex == 0
                         ? 'DBEAFE'
+                        : null,
+                  ).copyWith(
+                    width: columnIndex < columnWidths.length
+                        ? columnWidths[columnIndex]
                         : null,
                   ),
               ],
@@ -865,6 +894,7 @@ class DocumentExportService {
         _replaceParagraphText(child, block.text);
         blockIndex += 1;
       } else if (child.name.local == 'tbl' && block is OoxmlTableBlock) {
+        _applyTableSizing(child, block);
         _replaceTableText(child, block);
         blockIndex += 1;
       }
@@ -918,6 +948,118 @@ class DocumentExportService {
         _replaceParagraphText(paragraph, block.rows[rowIndex][cellIndex]);
       }
     }
+  }
+
+  void _applyTableSizing(XmlElement table, OoxmlTableBlock block) {
+    if (block.columnWidths.isNotEmpty) {
+      final grid = _tableGrid(table);
+      grid.children
+        ..clear()
+        ..addAll([
+          for (final width in block.columnWidths)
+            _xmlElement(
+              (builder) => builder.element(
+                'w:gridCol',
+                nest: () => builder.attribute('w:w', width.toString()),
+              ),
+            ),
+        ]);
+    }
+
+    final rows = table.childElements
+        .where((element) => element.name.local == 'tr')
+        .toList();
+    for (var rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+      if (rowIndex < block.rowHeights.length &&
+          block.rowHeights[rowIndex] > 0) {
+        final trPr = _firstOrInsert(rows[rowIndex], 'w:trPr');
+        _replaceChildElement(
+          trPr,
+          'trHeight',
+          _xmlElement(
+            (builder) => builder.element(
+              'w:trHeight',
+              nest: () {
+                builder.attribute('w:val', block.rowHeights[rowIndex]);
+                builder.attribute('w:hRule', 'exact');
+              },
+            ),
+          ),
+        );
+      }
+
+      final cells = rows[rowIndex].childElements
+          .where((element) => element.name.local == 'tc')
+          .toList();
+      for (var cellIndex = 0; cellIndex < cells.length; cellIndex += 1) {
+        if (cellIndex >= block.columnWidths.length) {
+          break;
+        }
+        final tcPr = _firstOrInsert(cells[cellIndex], 'w:tcPr');
+        _replaceChildElement(
+          tcPr,
+          'tcW',
+          _xmlElement(
+            (builder) => builder.element(
+              'w:tcW',
+              nest: () {
+                builder.attribute('w:w', block.columnWidths[cellIndex]);
+                builder.attribute('w:type', 'dxa');
+              },
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  XmlElement _tableGrid(XmlElement table) {
+    final existing = table.childElements
+        .where((element) => element.name.local == 'tblGrid')
+        .firstOrNull;
+    if (existing != null) {
+      return existing;
+    }
+    final grid = _xmlElement((builder) => builder.element('w:tblGrid'));
+    final tblPrIndex = table.children.indexWhere(
+      (node) => node is XmlElement && node.name.local == 'tblPr',
+    );
+    table.children.insert(tblPrIndex == -1 ? 0 : tblPrIndex + 1, grid);
+    return grid;
+  }
+
+  XmlElement _firstOrInsert(XmlElement parent, String name) {
+    final localName = name.split(':').last;
+    final existing = parent.childElements
+        .where((element) => element.name.local == localName)
+        .firstOrNull;
+    if (existing != null) {
+      return existing;
+    }
+    final element = _xmlElement((builder) => builder.element(name));
+    parent.children.insert(0, element);
+    return element;
+  }
+
+  void _replaceChildElement(
+    XmlElement parent,
+    String localName,
+    XmlElement replacement,
+  ) {
+    final index = parent.children.indexWhere(
+      (node) => node is XmlElement && node.name.local == localName,
+    );
+    if (index == -1) {
+      parent.children.add(replacement);
+    } else {
+      parent.children[index] = replacement;
+    }
+  }
+
+  XmlElement _xmlElement(void Function(XmlBuilder builder) build) {
+    final builder = XmlBuilder();
+    build(builder);
+    return builder.buildFragment().children.whereType<XmlElement>().single;
   }
 
   void _replaceParagraphText(XmlElement paragraph, String text) {

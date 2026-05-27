@@ -224,6 +224,8 @@ class DocumentImportService {
         blocks.add(
           OoxmlTableBlock(
             hasHeader: node.hasHeader,
+            columnWidths: node.resolvedGridColumns,
+            rowHeights: [for (final row in node.rows) row.height ?? 0],
             rows: [
               for (final row in node.rows)
                 [

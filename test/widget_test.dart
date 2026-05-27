@@ -210,6 +210,8 @@ Open Doc writes real DOCX files now.
               align: OoxmlTextAlign.center,
             ),
             OoxmlTableBlock(
+              columnWidths: [1800, 2400],
+              rowHeights: [720, 900],
               rows: [
                 ['Name', 'Status'],
                 ['Open Doc', 'Ready'],
@@ -227,8 +229,35 @@ Open Doc writes real DOCX files now.
       expect(xml, contains('Heading1'));
       expect(xml, contains('Open Doc'));
       expect(xml, contains('Ready'));
+      expect(xml, contains('w:gridCol w:w="1800"'));
+      expect(xml, contains('w:gridCol w:w="2400"'));
+      expect(xml, contains('w:trHeight w:val="720"'));
+      expect(xml, contains('w:trHeight w:val="900"'));
     },
   );
+
+  test('document export prefers OOXML blocks over markdown fallback', () async {
+    final bytes = await exportService.exportDocx(
+      const DocumentExportPayload(
+        title: 'OOXML first',
+        markdown: 'Markdown fallback text',
+        ooxmlBlocks: [
+          OoxmlParagraphBlock(
+            text: 'OpenXML primary text',
+            styleId: 'Heading1',
+          ),
+        ],
+      ),
+    );
+    final archive = ZipDecoder().decodeBytes(bytes);
+    final documentXml = utf8.decode(
+      archive.findFile('word/document.xml')!.content as List<int>,
+    );
+
+    expect(documentXml, contains('OpenXML primary text'));
+    expect(documentXml, contains('Heading1'));
+    expect(documentXml, isNot(contains('Markdown fallback text')));
+  });
 
   test(
     'visual OOXML patches source package and preserves unknown parts',
@@ -240,6 +269,14 @@ Open Doc writes real DOCX files now.
     xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">
   <w:body>
     <w:p><w:r><w:t>Old body</w:t></w:r></w:p>
+    <w:tbl>
+      <w:tblPr><w:tblStyle w:val="TableGrid"/></w:tblPr>
+      <w:tblGrid><w:gridCol w:w="1000"/><w:gridCol w:w="1000"/></w:tblGrid>
+      <w:tr>
+        <w:tc><w:tcPr><w:tcW w:w="1000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="1000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc>
+      </w:tr>
+    </w:tbl>
     <w:p><w:r><w:drawing><wp:inline/></w:drawing></w:r></w:p>
     <w:sdt><w:sdtContent><w:p><w:r><w:t>Original control</w:t></w:r></w:p></w:sdtContent></w:sdt>
   </w:body>
@@ -263,6 +300,13 @@ Open Doc writes real DOCX files now.
           sourcePackageBytes: sourceBytes,
           ooxmlBlocks: const [
             OoxmlParagraphBlock(text: 'New body'),
+            OoxmlTableBlock(
+              columnWidths: [1800, 2600],
+              rowHeights: [840],
+              rows: [
+                ['Sized A', 'Sized B'],
+              ],
+            ),
             OoxmlPartTextBlock(
               partPath: 'word/header1.xml',
               paragraphIndex: 0,
@@ -281,6 +325,10 @@ Open Doc writes real DOCX files now.
       );
 
       expect(documentXml, contains('New body'));
+      expect(documentXml, contains('Sized A'));
+      expect(documentXml, contains('w:gridCol w:w="1800"'));
+      expect(documentXml, contains('w:gridCol w:w="2600"'));
+      expect(documentXml, contains('w:trHeight w:val="840"'));
       expect(documentXml, contains('<w:drawing>'));
       expect(documentXml, contains('<w:sdt>'));
       expect(documentXml, contains('Original control'));

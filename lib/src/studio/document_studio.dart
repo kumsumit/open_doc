@@ -571,6 +571,20 @@ class _DocumentStudioState extends State<DocumentStudio> {
     _showSnack('A working copy is ready.');
   }
 
+  Future<Uint8List?> _readPickedFileBytes(PlatformFile picked) async {
+    final bytes = picked.bytes;
+    if (bytes != null) {
+      return bytes;
+    }
+
+    final path = picked.path;
+    if (path == null || path.isEmpty) {
+      return null;
+    }
+
+    return File(path).readAsBytes();
+  }
+
   Future<void> _pickAndInsertMedia(MediaType type) async {
     try {
       final result = await FilePicker.pickFiles(
@@ -579,8 +593,12 @@ class _DocumentStudioState extends State<DocumentStudio> {
         withData: true,
       );
       final picked = result?.files.single;
-      final bytes = picked?.bytes;
-      if (picked == null || bytes == null) {
+      if (picked == null) {
+        return;
+      }
+      final bytes = await _readPickedFileBytes(picked);
+      if (bytes == null) {
+        _showSnack('Could not read that file.');
         return;
       }
 
@@ -618,8 +636,12 @@ class _DocumentStudioState extends State<DocumentStudio> {
         withData: true,
       );
       final picked = result?.files.single;
-      final bytes = picked?.bytes;
-      if (picked == null || bytes == null) {
+      if (picked == null) {
+        return;
+      }
+      final bytes = await _readPickedFileBytes(picked);
+      if (bytes == null) {
+        _showSnack('Could not read that font file.');
         return;
       }
 
@@ -837,12 +859,12 @@ class _DocumentStudioState extends State<DocumentStudio> {
           ? List<Object?>.of(quillDeltaJson)
           : WysiwygDocumentCodec.toQuillDeltaJson(_wysiwygBlocks);
       final hasQuillDocument = _quillDeltaJson.isNotEmpty;
-      _editMode = hasQuillDocument
-          ? DocumentEditMode.wysiwyg
-          : _ooxmlBlocks.isNotEmpty
+      _editMode = _ooxmlBlocks.isNotEmpty
           ? DocumentEditMode.docxVisual
           : sourcePackageBytes != null && sourcePackageFormat == 'docx'
           ? DocumentEditMode.docxView
+          : hasQuillDocument
+          ? DocumentEditMode.wysiwyg
           : DocumentEditMode.markdown;
       final importedFamily = selectedFontFamily?.trim();
       if (importedFamily != null &&
@@ -864,6 +886,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
   }
 
   Future<void> _pickAndImportFile() async {
+    String? pickedName;
     try {
       final result = await FilePicker.pickFiles(
         type: FileType.custom,
@@ -881,8 +904,13 @@ class _DocumentStudioState extends State<DocumentStudio> {
         withData: true,
       );
       final picked = result?.files.single;
-      final bytes = picked?.bytes;
-      if (picked == null || bytes == null) {
+      if (picked == null) {
+        return;
+      }
+      pickedName = picked.name;
+      final bytes = await _readPickedFileBytes(picked);
+      if (bytes == null) {
+        _showSnack('Could not read that file.');
         return;
       }
 
@@ -904,8 +932,11 @@ class _DocumentStudioState extends State<DocumentStudio> {
       );
     } on FormatException catch (error) {
       _showSnack(error.message);
-    } catch (_) {
-      _showSnack('Could not import that file yet.');
+    } catch (error, stackTrace) {
+      debugPrint('Failed to import ${pickedName ?? 'file'}: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      final name = pickedName ?? 'file';
+      _showSnack('Could not import $name: $error');
     }
   }
 

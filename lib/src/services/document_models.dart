@@ -334,8 +334,12 @@ class OoxmlParagraphBlock extends OoxmlVisualBlock {
 }
 
 class OoxmlTableBlock extends OoxmlVisualBlock {
-  const OoxmlTableBlock({required this.rows, this.hasHeader = true})
-    : super(OoxmlVisualBlockType.table);
+  const OoxmlTableBlock({
+    required this.rows,
+    this.hasHeader = true,
+    this.columnWidths = const [],
+    this.rowHeights = const [],
+  }) : super(OoxmlVisualBlockType.table);
 
   factory OoxmlTableBlock.fromJson(Map<String, Object?> json) {
     final rawRows = json['rows'];
@@ -351,22 +355,39 @@ class OoxmlTableBlock extends OoxmlVisualBlock {
                 .toList()
           : const [],
       hasHeader: json['hasHeader'] != false,
+      columnWidths: _intListFromJson(json['columnWidths']),
+      rowHeights: _intListFromJson(json['rowHeights']),
     );
   }
 
   final List<List<String>> rows;
   final bool hasHeader;
+  final List<int> columnWidths;
+  final List<int> rowHeights;
 
-  OoxmlTableBlock copyWith({List<List<String>>? rows, bool? hasHeader}) {
+  OoxmlTableBlock copyWith({
+    List<List<String>>? rows,
+    bool? hasHeader,
+    List<int>? columnWidths,
+    List<int>? rowHeights,
+  }) {
     return OoxmlTableBlock(
       rows: rows ?? this.rows,
       hasHeader: hasHeader ?? this.hasHeader,
+      columnWidths: columnWidths ?? this.columnWidths,
+      rowHeights: rowHeights ?? this.rowHeights,
     );
   }
 
   @override
   Map<String, Object?> toJson() {
-    return {'type': type.name, 'rows': rows, 'hasHeader': hasHeader};
+    return {
+      'type': type.name,
+      'rows': rows,
+      'hasHeader': hasHeader,
+      if (columnWidths.isNotEmpty) 'columnWidths': columnWidths,
+      if (rowHeights.isNotEmpty) 'rowHeights': rowHeights,
+    };
   }
 }
 
@@ -420,6 +441,16 @@ T _enumByName<T extends Enum>(List<T> values, Object? name, T fallback) {
     return fallback;
   }
   return values.where((value) => value.name == name).firstOrNull ?? fallback;
+}
+
+List<int> _intListFromJson(Object? value) {
+  if (value is! List) {
+    return const [];
+  }
+  return [
+    for (final item in value)
+      if (item is num) item.round() else if (item is String) int.tryParse(item),
+  ].whereType<int>().toList();
 }
 
 String _newWysiwygBlockId() => DateTime.now().microsecondsSinceEpoch.toString();

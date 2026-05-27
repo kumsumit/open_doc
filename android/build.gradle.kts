@@ -1,8 +1,9 @@
 import com.android.build.api.dsl.ApplicationExtension
 import com.android.build.api.dsl.LibraryExtension
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import org.jetbrains.kotlin.gradle.dsl.KotlinAndroidProjectExtension
-import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
+import org.gradle.api.JavaVersion
+import org.gradle.api.tasks.Delete
+import org.gradle.api.file.Directory
+
 
 allprojects {
     repositories {
@@ -11,48 +12,38 @@ allprojects {
     }
 }
 
-val newBuildDir: Directory =
+// Centralized build directory
+val sharedBuildDir: Directory =
     rootProject.layout.buildDirectory
         .dir("../../build")
         .get()
-rootProject.layout.buildDirectory.value(newBuildDir)
+
+rootProject.layout.buildDirectory.set(sharedBuildDir)
 
 subprojects {
-    val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
-    project.layout.buildDirectory.value(newSubprojectBuildDir)
-}
-subprojects {
+
+    // Separate build dir per module
+    layout.buildDirectory.set(sharedBuildDir.dir(name))
+
     plugins.withId("com.android.application") {
-        extensions.configure<ApplicationExtension>("android") {
+        extensions.configure<ApplicationExtension> {
             compileOptions {
                 sourceCompatibility = JavaVersion.VERSION_21
                 targetCompatibility = JavaVersion.VERSION_21
             }
         }
     }
+
     plugins.withId("com.android.library") {
-        extensions.configure<LibraryExtension>("android") {
+        extensions.configure<LibraryExtension> {
             compileOptions {
                 sourceCompatibility = JavaVersion.VERSION_21
                 targetCompatibility = JavaVersion.VERSION_21
             }
         }
     }
-    plugins.withId("org.jetbrains.kotlin.android") {
-        extensions.configure<KotlinAndroidProjectExtension>("kotlin") {
-            compilerOptions {
-                jvmTarget.set(JvmTarget.JVM_21)
-            }
-        }
-    }
-    tasks.withType<KotlinJvmCompile>().configureEach {
-        compilerOptions {
-            jvmTarget.set(JvmTarget.JVM_21)
-        }
-    }
-}
-subprojects {
-    project.evaluationDependsOn(":app")
+
+    evaluationDependsOn(":app")
 }
 
 tasks.register<Delete>("clean") {
