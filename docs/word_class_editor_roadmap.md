@@ -34,19 +34,40 @@ format.
    - [x] Promote the OpenXML model into public package-style service models.
 
 3. Word parity foundations
+   - [ ] Replace paragraph-field editing with a real selection-aware rich text
+         canvas that can edit runs, blocks, tables, images, comments, and fields
+         without markdown markers.
+   - [ ] Build a pagination/layout engine that understands sections, headers,
+         footers, columns, floating objects, wrapping, page numbers, and ruler
+         geometry.
+   - [ ] Move all ribbon commands onto OpenXML command objects with undo/redo,
+         current-selection state, and DOCX package mutations.
+   - [ ] Implement a full style system: latent styles, based-on/next style,
+         character styles, numbering styles, table styles, theme fonts, and
+         document defaults.
+   - [ ] Implement review as first-class OpenXML: comments, tracked
+         insert/delete/move/format changes, authorship, timestamps, balloons,
+         accept/reject per range, and package-level comments/revisions parts.
+   - [ ] Implement references as first-class fields: TOC, hyperlinks,
+         bookmarks, cross references, footnotes, endnotes, citations, captions,
+         bibliography, and update-on-open behavior.
+   - [ ] Implement Word-grade tables: cell selection, merge/split cells, row and
+         column insert/delete, repeated headers, borders, shading, autofit,
+         fixed layout, nested tables, and table styles.
+   - [ ] Implement object editing: images, drawings, shapes, text boxes,
+         anchors, wrapping, z-order, crop, resize handles, and grouped objects.
+
+4. Current GUI footholds
    - [x] Style gallery: Normal, Title, Subtitle, Heading 1-6, Quote, Code,
          Caption.
-   - [x] Page setup: margins, page size, orientation, page breaks, section
-         breaks, and OpenXML column metadata.
-   - [x] Review: comments, suggestions, tracked insert/delete markers, and
-         accept/reject flows.
-   - [x] References: footnotes, endnotes, table of contents, citations, and
-         bibliography placeholders.
-   - [x] Layout: floating image support in the engine, wrapping metadata,
-         tables with merged cells, repeated header rows, and editable table
-         sizing.
+   - [x] Page setup controls: margins, page size, orientation, and page break
+         insertion.
+   - [x] Native OpenXML document state for paragraphs, runs, tables, alignment,
+         links, page breaks, and package provenance.
+   - [x] Visible paragraph formatting controls in the OpenXML editor.
+   - [x] Editable table cells with basic row/column sizing.
 
-4. Better-than-Word advantages
+5. Better-than-Word advantages
    - [x] Smart brief, action digest, citation nudges, and social summaries are
          model-aware.
    - [x] Semantic outline, source health, claim detection, and reusable document
