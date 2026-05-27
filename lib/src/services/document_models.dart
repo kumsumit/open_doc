@@ -6,8 +6,8 @@ import 'package:flutter/material.dart';
 import '../engine/docx.dart' as docx;
 
 enum DocumentEditMode {
-  openXml('OpenXML editor', Icons.description_outlined),
-  wysiwyg('WYSIWYG editor', Icons.edit_document),
+  openXml('Word-like OpenXML editor', Icons.edit_document),
+  wysiwyg('Rich text editor', Icons.edit_document),
   docxVisual('DOCX visual editor', Icons.dashboard_customize_outlined),
   docxRoundTrip('DOCX round-trip', Icons.description_outlined),
   docxView('DOCX viewer', Icons.visibility_outlined);

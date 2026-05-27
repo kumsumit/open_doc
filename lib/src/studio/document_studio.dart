@@ -130,6 +130,10 @@ class _DocumentStudioState extends State<DocumentStudio> {
   bool get _underline => _srqController.selectionUnderlineActive;
   bool get _strikethrough => _srqController.selectionStrikethroughActive;
 
+  bool get _isNativeOpenXmlEditor =>
+      _editMode == DocumentEditMode.openXml ||
+      _editMode == DocumentEditMode.docxVisual;
+
   // ─── Document text helpers ────────────────────────────────────────────────────
 
   String get _markdownText => _editMode == DocumentEditMode.wysiwyg
@@ -480,6 +484,22 @@ class _DocumentStudioState extends State<DocumentStudio> {
   ];
 
   List<String> get _headings {
+    if (_editMode != DocumentEditMode.wysiwyg &&
+        _openXmlDocument.blocks.isNotEmpty) {
+      return _openXmlDocument.blocks
+          .whereType<OpenXmlParagraphBlock>()
+          .where(
+            (block) =>
+                block.style == OpenXmlTextStyle.title ||
+                block.style == OpenXmlTextStyle.heading1 ||
+                block.style == OpenXmlTextStyle.heading2 ||
+                block.style == OpenXmlTextStyle.heading3,
+          )
+          .map((block) => block.plainText.trim())
+          .where((text) => text.isNotEmpty)
+          .take(8)
+          .toList();
+    }
     return _markdownText
         .split('\n')
         .where((line) => RegExp(r'^#{1,3} .+').hasMatch(line.trim()))
@@ -557,6 +577,99 @@ class _DocumentStudioState extends State<DocumentStudio> {
       _openXmlDocument = document;
       _srqController.setMarkdownSilently(document.plainText);
       _saved = false;
+    });
+  }
+
+  void _appendOpenXmlBlock(OpenXmlBlock block) {
+    setState(() {
+      _openXmlDocument = _openXmlDocument.copyWith(
+        blocks: [..._openXmlDocument.blocks, block],
+        sourcePackageFormat: null,
+        sourcePackageBytes: null,
+      );
+      _srqController.setMarkdownSilently(_openXmlDocument.plainText);
+      _editMode = DocumentEditMode.openXml;
+      _ooxmlBlocks = [];
+      _sourcePackageFormat = null;
+      _sourcePackageBytes = null;
+      _saved = false;
+    });
+  }
+
+  void _updateLastOpenXmlParagraph(
+    OpenXmlParagraphBlock Function(OpenXmlParagraphBlock block) update,
+  ) {
+    final blocks = List<OpenXmlBlock>.of(_openXmlDocument.blocks);
+    var index = blocks.lastIndexWhere(
+      (block) => block is OpenXmlParagraphBlock,
+    );
+    if (index == -1) {
+      blocks.add(const OpenXmlParagraphBlock(runs: [OpenXmlRun('')]));
+      index = blocks.length - 1;
+    }
+    blocks[index] = update(blocks[index] as OpenXmlParagraphBlock);
+    setState(() {
+      _openXmlDocument = _openXmlDocument.copyWith(
+        blocks: blocks,
+        sourcePackageFormat: null,
+        sourcePackageBytes: null,
+      );
+      _srqController.setMarkdownSilently(_openXmlDocument.plainText);
+      _editMode = DocumentEditMode.openXml;
+      _ooxmlBlocks = [];
+      _sourcePackageFormat = null;
+      _sourcePackageBytes = null;
+      _saved = false;
+    });
+  }
+
+  OpenXmlTextStyle _openXmlStyleForRibbon(String value) {
+    return switch (value) {
+      'Title' => OpenXmlTextStyle.title,
+      'Subtitle' => OpenXmlTextStyle.subtitle,
+      'Heading 1' => OpenXmlTextStyle.heading1,
+      'Heading 2' => OpenXmlTextStyle.heading2,
+      'Heading 3' => OpenXmlTextStyle.heading3,
+      'Heading 4' => OpenXmlTextStyle.heading4,
+      'Heading 5' => OpenXmlTextStyle.heading5,
+      'Heading 6' => OpenXmlTextStyle.heading6,
+      'Quote' => OpenXmlTextStyle.quote,
+      'Code' => OpenXmlTextStyle.code,
+      'Caption' => OpenXmlTextStyle.caption,
+      _ => OpenXmlTextStyle.normal,
+    };
+  }
+
+  OoxmlTextAlign _openXmlAlignForRibbon(String value) {
+    return switch (value) {
+      'Center' => OoxmlTextAlign.center,
+      'Right' => OoxmlTextAlign.right,
+      'Justify' => OoxmlTextAlign.justify,
+      _ => OoxmlTextAlign.left,
+    };
+  }
+
+  void _toggleOpenXmlRunFormat({
+    bool bold = false,
+    bool italic = false,
+    bool underline = false,
+    bool strike = false,
+  }) {
+    _updateLastOpenXmlParagraph((block) {
+      final runs = block.runs.isEmpty ? const [OpenXmlRun('')] : block.runs;
+      return block.copyWith(
+        runs: [
+          for (final run in runs)
+            OpenXmlRun(
+              run.text,
+              bold: bold ? !run.bold : run.bold,
+              italic: italic ? !run.italic : run.italic,
+              underline: underline ? !run.underline : run.underline,
+              strike: strike ? !run.strike : run.strike,
+              href: run.href,
+            ),
+        ],
+      );
     });
   }
 
@@ -907,13 +1020,12 @@ class _DocumentStudioState extends State<DocumentStudio> {
       _quillDeltaJson = quillDeltaJson.isNotEmpty
           ? List<Object?>.of(quillDeltaJson)
           : WysiwygDocumentCodec.toQuillDeltaJson(_wysiwygBlocks);
-      final hasQuillDocument = _quillDeltaJson.isNotEmpty;
       _editMode = _ooxmlBlocks.isNotEmpty
-          ? DocumentEditMode.docxVisual
+          ? DocumentEditMode.openXml
+          : _openXmlDocument.blocks.isNotEmpty
+          ? DocumentEditMode.openXml
           : sourcePackageBytes != null && sourcePackageFormat == 'docx'
           ? DocumentEditMode.docxView
-          : hasQuillDocument
-          ? DocumentEditMode.wysiwyg
           : DocumentEditMode.openXml;
       final importedFamily = selectedFontFamily?.trim();
       if (importedFamily != null &&
@@ -1371,6 +1483,22 @@ class _DocumentStudioState extends State<DocumentStudio> {
   }
 
   void _insertCitationNudge() {
+    if (_isNativeOpenXmlEditor) {
+      _appendOpenXmlBlock(
+        const OpenXmlParagraphBlock(
+          runs: [OpenXmlRun('Source: https://example.com/source')],
+          style: OpenXmlTextStyle.caption,
+        ),
+      );
+      _appendOpenXmlBlock(
+        const OpenXmlParagraphBlock(
+          runs: [OpenXmlRun('Bibliography')],
+          style: OpenXmlTextStyle.heading2,
+        ),
+      );
+      _showSnack('Source and bibliography blocks inserted.');
+      return;
+    }
     _insertText(
       '\n\n[[CITATION:Source|https://example.com/source]]\n\n[[BIBLIOGRAPHY]]\n',
     );
@@ -1379,8 +1507,17 @@ class _DocumentStudioState extends State<DocumentStudio> {
 
   void _insertActionDigest() {
     final actions = _actionItems.isEmpty
-        ? ['[ ] Add owner, due date, and next step.']
+        ? ['Add owner, due date, and next step.']
         : _actionItems;
+    if (_isNativeOpenXmlEditor) {
+      _appendOpenXmlBlock(
+        OpenXmlParagraphBlock(
+          runs: [OpenXmlRun('Action digest\n${actions.join('\n')}')],
+          style: OpenXmlTextStyle.heading2,
+        ),
+      );
+      return;
+    }
     _insertText('\n\nAction digest\n${actions.join('\n')}\n');
   }
 
@@ -1402,6 +1539,12 @@ class _DocumentStudioState extends State<DocumentStudio> {
       _style = value;
       _fontSize = size;
     });
+    if (_isNativeOpenXmlEditor) {
+      _updateLastOpenXmlParagraph(
+        (block) => block.copyWith(style: _openXmlStyleForRibbon(value)),
+      );
+      return;
+    }
     switch (value) {
       case 'Title':
         _srqController.setHeading(1);
@@ -1430,16 +1573,46 @@ class _DocumentStudioState extends State<DocumentStudio> {
   }
 
   void _insertPageBreak() {
+    if (_isNativeOpenXmlEditor) {
+      _appendOpenXmlBlock(
+        const OpenXmlParagraphBlock(
+          runs: [OpenXmlRun('New page')],
+          pageBreakBefore: true,
+        ),
+      );
+      _showSnack('Page break inserted.');
+      return;
+    }
     _insertText('\n\n[[PAGE_BREAK]]\n\n');
     _showSnack('Page break inserted.');
   }
 
   void _insertTableOfContents() {
+    if (_isNativeOpenXmlEditor) {
+      _appendOpenXmlBlock(
+        const OpenXmlParagraphBlock(
+          runs: [OpenXmlRun('Table of contents')],
+          style: OpenXmlTextStyle.heading1,
+        ),
+      );
+      _showSnack('Table of contents heading inserted.');
+      return;
+    }
     _insertText('\n\n[[TOC]]\n\n');
     _showSnack('Table of contents inserted.');
   }
 
   void _insertFootnote() {
+    if (_isNativeOpenXmlEditor) {
+      _appendOpenXmlBlock(
+        const OpenXmlParagraphBlock(
+          runs: [OpenXmlRun('Footnote: add source, citation, or note.')],
+          style: OpenXmlTextStyle.caption,
+        ),
+      );
+      _showSnack('Footnote note inserted.');
+      return;
+    }
     _insertText(
       '\n\n[[FOOTNOTE:Add source, citation, or explanatory note.]]\n\n',
     );
@@ -1447,16 +1620,48 @@ class _DocumentStudioState extends State<DocumentStudio> {
   }
 
   void _insertEndnote() {
+    if (_isNativeOpenXmlEditor) {
+      _appendOpenXmlBlock(
+        const OpenXmlParagraphBlock(
+          runs: [
+            OpenXmlRun('Endnote: add appendix note or closing reference.'),
+          ],
+          style: OpenXmlTextStyle.caption,
+        ),
+      );
+      _showSnack('Endnote note inserted.');
+      return;
+    }
     _insertText('\n\n[[ENDNOTE:Add appendix note or closing reference.]]\n\n');
     _showSnack('Endnote placeholder inserted.');
   }
 
   void _insertHorizontalRule() {
+    if (_isNativeOpenXmlEditor) {
+      _appendOpenXmlBlock(
+        const OpenXmlParagraphBlock(
+          runs: [OpenXmlRun('')],
+          style: OpenXmlTextStyle.normal,
+        ),
+      );
+      _showSnack('Separator paragraph inserted.');
+      return;
+    }
     _insertText('\n\n[[HR]]\n\n');
     _showSnack('Horizontal rule inserted.');
   }
 
   void _insertDropCap() {
+    if (_isNativeOpenXmlEditor) {
+      _appendOpenXmlBlock(
+        const OpenXmlParagraphBlock(
+          runs: [OpenXmlRun('Once upon a time, start this section.')],
+          style: OpenXmlTextStyle.normal,
+        ),
+      );
+      _showSnack('Drop-cap starter text inserted.');
+      return;
+    }
     _insertText('\n\n[[DROP_CAP:Once upon a time, start this section.]]\n\n');
     _showSnack('Drop cap block inserted.');
   }
@@ -1466,6 +1671,15 @@ class _DocumentStudioState extends State<DocumentStudio> {
   }
 
   void _insertLink() {
+    if (_isNativeOpenXmlEditor) {
+      _appendOpenXmlBlock(
+        const OpenXmlParagraphBlock(
+          runs: [OpenXmlRun('Reference', href: 'https://example.com')],
+        ),
+      );
+      _showSnack('Link inserted.');
+      return;
+    }
     _insertText('\n\n[[LINK:Reference|https://example.com]]\n\n');
     _showSnack('Link placeholder inserted.');
   }
@@ -1663,6 +1877,34 @@ class _DocumentStudioState extends State<DocumentStudio> {
                     child: FilledButton.icon(
                       onPressed: () {
                         Navigator.of(context).pop();
+                        if (_isNativeOpenXmlEditor) {
+                          _appendOpenXmlBlock(
+                            OpenXmlTableBlock(
+                              rows: [
+                                [
+                                  for (
+                                    var column = 0;
+                                    column < columns;
+                                    column += 1
+                                  )
+                                    'Header ${column + 1}',
+                                ],
+                                for (var row = 1; row < rows; row += 1)
+                                  [
+                                    for (
+                                      var column = 0;
+                                      column < columns;
+                                      column += 1
+                                    )
+                                      '',
+                                  ],
+                              ],
+                              hasHeader: shadeHeader,
+                            ),
+                          );
+                          _showSnack('Table inserted.');
+                          return;
+                        }
                         _insertText(
                           '\n\n[[ADV_TABLE:rows=$rows;cols=$columns;mergeHeader=$mergeHeader;shadeHeader=$shadeHeader;perCellBorders=$perCellBorders;border=$borderStyle]]\n\n',
                         );
@@ -1789,6 +2031,16 @@ class _DocumentStudioState extends State<DocumentStudio> {
                       return OutlinedButton.icon(
                         onPressed: () {
                           Navigator.of(context).pop();
+                          if (_isNativeOpenXmlEditor) {
+                            _appendOpenXmlBlock(
+                              OpenXmlParagraphBlock(
+                                runs: [OpenXmlRun('Shape: $preset')],
+                                style: OpenXmlTextStyle.caption,
+                              ),
+                            );
+                            _showSnack('Shape note inserted.');
+                            return;
+                          }
                           _insertText('\n\n[[SHAPE:$preset:$preset]]\n\n');
                           _showSnack('Shape inserted.');
                         },
@@ -2053,29 +2305,45 @@ class _DocumentStudioState extends State<DocumentStudio> {
         actions: {
           ToggleBoldIntent: CallbackAction<ToggleBoldIntent>(
             onInvoke: (_) {
-              _srqController.toggleBold();
-              setState(() {});
+              if (_isNativeOpenXmlEditor) {
+                _toggleOpenXmlRunFormat(bold: true);
+              } else {
+                _srqController.toggleBold();
+                setState(() {});
+              }
               return null;
             },
           ),
           ToggleItalicIntent: CallbackAction<ToggleItalicIntent>(
             onInvoke: (_) {
-              _srqController.toggleItalic();
-              setState(() {});
+              if (_isNativeOpenXmlEditor) {
+                _toggleOpenXmlRunFormat(italic: true);
+              } else {
+                _srqController.toggleItalic();
+                setState(() {});
+              }
               return null;
             },
           ),
           ToggleUnderlineIntent: CallbackAction<ToggleUnderlineIntent>(
             onInvoke: (_) {
-              _srqController.toggleUnderline();
-              setState(() {});
+              if (_isNativeOpenXmlEditor) {
+                _toggleOpenXmlRunFormat(underline: true);
+              } else {
+                _srqController.toggleUnderline();
+                setState(() {});
+              }
               return null;
             },
           ),
           ToggleStrikethroughIntent: CallbackAction<ToggleStrikethroughIntent>(
             onInvoke: (_) {
-              _srqController.toggleStrikethrough();
-              setState(() {});
+              if (_isNativeOpenXmlEditor) {
+                _toggleOpenXmlRunFormat(strike: true);
+              } else {
+                _srqController.toggleStrikethrough();
+                setState(() {});
+              }
               return null;
             },
           ),
@@ -2141,20 +2409,36 @@ class _DocumentStudioState extends State<DocumentStudio> {
                         inkColor: _inkColor,
                         pageColor: _pageColor,
                         onBold: () {
-                          _srqController.toggleBold();
-                          setState(() {});
+                          if (_isNativeOpenXmlEditor) {
+                            _toggleOpenXmlRunFormat(bold: true);
+                          } else {
+                            _srqController.toggleBold();
+                            setState(() {});
+                          }
                         },
                         onItalic: () {
-                          _srqController.toggleItalic();
-                          setState(() {});
+                          if (_isNativeOpenXmlEditor) {
+                            _toggleOpenXmlRunFormat(italic: true);
+                          } else {
+                            _srqController.toggleItalic();
+                            setState(() {});
+                          }
                         },
                         onUnderline: () {
-                          _srqController.toggleUnderline();
-                          setState(() {});
+                          if (_isNativeOpenXmlEditor) {
+                            _toggleOpenXmlRunFormat(underline: true);
+                          } else {
+                            _srqController.toggleUnderline();
+                            setState(() {});
+                          }
                         },
                         onStrikethrough: () {
-                          _srqController.toggleStrikethrough();
-                          setState(() {});
+                          if (_isNativeOpenXmlEditor) {
+                            _toggleOpenXmlRunFormat(strike: true);
+                          } else {
+                            _srqController.toggleStrikethrough();
+                            setState(() {});
+                          }
                         },
                         onRuler: () => setState(() => _showRuler = !_showRuler),
                         onTrackChanges: () =>
@@ -2168,8 +2452,16 @@ class _DocumentStudioState extends State<DocumentStudio> {
                             setState(() => _fontFamily = value),
                         onImportFont: _pickAndImportFont,
                         onStyle: _applySelectedStyle,
-                        onAlignment: (value) =>
-                            setState(() => _alignment = value),
+                        onAlignment: (value) {
+                          setState(() => _alignment = value);
+                          if (_isNativeOpenXmlEditor) {
+                            _updateLastOpenXmlParagraph(
+                              (block) => block.copyWith(
+                                align: _openXmlAlignForRibbon(value),
+                              ),
+                            );
+                          }
+                        },
                         onAudienceProfile: (value) =>
                             setState(() => _audienceProfile = value),
                         onToneMode: (value) =>
@@ -2187,12 +2479,31 @@ class _DocumentStudioState extends State<DocumentStudio> {
                         onInsertTable: _showAdvancedTableSheet,
                         onInsertImage: () => _showMediaSheet(MediaType.image),
                         onInsertVideo: () => _showMediaSheet(MediaType.video),
-                        onInsertChecklist: () =>
-                            _insertText('\n* [ ] Action item\n'),
-                        onInsertBulletList: () =>
-                            _srqController.toggleBulletList(),
-                        onInsertOrderedList: () =>
-                            _srqController.toggleOrderedList(),
+                        onInsertChecklist: () {
+                          if (_isNativeOpenXmlEditor) {
+                            _appendOpenXmlBlock(
+                              const OpenXmlParagraphBlock(
+                                runs: [OpenXmlRun('Action item')],
+                              ),
+                            );
+                          } else {
+                            _insertText('\n* [ ] Action item\n');
+                          }
+                        },
+                        onInsertBulletList: () => _isNativeOpenXmlEditor
+                            ? _appendOpenXmlBlock(
+                                const OpenXmlParagraphBlock(
+                                  runs: [OpenXmlRun('List item')],
+                                ),
+                              )
+                            : _srqController.toggleBulletList(),
+                        onInsertOrderedList: () => _isNativeOpenXmlEditor
+                            ? _appendOpenXmlBlock(
+                                const OpenXmlParagraphBlock(
+                                  runs: [OpenXmlRun('List item')],
+                                ),
+                              )
+                            : _srqController.toggleOrderedList(),
                         onInsertPageBreak: _insertPageBreak,
                         onInsertToc: _insertTableOfContents,
                         onInsertFootnote: _insertFootnote,
@@ -2201,11 +2512,30 @@ class _DocumentStudioState extends State<DocumentStudio> {
                         onInsertDropCap: _insertDropCap,
                         onInsertShape: _insertShape,
                         onInsertLink: _insertLink,
-                        onInsertSignature: () => _insertText(
-                          '\n\nRegards,\n${_titleController.text.split(' ').first}\n',
-                        ),
-                        onUndo: _srqController.undo,
-                        onRedo: _srqController.redo,
+                        onInsertSignature: () {
+                          final firstWord = _titleController.text
+                              .split(' ')
+                              .first;
+                          if (_isNativeOpenXmlEditor) {
+                            _appendOpenXmlBlock(
+                              OpenXmlParagraphBlock(
+                                runs: [OpenXmlRun('Regards,\n$firstWord')],
+                              ),
+                            );
+                          } else {
+                            _insertText('\n\nRegards,\n$firstWord\n');
+                          }
+                        },
+                        onUndo: _isNativeOpenXmlEditor
+                            ? () => _showSnack(
+                                'Undo is available in the text editor mode.',
+                              )
+                            : _srqController.undo,
+                        onRedo: _isNativeOpenXmlEditor
+                            ? () => _showSnack(
+                                'Redo is available in the text editor mode.',
+                              )
+                            : _srqController.redo,
                         onAcceptChanges: _acceptAllChanges,
                         onRejectChanges: _rejectAllChanges,
                         onSmartBrief: _showSmartBriefSheet,
@@ -2251,7 +2581,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                               onAddWysiwygBlockAfter: _addWysiwygBlockAfter,
                               onRemoveWysiwygBlock: _removeWysiwygBlock,
                               onSwitchToWysiwyg: _switchToWysiwyg,
-                              onSwitchToMarkdown: _switchToOpenXmlEditing,
+                              onSwitchToOpenXmlEditing: _switchToOpenXmlEditing,
                               mediaBlocks: _mediaBlocks,
                               onRemoveMedia: _removeMediaBlock,
                               onToggleNavigation: compact

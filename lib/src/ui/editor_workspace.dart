@@ -38,7 +38,7 @@ class EditorWorkspace extends StatelessWidget {
     required this.onAddWysiwygBlockAfter,
     required this.onRemoveWysiwygBlock,
     required this.onSwitchToWysiwyg,
-    required this.onSwitchToMarkdown,
+    required this.onSwitchToOpenXmlEditing,
     required this.mediaBlocks,
     required this.onRemoveMedia,
     required this.onToggleNavigation,
@@ -70,7 +70,7 @@ class EditorWorkspace extends StatelessWidget {
   final ValueChanged<int> onAddWysiwygBlockAfter;
   final ValueChanged<int> onRemoveWysiwygBlock;
   final VoidCallback onSwitchToWysiwyg;
-  final VoidCallback onSwitchToMarkdown;
+  final VoidCallback onSwitchToOpenXmlEditing;
   final List<MediaBlock> mediaBlocks;
   final ValueChanged<String> onRemoveMedia;
   final VoidCallback onToggleNavigation;
@@ -125,9 +125,9 @@ class EditorWorkspace extends StatelessWidget {
                       ),
                       const SizedBox(width: 8),
                       TextButton.icon(
-                        onPressed: onSwitchToMarkdown,
+                        onPressed: onSwitchToOpenXmlEditing,
                         icon: const Icon(Icons.edit_note_outlined, size: 18),
-                        label: const Text('Edit OpenXML'),
+                        label: const Text('Edit in Word mode'),
                       ),
                       const SizedBox(width: 8),
                     ],
@@ -245,7 +245,8 @@ class EditorWorkspace extends StatelessWidget {
                                         editMode: editMode,
                                         sourcePackageFormat:
                                             sourcePackageFormat,
-                                        onSwitchToMarkdown: onSwitchToMarkdown,
+                                        onSwitchToOpenXmlEditing:
+                                            onSwitchToOpenXmlEditing,
                                       ),
                                       const SizedBox(height: 18),
                                     ],
@@ -379,12 +380,12 @@ class _RoundTripNotice extends StatelessWidget {
   const _RoundTripNotice({
     required this.editMode,
     required this.sourcePackageFormat,
-    required this.onSwitchToMarkdown,
+    required this.onSwitchToOpenXmlEditing,
   });
 
   final DocumentEditMode editMode;
   final String? sourcePackageFormat;
-  final VoidCallback onSwitchToMarkdown;
+  final VoidCallback onSwitchToOpenXmlEditing;
 
   @override
   Widget build(BuildContext context) {
@@ -413,7 +414,10 @@ class _RoundTripNotice extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          TextButton(onPressed: onSwitchToMarkdown, child: const Text('Edit')),
+          TextButton(
+            onPressed: onSwitchToOpenXmlEditing,
+            child: const Text('Edit'),
+          ),
         ],
       ),
     );

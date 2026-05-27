@@ -134,7 +134,7 @@ class DocumentImportService {
   }
 
   String _extractDocxText(Uint8List bytes) {
-    final archive = ZipDecoder().decodeBytes(bytes);
+    final archive = _decodeDocxArchive(bytes);
     final documentFile = archive.files
         .where((file) => file.name == 'word/document.xml')
         .firstOrNull;
@@ -511,7 +511,7 @@ class DocumentImportService {
   }
 
   List<OoxmlVisualBlock> _visualPartTextBlocks(Uint8List bytes) {
-    final archive = ZipDecoder().decodeBytes(bytes);
+    final archive = _decodeDocxArchive(bytes);
     final blocks = <OoxmlVisualBlock>[];
     for (final file in archive.files) {
       if (!file.isFile || !_isEditableOoxmlPart(file.name)) {
@@ -546,6 +546,22 @@ class DocumentImportService {
       }
     }
     return blocks;
+  }
+
+  Archive _decodeDocxArchive(Uint8List bytes) {
+    if (bytes.isEmpty) {
+      throw const FormatException(
+        'This DOCX file is empty. Choose a downloaded, non-empty Word document.',
+      );
+    }
+
+    try {
+      return ZipDecoder().decodeBytes(bytes);
+    } on Object {
+      throw const FormatException(
+        'This file is not a readable DOCX/OpenXML package.',
+      );
+    }
   }
 
   bool _isEditableOoxmlPart(String path) {

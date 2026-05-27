@@ -31,7 +31,21 @@ class DocxReader {
 
   /// Loads a .docx file from bytes.
   static Future<DocxBuiltDocument> loadFromBytes(Uint8List bytes) async {
-    return _DocxReaderOrchestrator(bytes).read();
+    if (bytes.isEmpty) {
+      throw const FormatException(
+        'This DOCX file is empty. Choose a downloaded, non-empty Word document.',
+      );
+    }
+
+    Archive archive;
+    try {
+      archive = ZipDecoder().decodeBytes(bytes);
+    } on Object {
+      throw const FormatException(
+        'This file is not a readable DOCX/OpenXML package.',
+      );
+    }
+    return _DocxReaderOrchestrator(archive).read();
   }
 }
 
@@ -45,8 +59,7 @@ class _DocxReaderOrchestrator {
   late final BlockParser _blockParser;
   late final SectionParser _sectionParser;
 
-  _DocxReaderOrchestrator(Uint8List bytes)
-      : context = ReaderContext(ZipDecoder().decodeBytes(bytes)) {
+  _DocxReaderOrchestrator(Archive archive) : context = ReaderContext(archive) {
     _relationshipManager = RelationshipManager(context);
     _styleParser = StyleParser(context);
     _blockParser = BlockParser(context);

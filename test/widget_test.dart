@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:open_doc/app.dart';
+import 'package:open_doc/src/engine/docx.dart' as docx;
 import 'package:open_doc/src/services/document_export_service.dart';
 import 'package:open_doc/src/services/document_import_service.dart';
 import 'package:open_doc/src/services/language_support_service.dart';
@@ -34,6 +35,32 @@ void main() {
     expect(imported.formatLabel, 'DOCX');
     expect(imported.text, contains('Executive summary'));
     expect(imported.text, contains('Open Doc reads DOCX content.'));
+  });
+
+  test('DOCX import reports empty files clearly', () {
+    expect(
+      () => importService.parse(Uint8List(0), 'empty.docx'),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          contains('empty'),
+        ),
+      ),
+    );
+  });
+
+  test('OpenXML reader reports empty DOCX files clearly', () async {
+    expect(
+      docx.DocxReader.loadFromBytes(Uint8List(0)),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          contains('empty'),
+        ),
+      ),
+    );
   });
 
   test('DOCX import preserves tables as markdown rows', () {
