@@ -1,49 +1,75 @@
 # Open Doc Word-Class Roadmap
 
-Open Doc should become a document workspace that feels familiar to Microsoft Word users while surpassing it in speed, collaboration, intelligence, and developer-grade document fidelity.
+Open Doc is now moving toward a Markdown-free core: an OpenXML package model is
+the document source of truth, and visual editors operate on structured
+WordprocessingML concepts instead of treating Markdown as the long-term editing
+format.
 
 ## Engineering Direction
 
-The app should move toward a rich internal document model powered by `docx_creator`, not Markdown as the long-term source of truth. Markdown remains useful for quick authoring and import/export, but Word-level fidelity needs first-class support for sections, styles, headers, footers, tables, images, shapes, comments, tracked changes, footnotes, citations, and layout metadata.
+- [x] Use an OpenXML-native semantic model for the editable document state.
+- [x] Keep Markdown as compatibility import/export only, not as the primary
+      editor model.
+- [x] Represent document content as structured OpenXML blocks, runs, styles,
+      tables, alignment, page breaks, and package provenance.
+- [x] Prefer real OpenXML package parts and XML fragments where Word features
+      need exact fidelity.
 
 ## Near-Term Priorities
 
 1. Shared document engine
-   - Keep DOCX, PDF, and HTML export flowing through one `DocxBuiltDocument` builder.
-   - Add import bridges from DOCX and HTML into the same model.
-   - Add round-trip tests for headings, lists, tables, links, headers, footers, and images.
+   - [x] Keep DOCX, PDF, and HTML export flowing through one
+         `DocxBuiltDocument` builder.
+   - [x] Add import bridges from DOCX and HTML into the same model.
+   - [x] Add round-trip tests for headings, lists, tables, links, headers,
+         footers, and images.
+   - [x] Add OpenXML-source tests proving the model wins over legacy fallback
+         text.
 
 2. Modular editor architecture
-   - Keep app shell, top bar, ribbon, editor canvas, panels, import/export, templates, and models in separate modules.
-   - Move business logic out of widgets into document services as the model matures.
-   - Promote private part-file classes into public package-style modules when APIs stabilize.
+   - [x] Keep app shell, top bar, ribbon, editor canvas, panels, import/export,
+         templates, and models in separate modules.
+   - [x] Move business logic out of widgets into document services as the model
+         matures.
+   - [x] Promote the OpenXML model into public package-style service models.
 
 3. Word parity foundations
-   - Style gallery: Normal, Title, Subtitle, Heading 1-6, Quote, Code, Caption.
-   - Page setup: margins, page size, orientation, columns, page breaks, section breaks.
-   - Review: comments, suggestions, track changes, accept/reject by change.
-   - References: footnotes, endnotes, table of contents, citations, bibliography placeholders.
-   - Layout: floating images, wrapping, tables with merged cells, repeated header rows.
+   - [x] Style gallery: Normal, Title, Subtitle, Heading 1-6, Quote, Code,
+         Caption.
+   - [x] Page setup: margins, page size, orientation, page breaks, section
+         breaks, and OpenXML column metadata.
+   - [x] Review: comments, suggestions, tracked insert/delete markers, and
+         accept/reject flows.
+   - [x] References: footnotes, endnotes, table of contents, citations, and
+         bibliography placeholders.
+   - [x] Layout: floating image support in the engine, wrapping metadata,
+         tables with merged cells, repeated header rows, and editable table
+         sizing.
 
 4. Better-than-Word advantages
-   - Smart brief, action digest, citation nudges, and social summaries should become model-aware.
-   - Add semantic outline, source health, claim detection, and reusable document components.
-   - Make export previews explain what may change before saving.
+   - [x] Smart brief, action digest, citation nudges, and social summaries are
+         model-aware.
+   - [x] Semantic outline, source health, claim detection, and reusable document
+         components are surfaced in navigation/inspector workflows.
+   - [x] Export previews explain what may change before saving.
 
 ## Quality Bar
 
 Every document feature should have:
 
-- An editor interaction.
-- A model representation.
-- DOCX export coverage.
-- Import or round-trip coverage when applicable.
-- PDF/HTML behavior where meaningful.
-- A focused test that proves the generated document contains real content.
+- [x] An editor interaction.
+- [x] A model representation.
+- [x] DOCX export coverage.
+- [x] Import or round-trip coverage when applicable.
+- [x] PDF/HTML behavior where meaningful.
+- [x] A focused test that proves the generated document contains real content.
 
 ## Current Baseline
 
-- Modularized app entry, UI widgets, document models, import helpers, and templates.
-- Real DOCX, PDF, and HTML export through `docx_creator`.
-- Import support for DOCX, TXT, Markdown, RTF, HTML, and CSV.
-- Tests covering import, multi-format export, desktop layout, and responsive behavior.
+- [x] Modularized app entry, UI widgets, document models, import helpers, and
+      templates.
+- [x] Real DOCX, PDF, and HTML export through the shared document engine.
+- [x] OpenXML document model preserved in native `.odoc` packages.
+- [x] Import support for DOCX, TXT, Markdown, RTF, HTML, CSV, and Open Doc.
+- [x] Tests covering import, multi-format export, OpenXML source-of-truth
+      export, desktop layout, and responsive behavior.

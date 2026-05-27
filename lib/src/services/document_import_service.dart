@@ -22,6 +22,7 @@ class ImportedDocument {
     this.ooxmlBlocks = const [],
     this.wysiwygBlocks = const [],
     this.quillDeltaJson = const [],
+    this.openXmlDocument,
     this.pageSetup,
   });
 
@@ -36,6 +37,7 @@ class ImportedDocument {
   final List<OoxmlVisualBlock> ooxmlBlocks;
   final List<WysiwygBlock> wysiwygBlocks;
   final List<Object?> quillDeltaJson;
+  final OpenXmlDocument? openXmlDocument;
   final DocumentPageSetup? pageSetup;
 }
 
@@ -57,6 +59,11 @@ class DocumentImportService {
         sourcePackageFormat: base.sourcePackageFormat,
         sourcePackageBytes: base.sourcePackageBytes,
         ooxmlBlocks: [..._visualBlocksFromDocx(document), ...partBlocks],
+        openXmlDocument: _openXmlDocumentFromDocx(
+          document,
+          sourcePackageFormat: base.sourcePackageFormat,
+          sourcePackageBytes: base.sourcePackageBytes,
+        ),
         wysiwygBlocks: WysiwygDocumentCodec.fromMarkdown(base.text),
         quillDeltaJson: _quillDeltaFromDocx(document),
       );
@@ -67,6 +74,10 @@ class DocumentImportService {
         sourcePackageFormat: base.sourcePackageFormat,
         sourcePackageBytes: base.sourcePackageBytes,
         ooxmlBlocks: partBlocks,
+        openXmlDocument: OpenXmlDocument.plain(base.text).copyWith(
+          sourcePackageFormat: base.sourcePackageFormat,
+          sourcePackageBytes: base.sourcePackageBytes,
+        ),
       );
     }
   }
@@ -79,6 +90,11 @@ class DocumentImportService {
         formatLabel: 'DOCX',
         sourcePackageFormat: 'docx',
         sourcePackageBytes: Uint8List.fromList(bytes),
+        openXmlDocument: OpenXmlDocument.plain(_extractDocxText(bytes))
+            .copyWith(
+              sourcePackageFormat: 'docx',
+              sourcePackageBytes: Uint8List.fromList(bytes),
+            ),
       ),
       'txt' || 'md' || 'markdown' => ImportedDocument(
         text: _decodeText(bytes),
@@ -197,7 +213,80 @@ class DocumentImportService {
       ooxmlBlocks: _parseOpenDocVisualBlocks(decoded['ooxmlBlocks']),
       wysiwygBlocks: _parseOpenDocWysiwygBlocks(decoded['wysiwygBlocks']),
       quillDeltaJson: _parseOpenDocQuillDelta(decoded['quillDeltaJson']),
+      openXmlDocument: _parseOpenDocOpenXmlDocument(decoded['openXmlDocument']),
     );
+  }
+
+  OpenXmlDocument _openXmlDocumentFromDocx(
+    docx.DocxBuiltDocument document, {
+    String? sourcePackageFormat,
+    Uint8List? sourcePackageBytes,
+  }) {
+    final blocks = <OpenXmlBlock>[];
+    for (final node in document.elements) {
+      if (node is docx.DocxParagraph) {
+        blocks.add(
+          OpenXmlParagraphBlock(
+            runs: [
+              for (final child in node.children.whereType<docx.DocxText>())
+                OpenXmlRun(
+                  child.content,
+                  bold: child.isBold,
+                  italic: child.isItalic,
+                  underline: child.isUnderline,
+                  strike: child.isStrike,
+                  href: child.href,
+                ),
+            ],
+            style: _openXmlStyleFor(node.styleId),
+            align: _visualAlignFor(node.align),
+            pageBreakBefore: node.pageBreakBefore,
+          ),
+        );
+      } else if (node is docx.DocxTable) {
+        blocks.add(
+          OpenXmlTableBlock(
+            hasHeader: node.hasHeader,
+            columnWidths: node.resolvedGridColumns,
+            rowHeights: [for (final row in node.rows) row.height ?? 0],
+            rows: [
+              for (final row in node.rows)
+                [
+                  for (final cell in row.cells)
+                    cell.children
+                        .whereType<docx.DocxParagraph>()
+                        .expand((paragraph) => paragraph.children)
+                        .whereType<docx.DocxText>()
+                        .map((text) => text.content)
+                        .join(),
+                ],
+            ],
+          ),
+        );
+      }
+    }
+    return OpenXmlDocument(
+      blocks: blocks.isEmpty ? OpenXmlDocument.plain('').blocks : blocks,
+      sourcePackageFormat: sourcePackageFormat,
+      sourcePackageBytes: sourcePackageBytes,
+    );
+  }
+
+  OpenXmlTextStyle _openXmlStyleFor(String? styleId) {
+    return switch (styleId?.toLowerCase()) {
+      'title' => OpenXmlTextStyle.title,
+      'subtitle' => OpenXmlTextStyle.subtitle,
+      'heading1' => OpenXmlTextStyle.heading1,
+      'heading2' => OpenXmlTextStyle.heading2,
+      'heading3' => OpenXmlTextStyle.heading3,
+      'heading4' => OpenXmlTextStyle.heading4,
+      'heading5' => OpenXmlTextStyle.heading5,
+      'heading6' => OpenXmlTextStyle.heading6,
+      'quote' => OpenXmlTextStyle.quote,
+      'code' => OpenXmlTextStyle.code,
+      'caption' => OpenXmlTextStyle.caption,
+      _ => OpenXmlTextStyle.normal,
+    };
   }
 
   List<OoxmlVisualBlock> _visualBlocksFromDocx(
@@ -412,6 +501,13 @@ class DocumentImportService {
       return const [];
     }
     return List<Object?>.of(value);
+  }
+
+  OpenXmlDocument? _parseOpenDocOpenXmlDocument(Object? value) {
+    if (value is! Map<String, Object?>) {
+      return null;
+    }
+    return OpenXmlDocument.fromJson(value);
   }
 
   List<OoxmlVisualBlock> _visualPartTextBlocks(Uint8List bytes) {

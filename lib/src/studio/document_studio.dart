@@ -69,7 +69,8 @@ class _DocumentStudioState extends State<DocumentStudio> {
   final List<CustomFontFile> _customFonts = [];
   String? _sourcePackageFormat;
   Uint8List? _sourcePackageBytes;
-  DocumentEditMode _editMode = DocumentEditMode.markdown;
+  DocumentEditMode _editMode = DocumentEditMode.openXml;
+  OpenXmlDocument _openXmlDocument = OpenXmlDocument.plain(starterDocument);
   List<OoxmlVisualBlock> _ooxmlBlocks = [];
   List<WysiwygBlock> _wysiwygBlocks = WysiwygDocumentCodec.fromMarkdown(
     starterDocument,
@@ -113,7 +114,13 @@ class _DocumentStudioState extends State<DocumentStudio> {
   }
 
   void _refresh() {
-    if (mounted) setState(() => _saved = false);
+    if (!mounted) return;
+    setState(() {
+      if (_editMode == DocumentEditMode.openXml) {
+        _openXmlDocument = OpenXmlDocument.plain(_srqController.markdown);
+      }
+      _saved = false;
+    });
   }
 
   // ─── Selection-aware format state (computed from SrqController) ──────────────
@@ -129,7 +136,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
       ? WysiwygDocumentCodec.toMarkdown(
           WysiwygDocumentCodec.fromQuillDeltaJson(_quillDeltaJson),
         )
-      : _srqController.markdown;
+      : _openXmlDocument.plainText;
 
   String get _plainText {
     return _markdownText
@@ -425,6 +432,13 @@ class _DocumentStudioState extends State<DocumentStudio> {
     return DocumentExportPayload(
       title: _titleController.text,
       markdown: _markdownText,
+      openXmlDocument: _editMode == DocumentEditMode.wysiwyg
+          ? OpenXmlDocument.plain(
+              WysiwygDocumentCodec.toMarkdown(
+                WysiwygDocumentCodec.fromQuillDeltaJson(_quillDeltaJson),
+              ),
+            )
+          : _openXmlDocument,
       pageSetup: DocumentPageSetup(
         pageSize: _pageSize,
         orientation: _pageOrientation,
@@ -495,6 +509,24 @@ class _DocumentStudioState extends State<DocumentStudio> {
   );
 
   void _insertText(String value) {
+    if (_editMode == DocumentEditMode.openXml) {
+      final text = value
+          .replaceAll(RegExp(r'\[\[[A-Z_]+:?'), '')
+          .replaceAll(']]', '')
+          .replaceAll(RegExp(r'[`#>*\-\[\]]'), '')
+          .trim();
+      final block = OpenXmlParagraphBlock(
+        runs: [OpenXmlRun(text.isEmpty ? 'New paragraph' : text)],
+      );
+      setState(() {
+        _openXmlDocument = _openXmlDocument.copyWith(
+          blocks: [..._openXmlDocument.blocks, block],
+        );
+        _srqController.setMarkdownSilently(_openXmlDocument.plainText);
+        _saved = false;
+      });
+      return;
+    }
     if (_editMode == DocumentEditMode.wysiwyg) {
       setState(() {
         _wysiwygBlocks = [
@@ -516,7 +548,16 @@ class _DocumentStudioState extends State<DocumentStudio> {
     } else {
       _srqController.setMarkdown('$_markdownText$value');
     }
+    _openXmlDocument = OpenXmlDocument.plain(_srqController.markdown);
     _editorFocusNode.requestFocus();
+  }
+
+  void _updateOpenXmlDocument(OpenXmlDocument document) {
+    setState(() {
+      _openXmlDocument = document;
+      _srqController.setMarkdownSilently(document.plainText);
+      _saved = false;
+    });
   }
 
   void _captureVersion(String label) {
@@ -554,11 +595,12 @@ class _DocumentStudioState extends State<DocumentStudio> {
       _mediaBlocks.clear();
       _customFonts.clear();
       _ooxmlBlocks = [];
+      _openXmlDocument = OpenXmlDocument.plain('');
       _wysiwygBlocks = WysiwygDocumentCodec.fromMarkdown('');
       _quillDeltaJson = WysiwygDocumentCodec.toQuillDeltaJson(_wysiwygBlocks);
       _sourcePackageFormat = null;
       _sourcePackageBytes = null;
-      _editMode = DocumentEditMode.markdown;
+      _editMode = DocumentEditMode.openXml;
       _captureVersion('Started blank document');
     });
     _editorFocusNode.requestFocus();
@@ -826,6 +868,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
     List<OoxmlVisualBlock> ooxmlBlocks = const [],
     List<WysiwygBlock> wysiwygBlocks = const [],
     List<Object?> quillDeltaJson = const [],
+    OpenXmlDocument? openXmlDocument,
     DocumentPageSetup? pageSetup,
   }) async {
     final cleanText = text.trim();
@@ -852,6 +895,12 @@ class _DocumentStudioState extends State<DocumentStudio> {
       _sourcePackageFormat = sourcePackageFormat;
       _sourcePackageBytes = sourcePackageBytes;
       _ooxmlBlocks = List<OoxmlVisualBlock>.of(ooxmlBlocks);
+      _openXmlDocument =
+          openXmlDocument ??
+          OpenXmlDocument.plain(cleanText).copyWith(
+            sourcePackageFormat: sourcePackageFormat,
+            sourcePackageBytes: sourcePackageBytes,
+          );
       _wysiwygBlocks = wysiwygBlocks.isNotEmpty
           ? List<WysiwygBlock>.of(wysiwygBlocks)
           : WysiwygDocumentCodec.fromMarkdown(cleanText);
@@ -865,7 +914,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
           ? DocumentEditMode.docxView
           : hasQuillDocument
           ? DocumentEditMode.wysiwyg
-          : DocumentEditMode.markdown;
+          : DocumentEditMode.openXml;
       final importedFamily = selectedFontFamily?.trim();
       if (importedFamily != null &&
           importedFamily.isNotEmpty &&
@@ -929,6 +978,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
         ooxmlBlocks: imported.ooxmlBlocks,
         wysiwygBlocks: imported.wysiwygBlocks,
         quillDeltaJson: imported.quillDeltaJson,
+        openXmlDocument: imported.openXmlDocument,
       );
     } on FormatException catch (error) {
       _showSnack(error.message);
@@ -1054,9 +1104,10 @@ class _DocumentStudioState extends State<DocumentStudio> {
                           _titleController.text = entry.key;
                           _mediaBlocks.clear();
                           _ooxmlBlocks = [];
+                          _openXmlDocument = OpenXmlDocument.plain(entry.value);
                           _sourcePackageFormat = null;
                           _sourcePackageBytes = null;
-                          _editMode = DocumentEditMode.markdown;
+                          _editMode = DocumentEditMode.openXml;
                           _style = 'Normal';
                           _captureVersion('Applied ${entry.key} template');
                         });
@@ -1419,7 +1470,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
     _showSnack('Link placeholder inserted.');
   }
 
-  void _switchRoundTripToMarkdown() {
+  void _switchToOpenXmlEditing() {
     setState(() {
       if (_editMode == DocumentEditMode.wysiwyg) {
         _srqController.setMarkdownSilently(
@@ -1428,16 +1479,15 @@ class _DocumentStudioState extends State<DocumentStudio> {
           ),
         );
       }
-      _editMode = DocumentEditMode.markdown;
+      _openXmlDocument = OpenXmlDocument.plain(_srqController.markdown);
+      _editMode = DocumentEditMode.openXml;
       _ooxmlBlocks = [];
       _sourcePackageFormat = null;
       _sourcePackageBytes = null;
       _saved = false;
     });
     _editorFocusNode.requestFocus();
-    _showSnack(
-      'Switched to Markdown editing. Future exports use the edited content.',
-    );
+    _showSnack('Switched to structured OpenXML editing.');
   }
 
   void _switchToWysiwyg() {
@@ -1926,8 +1976,8 @@ class _DocumentStudioState extends State<DocumentStudio> {
                   ),
                   ExportTile(
                     icon: Icons.code_outlined,
-                    label: 'Markdown',
-                    onTap: () => _finishExport(context, 'Markdown'),
+                    label: 'Text',
+                    onTap: () => _finishExport(context, 'Text'),
                   ),
                   ExportTile(
                     icon: Icons.link_outlined,
@@ -1953,8 +2003,8 @@ class _DocumentStudioState extends State<DocumentStudio> {
       _exportToFile('pdf');
     } else if (type == 'HTML') {
       _exportToFile('html');
-    } else if (type == 'Markdown') {
-      _exportToFile('markdown');
+    } else if (type == 'Text') {
+      _exportToFile('text');
     } else if (type == 'Plain text') {
       _exportToFile('text');
     } else {
@@ -2190,6 +2240,8 @@ class _DocumentStudioState extends State<DocumentStudio> {
                               editMode: _editMode,
                               sourcePackageFormat: _sourcePackageFormat,
                               sourcePackageBytes: _sourcePackageBytes,
+                              openXmlDocument: _openXmlDocument,
+                              onOpenXmlDocumentChanged: _updateOpenXmlDocument,
                               ooxmlBlocks: _ooxmlBlocks,
                               onOoxmlBlockChanged: _updateOoxmlBlock,
                               wysiwygBlocks: _wysiwygBlocks,
@@ -2199,7 +2251,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                               onAddWysiwygBlockAfter: _addWysiwygBlockAfter,
                               onRemoveWysiwygBlock: _removeWysiwygBlock,
                               onSwitchToWysiwyg: _switchToWysiwyg,
-                              onSwitchToMarkdown: _switchRoundTripToMarkdown,
+                              onSwitchToMarkdown: _switchToOpenXmlEditing,
                               mediaBlocks: _mediaBlocks,
                               onRemoveMedia: _removeMediaBlock,
                               onToggleNavigation: compact

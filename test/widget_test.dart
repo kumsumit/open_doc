@@ -259,6 +259,74 @@ Open Doc writes real DOCX files now.
     expect(documentXml, isNot(contains('Markdown fallback text')));
   });
 
+  test('document export uses OpenXML model as source of truth', () async {
+    final bytes = await exportService.exportDocx(
+      DocumentExportPayload(
+        title: 'OpenXML source',
+        markdown: 'Legacy compatibility text',
+        openXmlDocument: const OpenXmlDocument(
+          blocks: [
+            OpenXmlParagraphBlock(
+              style: OpenXmlTextStyle.heading1,
+              runs: [OpenXmlRun('Native OpenXML heading')],
+            ),
+            OpenXmlParagraphBlock(
+              runs: [
+                OpenXmlRun('Plain run with '),
+                OpenXmlRun('bold', bold: true),
+              ],
+            ),
+            OpenXmlTableBlock(
+              rows: [
+                ['Field', 'Value'],
+                ['Source', 'OpenXML model'],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+    final archive = ZipDecoder().decodeBytes(bytes);
+    final documentXml = utf8.decode(
+      archive.findFile('word/document.xml')!.content as List<int>,
+    );
+
+    expect(documentXml, contains('Native OpenXML heading'));
+    expect(documentXml, contains('Heading1'));
+    expect(documentXml, contains('<w:b/>'));
+    expect(documentXml, contains('OpenXML model'));
+    expect(documentXml, isNot(contains('Legacy compatibility text')));
+  });
+
+  test('Open Doc package preserves OpenXML document model', () async {
+    final bytes = await exportService.exportOpenDoc(
+      DocumentExportPayload(
+        title: 'OpenXML package',
+        markdown: 'Compatibility body',
+        openXmlDocument: const OpenXmlDocument(
+          blocks: [
+            OpenXmlParagraphBlock(
+              style: OpenXmlTextStyle.title,
+              runs: [OpenXmlRun('Model title')],
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final imported = importService.parse(bytes, 'native.odoc');
+
+    expect(imported.openXmlDocument, isNotNull);
+    expect(imported.openXmlDocument!.plainText, 'Model title');
+    expect(
+      imported.openXmlDocument!.blocks
+          .whereType<OpenXmlParagraphBlock>()
+          .first
+          .style,
+      OpenXmlTextStyle.title,
+    );
+  });
+
   test(
     'visual OOXML patches source package and preserves unknown parts',
     () async {

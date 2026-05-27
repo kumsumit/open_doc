@@ -822,12 +822,10 @@ class PdfDocument {
     double? pageWidth,
     double? pageHeight,
     this.version = '1.4',
-    PdfParser? parser,
-    PdfReader? reader,
+    this._parser,
+    this._reader,
   }) : pageWidth = pageWidth ?? kDefaultPageWidth / 20.0,
-       pageHeight = pageHeight ?? kDefaultPageHeight / 20.0,
-       _parser = parser,
-       _reader = reader {
+       pageHeight = pageHeight ?? kDefaultPageHeight / 20.0 {
     if (elements != null) {
       _elements = elements;
     }

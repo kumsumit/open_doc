@@ -1,9 +1,12 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../engine/docx.dart' as docx;
+
 enum DocumentEditMode {
-  markdown('Markdown editor', Icons.code_outlined),
+  openXml('OpenXML editor', Icons.description_outlined),
   wysiwyg('WYSIWYG editor', Icons.edit_document),
   docxVisual('DOCX visual editor', Icons.dashboard_customize_outlined),
   docxRoundTrip('DOCX round-trip', Icons.description_outlined),
@@ -18,6 +21,372 @@ enum DocumentEditMode {
 enum OoxmlVisualBlockType { paragraph, table, partText }
 
 enum OoxmlTextAlign { left, center, right, justify }
+
+enum OpenXmlBlockType { paragraph, table, reviewMarker, bibliography }
+
+enum OpenXmlTextStyle {
+  normal('Normal', null),
+  title('Title', 'Title'),
+  subtitle('Subtitle', 'Subtitle'),
+  heading1('Heading 1', 'Heading1'),
+  heading2('Heading 2', 'Heading2'),
+  heading3('Heading 3', 'Heading3'),
+  heading4('Heading 4', 'Heading4'),
+  heading5('Heading 5', 'Heading5'),
+  heading6('Heading 6', 'Heading6'),
+  quote('Quote', 'Quote'),
+  code('Code', 'Code'),
+  caption('Caption', 'Caption');
+
+  const OpenXmlTextStyle(this.label, this.styleId);
+
+  final String label;
+  final String? styleId;
+}
+
+class OpenXmlDocument {
+  const OpenXmlDocument({
+    required this.blocks,
+    this.sourcePackageFormat,
+    this.sourcePackageBytes,
+  });
+
+  factory OpenXmlDocument.plain(String text) {
+    final blocks = text
+        .split(RegExp(r'\n{2,}'))
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .map(
+          (value) => OpenXmlParagraphBlock(
+            runs: [OpenXmlRun(value)],
+            style: _styleFromPlainText(value),
+          ),
+        )
+        .toList();
+    return OpenXmlDocument(
+      blocks: blocks.isEmpty
+          ? const [
+              OpenXmlParagraphBlock(runs: [OpenXmlRun('')]),
+            ]
+          : blocks,
+    );
+  }
+
+  factory OpenXmlDocument.fromJson(Map<String, Object?> json) {
+    final rawBlocks = json['blocks'];
+    return OpenXmlDocument(
+      blocks: rawBlocks is List
+          ? rawBlocks
+                .whereType<Map<String, Object?>>()
+                .map(OpenXmlBlockFactory.fromJson)
+                .whereType<OpenXmlBlock>()
+                .toList()
+          : OpenXmlDocument.plain('').blocks,
+      sourcePackageFormat: json['sourcePackageFormat'] is String
+          ? json['sourcePackageFormat'] as String
+          : null,
+      sourcePackageBytes: _decodeOpenXmlBase64(json['sourcePackageBase64']),
+    );
+  }
+
+  final List<OpenXmlBlock> blocks;
+  final String? sourcePackageFormat;
+  final Uint8List? sourcePackageBytes;
+
+  String get plainText {
+    return blocks.map((block) => block.plainText).join('\n\n').trimRight();
+  }
+
+  List<docx.DocxNode> toDocxNodes() {
+    return blocks.map((block) => block.toDocxNode()).toList();
+  }
+
+  OpenXmlDocument copyWith({
+    List<OpenXmlBlock>? blocks,
+    String? sourcePackageFormat,
+    Uint8List? sourcePackageBytes,
+  }) {
+    return OpenXmlDocument(
+      blocks: blocks ?? this.blocks,
+      sourcePackageFormat: sourcePackageFormat ?? this.sourcePackageFormat,
+      sourcePackageBytes: sourcePackageBytes ?? this.sourcePackageBytes,
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    return {
+      'version': 1,
+      'blocks': [for (final block in blocks) block.toJson()],
+      if (sourcePackageFormat != null)
+        'sourcePackageFormat': sourcePackageFormat,
+      if (sourcePackageBytes != null)
+        'sourcePackageBase64': base64Encode(sourcePackageBytes!),
+    };
+  }
+}
+
+class OpenXmlBlockFactory {
+  const OpenXmlBlockFactory._();
+
+  static OpenXmlBlock? fromJson(Map<String, Object?> json) {
+    return switch (json['type']) {
+      'paragraph' => OpenXmlParagraphBlock(
+        style: _enumByName(
+          OpenXmlTextStyle.values,
+          json['style'],
+          OpenXmlTextStyle.normal,
+        ),
+        align: _enumByName(
+          OoxmlTextAlign.values,
+          json['align'],
+          OoxmlTextAlign.left,
+        ),
+        pageBreakBefore: json['pageBreakBefore'] == true,
+        runs: _openXmlRunsFromJson(json['runs']),
+      ),
+      'table' => OpenXmlTableBlock(
+        rows: _openXmlRowsFromJson(json['rows']),
+        hasHeader: json['hasHeader'] != false,
+        columnWidths: _intListFromJson(json['columnWidths']),
+        rowHeights: _intListFromJson(json['rowHeights']),
+      ),
+      _ => null,
+    };
+  }
+}
+
+abstract class OpenXmlBlock {
+  const OpenXmlBlock(this.type);
+
+  final OpenXmlBlockType type;
+
+  String get plainText;
+
+  docx.DocxNode toDocxNode();
+
+  Map<String, Object?> toJson();
+}
+
+class OpenXmlRun {
+  const OpenXmlRun(
+    this.text, {
+    this.bold = false,
+    this.italic = false,
+    this.underline = false,
+    this.strike = false,
+    this.href,
+  });
+
+  final String text;
+  final bool bold;
+  final bool italic;
+  final bool underline;
+  final bool strike;
+  final String? href;
+
+  docx.DocxText toDocxText() {
+    return docx.DocxText(
+      text,
+      fontWeight: bold ? docx.DocxFontWeight.bold : docx.DocxFontWeight.normal,
+      fontStyle: italic ? docx.DocxFontStyle.italic : docx.DocxFontStyle.normal,
+      decorations: [
+        if (underline) docx.DocxTextDecoration.underline,
+        if (strike) docx.DocxTextDecoration.strikethrough,
+      ],
+      href: href,
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    return {
+      'text': text,
+      if (bold) 'bold': true,
+      if (italic) 'italic': true,
+      if (underline) 'underline': true,
+      if (strike) 'strike': true,
+      if (href != null) 'href': href,
+    };
+  }
+}
+
+class OpenXmlParagraphBlock extends OpenXmlBlock {
+  const OpenXmlParagraphBlock({
+    required this.runs,
+    this.style = OpenXmlTextStyle.normal,
+    this.align = OoxmlTextAlign.left,
+    this.pageBreakBefore = false,
+  }) : super(OpenXmlBlockType.paragraph);
+
+  final List<OpenXmlRun> runs;
+  final OpenXmlTextStyle style;
+  final OoxmlTextAlign align;
+  final bool pageBreakBefore;
+
+  OpenXmlParagraphBlock copyWith({
+    List<OpenXmlRun>? runs,
+    OpenXmlTextStyle? style,
+    OoxmlTextAlign? align,
+    bool? pageBreakBefore,
+  }) {
+    return OpenXmlParagraphBlock(
+      runs: runs ?? this.runs,
+      style: style ?? this.style,
+      align: align ?? this.align,
+      pageBreakBefore: pageBreakBefore ?? this.pageBreakBefore,
+    );
+  }
+
+  @override
+  String get plainText => runs.map((run) => run.text).join();
+
+  @override
+  docx.DocxNode toDocxNode() {
+    return docx.DocxParagraph(
+      styleId: style.styleId,
+      align: switch (align) {
+        OoxmlTextAlign.center => docx.DocxAlign.center,
+        OoxmlTextAlign.right => docx.DocxAlign.right,
+        OoxmlTextAlign.justify => docx.DocxAlign.justify,
+        OoxmlTextAlign.left => docx.DocxAlign.left,
+      },
+      pageBreakBefore: pageBreakBefore,
+      indentLeft: style == OpenXmlTextStyle.quote ? 720 : null,
+      children: [for (final run in runs) run.toDocxText()],
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() {
+    return {
+      'type': type.name,
+      'style': style.name,
+      'align': align.name,
+      'pageBreakBefore': pageBreakBefore,
+      'runs': [for (final run in runs) run.toJson()],
+    };
+  }
+}
+
+class OpenXmlTableBlock extends OpenXmlBlock {
+  const OpenXmlTableBlock({
+    required this.rows,
+    this.hasHeader = true,
+    this.columnWidths = const [],
+    this.rowHeights = const [],
+  }) : super(OpenXmlBlockType.table);
+
+  final List<List<String>> rows;
+  final bool hasHeader;
+  final List<int> columnWidths;
+  final List<int> rowHeights;
+
+  OpenXmlTableBlock copyWith({
+    List<List<String>>? rows,
+    bool? hasHeader,
+    List<int>? columnWidths,
+    List<int>? rowHeights,
+  }) {
+    return OpenXmlTableBlock(
+      rows: rows ?? this.rows,
+      hasHeader: hasHeader ?? this.hasHeader,
+      columnWidths: columnWidths ?? this.columnWidths,
+      rowHeights: rowHeights ?? this.rowHeights,
+    );
+  }
+
+  @override
+  String get plainText => rows.map((row) => row.join('\t')).join('\n');
+
+  @override
+  docx.DocxNode toDocxNode() {
+    return docx.DocxTable(
+      hasHeader: hasHeader,
+      gridColumns: columnWidths.isEmpty ? null : columnWidths,
+      rows: [
+        for (var rowIndex = 0; rowIndex < rows.length; rowIndex += 1)
+          docx.DocxTableRow(
+            height: rowIndex < rowHeights.length && rowHeights[rowIndex] > 0
+                ? rowHeights[rowIndex]
+                : null,
+            cells: [
+              for (
+                var columnIndex = 0;
+                columnIndex < rows[rowIndex].length;
+                columnIndex += 1
+              )
+                docx.DocxTableCell.text(
+                  rows[rowIndex][columnIndex],
+                  isBold: hasHeader && rowIndex == 0,
+                  shadingFill: hasHeader && rowIndex == 0 ? 'DBEAFE' : null,
+                ).copyWith(
+                  width: columnIndex < columnWidths.length
+                      ? columnWidths[columnIndex]
+                      : null,
+                ),
+            ],
+          ),
+      ],
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() {
+    return {
+      'type': type.name,
+      'rows': rows,
+      'hasHeader': hasHeader,
+      if (columnWidths.isNotEmpty) 'columnWidths': columnWidths,
+      if (rowHeights.isNotEmpty) 'rowHeights': rowHeights,
+    };
+  }
+}
+
+OpenXmlTextStyle _styleFromPlainText(String text) {
+  if (text.length <= 80 && !text.contains('.')) {
+    return OpenXmlTextStyle.heading1;
+  }
+  return OpenXmlTextStyle.normal;
+}
+
+List<OpenXmlRun> _openXmlRunsFromJson(Object? value) {
+  if (value is! List) {
+    return const [OpenXmlRun('')];
+  }
+  return [
+    for (final item in value)
+      if (item is Map<String, Object?>)
+        OpenXmlRun(
+          item['text'] is String ? item['text'] as String : '',
+          bold: item['bold'] == true,
+          italic: item['italic'] == true,
+          underline: item['underline'] == true,
+          strike: item['strike'] == true,
+          href: item['href'] is String ? item['href'] as String : null,
+        ),
+  ];
+}
+
+List<List<String>> _openXmlRowsFromJson(Object? value) {
+  if (value is! List) {
+    return const [];
+  }
+  return [
+    for (final row in value)
+      if (row is List)
+        [for (final cell in row) cell is String ? cell : cell.toString()],
+  ];
+}
+
+Uint8List? _decodeOpenXmlBase64(Object? value) {
+  if (value is! String || value.isEmpty) {
+    return null;
+  }
+  try {
+    return base64Decode(value);
+  } on Object {
+    return null;
+  }
+}
 
 enum WysiwygBlockType {
   title('Title'),
@@ -122,16 +491,27 @@ class WysiwygDocumentCodec {
       } else if (trimmed.startsWith('###### ')) {
         flushParagraph();
         blocks.add(_block(WysiwygBlockType.heading5, trimmed.substring(7)));
-      } else if (trimmed.startsWith('[[SUBTITLE:') &&
-          trimmed.endsWith(']]')) {
+      } else if (trimmed.startsWith('[[SUBTITLE:') && trimmed.endsWith(']]')) {
         flushParagraph();
-        blocks.add(_block(WysiwygBlockType.subtitle, trimmed.substring(11, trimmed.length - 2)));
+        blocks.add(
+          _block(
+            WysiwygBlockType.subtitle,
+            trimmed.substring(11, trimmed.length - 2),
+          ),
+        );
       } else if (trimmed.startsWith('[[CAPTION:') && trimmed.endsWith(']]')) {
         flushParagraph();
-        blocks.add(_block(WysiwygBlockType.caption, trimmed.substring(10, trimmed.length - 2)));
+        blocks.add(
+          _block(
+            WysiwygBlockType.caption,
+            trimmed.substring(10, trimmed.length - 2),
+          ),
+        );
       } else if (trimmed.startsWith('```')) {
         flushParagraph();
-        blocks.add(_block(WysiwygBlockType.code, trimmed.replaceAll('`', '').trim()));
+        blocks.add(
+          _block(WysiwygBlockType.code, trimmed.replaceAll('`', '').trim()),
+        );
       } else if (trimmed.startsWith('> ')) {
         flushParagraph();
         blocks.add(_block(WysiwygBlockType.quote, trimmed.substring(2)));

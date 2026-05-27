@@ -27,6 +27,8 @@ class EditorWorkspace extends StatelessWidget {
     required this.characterCount,
     required this.editMode,
     required this.sourcePackageFormat,
+    required this.openXmlDocument,
+    required this.onOpenXmlDocumentChanged,
     required this.ooxmlBlocks,
     required this.onOoxmlBlockChanged,
     required this.wysiwygBlocks,
@@ -57,6 +59,8 @@ class EditorWorkspace extends StatelessWidget {
   final int characterCount;
   final DocumentEditMode editMode;
   final String? sourcePackageFormat;
+  final OpenXmlDocument openXmlDocument;
+  final ValueChanged<OpenXmlDocument> onOpenXmlDocumentChanged;
   final List<OoxmlVisualBlock> ooxmlBlocks;
   final void Function(int index, OoxmlVisualBlock block) onOoxmlBlockChanged;
   final List<WysiwygBlock> wysiwygBlocks;
@@ -101,7 +105,7 @@ class EditorWorkspace extends StatelessWidget {
                       onTap: onToggleInspector,
                     ),
                     const Spacer(),
-                    if (editMode != DocumentEditMode.markdown) ...[
+                    if (editMode != DocumentEditMode.openXml) ...[
                       Tooltip(
                         message:
                             'Preserving original ${sourcePackageFormat?.toUpperCase() ?? 'DOCX'} package',
@@ -123,11 +127,11 @@ class EditorWorkspace extends StatelessWidget {
                       TextButton.icon(
                         onPressed: onSwitchToMarkdown,
                         icon: const Icon(Icons.edit_note_outlined, size: 18),
-                        label: const Text('Edit Markdown'),
+                        label: const Text('Edit OpenXML'),
                       ),
                       const SizedBox(width: 8),
                     ],
-                    if (editMode == DocumentEditMode.markdown) ...[
+                    if (editMode == DocumentEditMode.openXml) ...[
                       TextButton.icon(
                         onPressed: onSwitchToWysiwyg,
                         icon: const Icon(Icons.edit_document, size: 18),
@@ -236,7 +240,7 @@ class EditorWorkspace extends StatelessWidget {
                                       const SizedBox(height: 18),
                                     ],
                                     if (editMode !=
-                                        DocumentEditMode.markdown) ...[
+                                        DocumentEditMode.openXml) ...[
                                       _RoundTripNotice(
                                         editMode: editMode,
                                         sourcePackageFormat:
@@ -258,9 +262,17 @@ class EditorWorkspace extends StatelessWidget {
                                         deltaJson: quillDeltaJson,
                                         onDeltaChanged: onQuillDeltaChanged,
                                       )
+                                    else if (editMode ==
+                                        DocumentEditMode.openXml)
+                                      _OpenXmlStructuredEditor(
+                                        key: const ValueKey('document-editor'),
+                                        document: openXmlDocument,
+                                        style: editorStyle,
+                                        textAlign: textAlign,
+                                        onChanged: onOpenXmlDocumentChanged,
+                                      )
                                     else
                                       TextField(
-                                        key: const ValueKey('document-editor'),
                                         controller:
                                             srqController.textController,
                                         focusNode: editorFocusNode,
@@ -393,8 +405,8 @@ class _RoundTripNotice extends StatelessWidget {
               editMode == DocumentEditMode.docxVisual
                   ? 'This ${sourcePackageFormat?.toUpperCase() ?? 'DOCX'} is in visual OOXML mode. Paragraph and table blocks are editable while style IDs, alignment, page breaks, and table structure are preserved for DOCX export.'
                   : editMode == DocumentEditMode.wysiwyg
-                  ? 'This document is in WYSIWYG mode. Blocks are edited visually and bridged back to Markdown for export and compatibility.'
-                  : 'This ${sourcePackageFormat?.toUpperCase() ?? 'DOCX'} is in round-trip mode. The original styled package is preserved for export; switch to Markdown when you want to flatten it into the native editor.',
+                  ? 'This document is in WYSIWYG mode. Blocks are edited visually and synchronized into the OpenXML document model for export.'
+                  : 'This ${sourcePackageFormat?.toUpperCase() ?? 'DOCX'} is in round-trip mode. The original styled package is preserved for export; switch to OpenXML editing when you want to normalize it into the native model.',
               style: Theme.of(
                 context,
               ).textTheme.bodyMedium?.copyWith(color: const Color(0xff1e3a8a)),
@@ -496,6 +508,419 @@ class _OoxmlVisualEditor extends StatelessWidget {
       OoxmlTextAlign.left => TextAlign.left,
     };
   }
+}
+
+class _OpenXmlStructuredEditor extends StatelessWidget {
+  const _OpenXmlStructuredEditor({
+    super.key,
+    required this.document,
+    required this.style,
+    required this.textAlign,
+    required this.onChanged,
+  });
+
+  final OpenXmlDocument document;
+  final TextStyle style;
+  final TextAlign textAlign;
+  final ValueChanged<OpenXmlDocument> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final blocks = document.blocks.isEmpty
+        ? const [
+            OpenXmlParagraphBlock(runs: [OpenXmlRun('')]),
+          ]
+        : document.blocks;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var index = 0; index < blocks.length; index += 1) ...[
+          _buildBlock(context, index, blocks[index]),
+          const SizedBox(height: 12),
+        ],
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => _insertBlock(
+                  blocks.length - 1,
+                  const OpenXmlParagraphBlock(runs: [OpenXmlRun('')]),
+                ),
+                icon: const Icon(Icons.notes_outlined, size: 18),
+                label: const Text('Paragraph'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _insertBlock(
+                  blocks.length - 1,
+                  const OpenXmlTableBlock(
+                    rows: [
+                      ['Header 1', 'Header 2'],
+                      ['', ''],
+                    ],
+                  ),
+                ),
+                icon: const Icon(Icons.table_chart_outlined, size: 18),
+                label: const Text('Table'),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBlock(BuildContext context, int index, OpenXmlBlock block) {
+    return switch (block) {
+      OpenXmlParagraphBlock() => _OpenXmlParagraphEditor(
+        key: ValueKey('openxml-paragraph-$index'),
+        block: block,
+        style: _styleForParagraph(block),
+        textAlign: _flutterAlignFor(block.align, textAlign),
+        onChanged: (updated) => _replaceBlock(index, updated),
+        onInsertAfter: () => _insertBlock(
+          index,
+          const OpenXmlParagraphBlock(runs: [OpenXmlRun('')]),
+        ),
+        onRemove: () => _removeBlock(index),
+      ),
+      OpenXmlTableBlock() => _OoxmlTableEditor(
+        index: index,
+        block: OoxmlTableBlock(
+          rows: block.rows,
+          hasHeader: block.hasHeader,
+          columnWidths: block.columnWidths,
+          rowHeights: block.rowHeights,
+        ),
+        style: style,
+        onChanged: (updated) => _replaceBlock(
+          index,
+          OpenXmlTableBlock(
+            rows: updated.rows,
+            hasHeader: updated.hasHeader,
+            columnWidths: updated.columnWidths,
+            rowHeights: updated.rowHeights,
+          ),
+        ),
+      ),
+      _ => const SizedBox.shrink(),
+    };
+  }
+
+  TextStyle _styleForParagraph(OpenXmlParagraphBlock block) {
+    final base = style.copyWith(
+      fontFamily: block.style == OpenXmlTextStyle.code
+          ? 'Courier New'
+          : style.fontFamily,
+      fontStyle: block.runs.any((run) => run.italic)
+          ? FontStyle.italic
+          : style.fontStyle,
+      fontWeight: block.runs.any((run) => run.bold)
+          ? FontWeight.w700
+          : style.fontWeight,
+      decoration: block.runs.any((run) => run.underline)
+          ? TextDecoration.underline
+          : style.decoration,
+    );
+    return switch (block.style) {
+      OpenXmlTextStyle.title => base.copyWith(
+        fontSize: 30,
+        fontWeight: FontWeight.w700,
+        height: 1.2,
+      ),
+      OpenXmlTextStyle.subtitle => base.copyWith(
+        fontSize: 20,
+        color: const Color(0xff475569),
+        height: 1.32,
+      ),
+      OpenXmlTextStyle.heading1 => base.copyWith(
+        fontSize: 24,
+        fontWeight: FontWeight.w700,
+        height: 1.25,
+      ),
+      OpenXmlTextStyle.heading2 => base.copyWith(
+        fontSize: 21,
+        fontWeight: FontWeight.w700,
+        height: 1.28,
+      ),
+      OpenXmlTextStyle.heading3 => base.copyWith(
+        fontSize: 18,
+        fontWeight: FontWeight.w700,
+        height: 1.32,
+      ),
+      OpenXmlTextStyle.heading4 ||
+      OpenXmlTextStyle.heading5 ||
+      OpenXmlTextStyle.heading6 => base.copyWith(
+        fontSize: 16,
+        fontWeight: FontWeight.w700,
+      ),
+      OpenXmlTextStyle.quote => base.copyWith(
+        color: const Color(0xff475569),
+        fontStyle: FontStyle.italic,
+      ),
+      OpenXmlTextStyle.code => base.copyWith(
+        fontSize: 14,
+        backgroundColor: const Color(0xfff1f5f9),
+      ),
+      OpenXmlTextStyle.caption => base.copyWith(
+        fontSize: 13,
+        color: const Color(0xff64748b),
+        fontStyle: FontStyle.italic,
+      ),
+      OpenXmlTextStyle.normal => base,
+    };
+  }
+
+  void _replaceBlock(int index, OpenXmlBlock block) {
+    final blocks = List<OpenXmlBlock>.of(document.blocks);
+    if (index < 0 || index >= blocks.length) {
+      return;
+    }
+    blocks[index] = block;
+    onChanged(document.copyWith(blocks: blocks));
+  }
+
+  void _insertBlock(int index, OpenXmlBlock block) {
+    final blocks = List<OpenXmlBlock>.of(document.blocks);
+    blocks.insert((index + 1).clamp(0, blocks.length), block);
+    onChanged(document.copyWith(blocks: blocks));
+  }
+
+  void _removeBlock(int index) {
+    final blocks = List<OpenXmlBlock>.of(document.blocks);
+    if (blocks.length <= 1) {
+      _replaceBlock(index, const OpenXmlParagraphBlock(runs: [OpenXmlRun('')]));
+      return;
+    }
+    blocks.removeAt(index);
+    onChanged(document.copyWith(blocks: blocks));
+  }
+
+  TextAlign _flutterAlignFor(OoxmlTextAlign align, TextAlign fallback) {
+    return switch (align) {
+      OoxmlTextAlign.center => TextAlign.center,
+      OoxmlTextAlign.right => TextAlign.right,
+      OoxmlTextAlign.justify => TextAlign.justify,
+      OoxmlTextAlign.left => fallback,
+    };
+  }
+}
+
+class _OpenXmlParagraphEditor extends StatelessWidget {
+  const _OpenXmlParagraphEditor({
+    super.key,
+    required this.block,
+    required this.style,
+    required this.textAlign,
+    required this.onChanged,
+    required this.onInsertAfter,
+    required this.onRemove,
+  });
+
+  final OpenXmlParagraphBlock block;
+  final TextStyle style;
+  final TextAlign textAlign;
+  final ValueChanged<OpenXmlParagraphBlock> onChanged;
+  final VoidCallback onInsertAfter;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasPageBreak = block.pageBreakBefore;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (hasPageBreak)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(
+              children: const [
+                Expanded(child: Divider(color: Color(0xffcbd5e1))),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    'Page break',
+                    style: TextStyle(fontSize: 11, color: Color(0xff64748b)),
+                  ),
+                ),
+                Expanded(child: Divider(color: Color(0xffcbd5e1))),
+              ],
+            ),
+          ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: TextFormField(
+                initialValue: block.plainText,
+                maxLines: null,
+                keyboardType: TextInputType.multiline,
+                textAlign: textAlign,
+                style: style,
+                cursorColor: const Color(0xff2563eb),
+                decoration: InputDecoration(
+                  border: InputBorder.none,
+                  isDense: true,
+                  hintText: block.style == OpenXmlTextStyle.title
+                      ? 'Document title'
+                      : 'Type here',
+                  contentPadding: EdgeInsets.zero,
+                ),
+                onChanged: (value) {
+                  final previous = block.runs.isEmpty
+                      ? const OpenXmlRun('')
+                      : block.runs.first;
+                  onChanged(
+                    block.copyWith(
+                      runs: [
+                        OpenXmlRun(
+                          value,
+                          bold: previous.bold,
+                          italic: previous.italic,
+                          underline: previous.underline,
+                          strike: previous.strike,
+                          href: previous.href,
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(width: 8),
+            _BlockMenu(
+              style: block.style,
+              align: block.align,
+              onStyleChanged: (value) =>
+                  onChanged(block.copyWith(style: value)),
+              onAlignChanged: (value) =>
+                  onChanged(block.copyWith(align: value)),
+              onInsertAfter: onInsertAfter,
+              onRemove: onRemove,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _BlockMenu extends StatelessWidget {
+  const _BlockMenu({
+    required this.style,
+    required this.align,
+    required this.onStyleChanged,
+    required this.onAlignChanged,
+    required this.onInsertAfter,
+    required this.onRemove,
+  });
+
+  final OpenXmlTextStyle style;
+  final OoxmlTextAlign align;
+  final ValueChanged<OpenXmlTextStyle> onStyleChanged;
+  final ValueChanged<OoxmlTextAlign> onAlignChanged;
+  final VoidCallback onInsertAfter;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<_BlockCommand>(
+      tooltip: 'Block options',
+      icon: const Icon(Icons.more_horiz, size: 18),
+      onSelected: (command) {
+        switch (command.kind) {
+          case _BlockCommandKind.style:
+            onStyleChanged(command.style ?? OpenXmlTextStyle.normal);
+          case _BlockCommandKind.align:
+            onAlignChanged(command.align ?? OoxmlTextAlign.left);
+          case _BlockCommandKind.insert:
+            onInsertAfter();
+          case _BlockCommandKind.remove:
+            onRemove();
+        }
+      },
+      itemBuilder: (context) => [
+        for (final value in OpenXmlTextStyle.values)
+          PopupMenuItem(
+            value: _BlockCommand.style(value),
+            child: Row(
+              children: [
+                Icon(
+                  value == style ? Icons.check : Icons.text_fields,
+                  size: 16,
+                ),
+                const SizedBox(width: 8),
+                Text(value.label),
+              ],
+            ),
+          ),
+        const PopupMenuDivider(),
+        for (final value in OoxmlTextAlign.values)
+          PopupMenuItem(
+            value: _BlockCommand.align(value),
+            child: Row(
+              children: [
+                Icon(
+                  value == align ? Icons.check : Icons.format_align_left,
+                  size: 16,
+                ),
+                const SizedBox(width: 8),
+                Text(value.name),
+              ],
+            ),
+          ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: _BlockCommand.insert(),
+          child: Row(
+            children: [
+              Icon(Icons.add, size: 16),
+              SizedBox(width: 8),
+              Text('Insert paragraph'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: _BlockCommand.remove(),
+          child: Row(
+            children: [
+              Icon(Icons.delete_outline, size: 16),
+              SizedBox(width: 8),
+              Text('Remove block'),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+enum _BlockCommandKind { style, align, insert, remove }
+
+class _BlockCommand {
+  const _BlockCommand.style(this.style)
+    : kind = _BlockCommandKind.style,
+      align = null;
+
+  const _BlockCommand.align(this.align)
+    : kind = _BlockCommandKind.align,
+      style = null;
+
+  const _BlockCommand.insert()
+    : kind = _BlockCommandKind.insert,
+      style = null,
+      align = null;
+
+  const _BlockCommand.remove()
+    : kind = _BlockCommandKind.remove,
+      style = null,
+      align = null;
+
+  final _BlockCommandKind kind;
+  final OpenXmlTextStyle? style;
+  final OoxmlTextAlign? align;
 }
 
 class _QuillWysiwygEditor extends StatefulWidget {

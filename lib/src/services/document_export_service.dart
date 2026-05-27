@@ -41,6 +41,7 @@ class DocumentExportPayload {
   const DocumentExportPayload({
     required this.title,
     required this.markdown,
+    this.openXmlDocument,
     this.mediaBlocks = const [],
     this.customFonts = const [],
     this.selectedFontFamily,
@@ -54,6 +55,7 @@ class DocumentExportPayload {
 
   final String title;
   final String markdown;
+  final OpenXmlDocument? openXmlDocument;
   final List<ExportMediaBlock> mediaBlocks;
   final List<CustomFontFile> customFonts;
   final String? selectedFontFamily;
@@ -128,7 +130,13 @@ class DocumentExportService {
   Future<docx.DocxBuiltDocument> buildDocument(
     DocumentExportPayload payload,
   ) async {
-    final built = payload.ooxmlBlocks.isNotEmpty
+    final built = payload.openXmlDocument != null
+        ? _BuiltExportNodes(
+            nodes: payload.openXmlDocument!.toDocxNodes(),
+            footnotes: const [],
+            endnotes: const [],
+          )
+        : payload.ooxmlBlocks.isNotEmpty
         ? _buildNodesFromOoxmlBlocks(payload)
         : payload.quillDeltaJson.isNotEmpty
         ? _buildNodesFromQuillDelta(payload.quillDeltaJson)
@@ -184,7 +192,7 @@ class DocumentExportService {
 
   void ensureLanguageSupport(DocumentExportPayload payload) {
     _languageSupport.ensureExportable(
-      text: buildMarkdown(payload),
+      text: payload.openXmlDocument?.plainText ?? buildMarkdown(payload),
       customFonts: payload.customFonts,
       selectedFontFamily: payload.selectedFontFamily,
     );
@@ -819,6 +827,7 @@ class DocumentExportService {
       'format': 'open_doc',
       'version': 1,
       'title': payload.title,
+      'openXmlDocument': payload.openXmlDocument?.toJson(),
       'markdown': payload.markdown,
       if (payload.selectedFontFamily != null)
         'selectedFontFamily': payload.selectedFontFamily,
@@ -915,21 +924,38 @@ class DocumentExportService {
     if (payload.sourcePackageFormat == 'docx' &&
         payload.sourcePackageBytes != null &&
         payload.ooxmlBlocks.isNotEmpty) {
-      notes.add('DOCX export patches editable body/header/footer text and keeps unknown OpenXML parts.');
+      notes.add(
+        'DOCX export patches editable body/header/footer text and keeps unknown OpenXML parts.',
+      );
     }
     if (payload.quillDeltaJson.isNotEmpty) {
-      notes.add('Rich text exports through the Quill bridge; unsupported embeds become text placeholders.');
+      notes.add(
+        'Rich text exports through the Quill bridge; unsupported embeds become text placeholders.',
+      );
     }
-    if (payload.markdown.contains(RegExp(r'\[\[(COMMENT|SUGGEST|CITATION|BIBLIOGRAPHY|SECTION_BREAK):?', caseSensitive: false))) {
-      notes.add('Review, citation, bibliography, and section markers are emitted as Word OpenXML.');
+    if (payload.markdown.contains(
+      RegExp(
+        r'\[\[(COMMENT|SUGGEST|CITATION|BIBLIOGRAPHY|SECTION_BREAK):?',
+        caseSensitive: false,
+      ),
+    )) {
+      notes.add(
+        'Review, citation, bibliography, and section markers are emitted as Word OpenXML.',
+      );
     }
-    if (payload.mediaBlocks.any((block) => block.type == ExportMediaType.video)) {
-      notes.add('Video blocks export as linked references outside DOCX/PDF page rendering.');
+    if (payload.mediaBlocks.any(
+      (block) => block.type == ExportMediaType.video,
+    )) {
+      notes.add(
+        'Video blocks export as linked references outside DOCX/PDF page rendering.',
+      );
     }
     if (payload.customFonts.isEmpty && payload.selectedFontFamily != null) {
       notes.add('Non-embedded fonts may substitute on other devices.');
     }
-    return notes.isEmpty ? const ['Export should preserve visible document content.'] : notes;
+    return notes.isEmpty
+        ? const ['Export should preserve visible document content.']
+        : notes;
   }
 
   Uint8List _withOpenXmlReviewParts(
@@ -973,7 +999,9 @@ class DocumentExportService {
         );
       }
     }
-    output.addFile(ArchiveFile.string('word/comments.xml', _commentsXml(comments)));
+    output.addFile(
+      ArchiveFile.string('word/comments.xml', _commentsXml(comments)),
+    );
     return Uint8List.fromList(ZipEncoder().encode(output));
   }
 
@@ -996,7 +1024,10 @@ class DocumentExportService {
 
   String _commentsXml(List<_OpenXmlComment> comments) {
     final builder = XmlBuilder();
-    builder.processing('xml', 'version="1.0" encoding="UTF-8" standalone="yes"');
+    builder.processing(
+      'xml',
+      'version="1.0" encoding="UTF-8" standalone="yes"',
+    );
     builder.element(
       'w:comments',
       nest: () {
@@ -1010,14 +1041,20 @@ class DocumentExportService {
             nest: () {
               builder.attribute('w:id', comment.id.toString());
               builder.attribute('w:author', comment.author);
-              builder.attribute('w:date', DateTime.now().toUtc().toIso8601String());
+              builder.attribute(
+                'w:date',
+                DateTime.now().toUtc().toIso8601String(),
+              );
               builder.element(
                 'w:p',
                 nest: () {
                   builder.element(
                     'w:r',
                     nest: () {
-                      builder.element('w:t', nest: () => builder.text(comment.text));
+                      builder.element(
+                        'w:t',
+                        nest: () => builder.text(comment.text),
+                      );
                     },
                   );
                 },
@@ -1040,13 +1077,10 @@ class DocumentExportService {
     }
     final document = XmlDocument.parse(xml);
     document.rootElement.children.add(
-      XmlElement(
-        XmlName('Override'),
-        [
-          XmlAttribute(XmlName('PartName'), partName),
-          XmlAttribute(XmlName('ContentType'), contentType),
-        ],
-      ),
+      XmlElement(XmlName.parts('Override'), [
+        XmlAttribute(XmlName.parts('PartName'), partName),
+        XmlAttribute(XmlName.parts('ContentType'), contentType),
+      ]),
     );
     return document.toXmlString();
   }
@@ -1062,14 +1096,11 @@ class DocumentExportService {
     }
     final document = XmlDocument.parse(xml);
     document.rootElement.children.add(
-      XmlElement(
-        XmlName('Relationship'),
-        [
-          XmlAttribute(XmlName('Id'), id),
-          XmlAttribute(XmlName('Type'), type),
-          XmlAttribute(XmlName('Target'), target),
-        ],
-      ),
+      XmlElement(XmlName.parts('Relationship'), [
+        XmlAttribute(XmlName.parts('Id'), id),
+        XmlAttribute(XmlName.parts('Type'), type),
+        XmlAttribute(XmlName.parts('Target'), target),
+      ]),
     );
     return document.toXmlString();
   }
