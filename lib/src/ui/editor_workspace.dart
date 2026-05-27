@@ -11,6 +11,7 @@ import 'package:smart_rich_text_quill/smart_rich_text_quill.dart';
 
 import '../services/document_models.dart';
 import 'common_controls.dart';
+import 'inline_format.dart';
 
 class EditorWorkspace extends StatelessWidget {
   const EditorWorkspace({
@@ -29,7 +30,8 @@ class EditorWorkspace extends StatelessWidget {
     required this.sourcePackageFormat,
     required this.openXmlDocument,
     required this.onOpenXmlDocumentChanged,
-    required this.onOpenXmlParagraphFocused,
+    required this.onOpenXmlParagraphActivated,
+    required this.onOpenXmlSelectionChanged,
     required this.ooxmlBlocks,
     required this.onOoxmlBlockChanged,
     required this.wysiwygBlocks,
@@ -62,8 +64,15 @@ class EditorWorkspace extends StatelessWidget {
   final String? sourcePackageFormat;
   final OpenXmlDocument openXmlDocument;
   final ValueChanged<OpenXmlDocument> onOpenXmlDocumentChanged;
-  final void Function(int index, OpenXmlParagraphBlock block)
-  onOpenXmlParagraphFocused;
+  final void Function(
+    int index,
+    OpenXmlParagraphBlock block,
+    RichRunController controller,
+    LayerLink link,
+    FocusNode focusNode,
+  )
+  onOpenXmlParagraphActivated;
+  final VoidCallback onOpenXmlSelectionChanged;
   final List<OoxmlVisualBlock> ooxmlBlocks;
   final void Function(int index, OoxmlVisualBlock block) onOoxmlBlockChanged;
   final List<WysiwygBlock> wysiwygBlocks;
@@ -274,8 +283,10 @@ class EditorWorkspace extends StatelessWidget {
                                         style: editorStyle,
                                         textAlign: textAlign,
                                         onChanged: onOpenXmlDocumentChanged,
-                                        onParagraphFocused:
-                                            onOpenXmlParagraphFocused,
+                                        onParagraphActivated:
+                                            onOpenXmlParagraphActivated,
+                                        onSelectionChanged:
+                                            onOpenXmlSelectionChanged,
                                       )
                                     else
                                       TextField(
@@ -526,15 +537,23 @@ class _OpenXmlStructuredEditor extends StatelessWidget {
     required this.style,
     required this.textAlign,
     required this.onChanged,
-    required this.onParagraphFocused,
+    required this.onParagraphActivated,
+    required this.onSelectionChanged,
   });
 
   final OpenXmlDocument document;
   final TextStyle style;
   final TextAlign textAlign;
   final ValueChanged<OpenXmlDocument> onChanged;
-  final void Function(int index, OpenXmlParagraphBlock block)
-  onParagraphFocused;
+  final void Function(
+    int index,
+    OpenXmlParagraphBlock block,
+    RichRunController controller,
+    LayerLink link,
+    FocusNode focusNode,
+  )
+  onParagraphActivated;
+  final VoidCallback onSelectionChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -588,16 +607,13 @@ class _OpenXmlStructuredEditor extends StatelessWidget {
     return switch (block) {
       OpenXmlParagraphBlock() => _OpenXmlParagraphEditor(
         key: ValueKey('openxml-paragraph-$index'),
+        index: index,
         block: block,
         style: _styleForParagraph(block),
         textAlign: _flutterAlignFor(block.align, textAlign),
         onChanged: (updated) => _replaceBlock(index, updated),
-        onFocused: () => onParagraphFocused(index, block),
-        onInsertAfter: () => _insertBlock(
-          index,
-          const OpenXmlParagraphBlock(runs: [OpenXmlRun('')]),
-        ),
-        onRemove: () => _removeBlock(index),
+        onActivated: onParagraphActivated,
+        onSelectionChanged: onSelectionChanged,
       ),
       OpenXmlTableBlock() => _OoxmlTableEditor(
         index: index,
@@ -623,19 +639,13 @@ class _OpenXmlStructuredEditor extends StatelessWidget {
   }
 
   TextStyle _styleForParagraph(OpenXmlParagraphBlock block) {
+    // Run-level bold/italic/underline are rendered per character by
+    // RichRunController.buildTextSpan, so the base style only carries the
+    // paragraph-level (style) attributes here.
     final base = style.copyWith(
       fontFamily: block.style == OpenXmlTextStyle.code
           ? 'Courier New'
           : style.fontFamily,
-      fontStyle: block.runs.any((run) => run.italic)
-          ? FontStyle.italic
-          : style.fontStyle,
-      fontWeight: block.runs.any((run) => run.bold)
-          ? FontWeight.w700
-          : style.fontWeight,
-      decoration: block.runs.any((run) => run.underline)
-          ? TextDecoration.underline
-          : style.decoration,
     );
     return switch (block.style) {
       OpenXmlTextStyle.title => base.copyWith(
@@ -701,16 +711,6 @@ class _OpenXmlStructuredEditor extends StatelessWidget {
     onChanged(document.copyWith(blocks: blocks));
   }
 
-  void _removeBlock(int index) {
-    final blocks = List<OpenXmlBlock>.of(document.blocks);
-    if (blocks.length <= 1) {
-      _replaceBlock(index, const OpenXmlParagraphBlock(runs: [OpenXmlRun('')]));
-      return;
-    }
-    blocks.removeAt(index);
-    onChanged(document.copyWith(blocks: blocks));
-  }
-
   TextAlign _flutterAlignFor(OoxmlTextAlign align, TextAlign fallback) {
     return switch (align) {
       OoxmlTextAlign.center => TextAlign.center,
@@ -721,29 +721,116 @@ class _OpenXmlStructuredEditor extends StatelessWidget {
   }
 }
 
-class _OpenXmlParagraphEditor extends StatelessWidget {
+class _OpenXmlParagraphEditor extends StatefulWidget {
   const _OpenXmlParagraphEditor({
     super.key,
+    required this.index,
     required this.block,
     required this.style,
     required this.textAlign,
     required this.onChanged,
-    required this.onFocused,
-    required this.onInsertAfter,
-    required this.onRemove,
+    required this.onActivated,
+    required this.onSelectionChanged,
   });
 
+  final int index;
   final OpenXmlParagraphBlock block;
   final TextStyle style;
   final TextAlign textAlign;
   final ValueChanged<OpenXmlParagraphBlock> onChanged;
-  final VoidCallback onFocused;
-  final VoidCallback onInsertAfter;
-  final VoidCallback onRemove;
+  final void Function(
+    int index,
+    OpenXmlParagraphBlock block,
+    RichRunController controller,
+    LayerLink link,
+    FocusNode focusNode,
+  )
+  onActivated;
+  final VoidCallback onSelectionChanged;
+
+  @override
+  State<_OpenXmlParagraphEditor> createState() =>
+      _OpenXmlParagraphEditorState();
+}
+
+class _OpenXmlParagraphEditorState extends State<_OpenXmlParagraphEditor> {
+  late RichRunController _controller;
+  final FocusNode _focusNode = FocusNode();
+  final LayerLink _link = LayerLink();
+  TextSelection _lastSelection = const TextSelection.collapsed(offset: 0);
+  late String _lastText;
+  late String _lastSignature;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = RichRunController(runs: widget.block.runs);
+    _lastText = _controller.text;
+    _lastSignature = _runSignature(_controller.runs);
+    _controller.addListener(_handleControllerChanged);
+    _focusNode.addListener(_handleFocusChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _OpenXmlParagraphEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Only rebuild the controller when the text itself changed from the
+    // outside (template/import/version restore). Run-only changes that we
+    // originated keep the controller authoritative so the caret never jumps.
+    if (widget.block.plainText != _controller.text) {
+      _controller.removeListener(_handleControllerChanged);
+      _controller.dispose();
+      _controller = RichRunController(runs: widget.block.runs);
+      _lastText = _controller.text;
+      _lastSignature = _runSignature(_controller.runs);
+      _controller.addListener(_handleControllerChanged);
+    }
+  }
+
+  static String _runSignature(List<OpenXmlRun> runs) {
+    return runs
+        .map(
+          (run) =>
+              '${run.text.length}:${run.bold ? 1 : 0}${run.italic ? 1 : 0}'
+              '${run.underline ? 1 : 0}${run.strike ? 1 : 0}',
+        )
+        .join('|');
+  }
+
+  @override
+  void dispose() {
+    _controller.removeListener(_handleControllerChanged);
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _handleFocusChanged() {
+    if (_focusNode.hasFocus) {
+      widget.onActivated(widget.index, widget.block, _controller, _link, _focusNode);
+    }
+  }
+
+  void _handleControllerChanged() {
+    final runs = _controller.runs;
+    final signature = _runSignature(runs);
+    if (_controller.text != _lastText || signature != _lastSignature) {
+      _lastText = _controller.text;
+      _lastSignature = signature;
+      // Propagate content/formatting changes to the document model.
+      widget.onChanged(widget.block.copyWith(runs: runs));
+    }
+    if (_controller.selection != _lastSelection) {
+      _lastSelection = _controller.selection;
+      if (_focusNode.hasFocus) {
+        widget.onSelectionChanged();
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final hasPageBreak = block.pageBreakBefore;
+    final hasPageBreak = widget.block.pageBreakBefore;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -764,162 +851,36 @@ class _OpenXmlParagraphEditor extends StatelessWidget {
               ],
             ),
           ),
-        TextFormField(
-          initialValue: block.plainText,
-          maxLines: null,
-          keyboardType: TextInputType.multiline,
-          textAlign: textAlign,
-          style: style,
-          cursorColor: const Color(0xff2563eb),
-          decoration: InputDecoration(
-            border: InputBorder.none,
-            isDense: true,
-            hintText: block.style == OpenXmlTextStyle.title
-                ? 'Document title'
-                : 'Type here',
-            contentPadding: EdgeInsets.zero,
-          ),
-          onTap: onFocused,
-          onChanged: (value) {
-            onFocused();
-            final previous = block.runs.isEmpty
-                ? const OpenXmlRun('')
-                : block.runs.first;
-            onChanged(
-              block.copyWith(
-                runs: [
-                  OpenXmlRun(
-                    value,
-                    bold: previous.bold,
-                    italic: previous.italic,
-                    underline: previous.underline,
-                    strike: previous.strike,
-                    href: previous.href,
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
-      ],
-    );
-  }
-}
-
-class _BlockMenu extends StatelessWidget {
-  const _BlockMenu({
-    required this.style,
-    required this.align,
-    required this.onStyleChanged,
-    required this.onAlignChanged,
-    required this.onInsertAfter,
-    required this.onRemove,
-  });
-
-  final OpenXmlTextStyle style;
-  final OoxmlTextAlign align;
-  final ValueChanged<OpenXmlTextStyle> onStyleChanged;
-  final ValueChanged<OoxmlTextAlign> onAlignChanged;
-  final VoidCallback onInsertAfter;
-  final VoidCallback onRemove;
-
-  @override
-  Widget build(BuildContext context) {
-    return PopupMenuButton<_BlockCommand>(
-      tooltip: 'Block options',
-      icon: const Icon(Icons.more_horiz, size: 18),
-      onSelected: (command) {
-        switch (command.kind) {
-          case _BlockCommandKind.style:
-            onStyleChanged(command.style ?? OpenXmlTextStyle.normal);
-          case _BlockCommandKind.align:
-            onAlignChanged(command.align ?? OoxmlTextAlign.left);
-          case _BlockCommandKind.insert:
-            onInsertAfter();
-          case _BlockCommandKind.remove:
-            onRemove();
-        }
-      },
-      itemBuilder: (context) => [
-        for (final value in OpenXmlTextStyle.values)
-          PopupMenuItem(
-            value: _BlockCommand.style(value),
-            child: Row(
-              children: [
-                Icon(
-                  value == style ? Icons.check : Icons.text_fields,
-                  size: 16,
-                ),
-                const SizedBox(width: 8),
-                Text(value.label),
-              ],
+        CompositedTransformTarget(
+          link: _link,
+          child: TextField(
+            controller: _controller,
+            focusNode: _focusNode,
+            maxLines: null,
+            keyboardType: TextInputType.multiline,
+            textAlign: widget.textAlign,
+            style: widget.style,
+            cursorColor: const Color(0xff2563eb),
+            decoration: InputDecoration(
+              border: InputBorder.none,
+              isDense: true,
+              hintText: widget.block.style == OpenXmlTextStyle.title
+                  ? 'Document title'
+                  : 'Type here',
+              contentPadding: EdgeInsets.zero,
             ),
-          ),
-        const PopupMenuDivider(),
-        for (final value in OoxmlTextAlign.values)
-          PopupMenuItem(
-            value: _BlockCommand.align(value),
-            child: Row(
-              children: [
-                Icon(
-                  value == align ? Icons.check : Icons.format_align_left,
-                  size: 16,
-                ),
-                const SizedBox(width: 8),
-                Text(value.name),
-              ],
+            onTap: () => widget.onActivated(
+              widget.index,
+              widget.block,
+              _controller,
+              _link,
+              _focusNode,
             ),
-          ),
-        const PopupMenuDivider(),
-        const PopupMenuItem(
-          value: _BlockCommand.insert(),
-          child: Row(
-            children: [
-              Icon(Icons.add, size: 16),
-              SizedBox(width: 8),
-              Text('Insert paragraph'),
-            ],
-          ),
-        ),
-        const PopupMenuItem(
-          value: _BlockCommand.remove(),
-          child: Row(
-            children: [
-              Icon(Icons.delete_outline, size: 16),
-              SizedBox(width: 8),
-              Text('Remove block'),
-            ],
           ),
         ),
       ],
     );
   }
-}
-
-enum _BlockCommandKind { style, align, insert, remove }
-
-class _BlockCommand {
-  const _BlockCommand.style(this.style)
-    : kind = _BlockCommandKind.style,
-      align = null;
-
-  const _BlockCommand.align(this.align)
-    : kind = _BlockCommandKind.align,
-      style = null;
-
-  const _BlockCommand.insert()
-    : kind = _BlockCommandKind.insert,
-      style = null,
-      align = null;
-
-  const _BlockCommand.remove()
-    : kind = _BlockCommandKind.remove,
-      style = null,
-      align = null;
-
-  final _BlockCommandKind kind;
-  final OpenXmlTextStyle? style;
-  final OoxmlTextAlign? align;
 }
 
 class _QuillWysiwygEditor extends StatefulWidget {

@@ -12,6 +12,7 @@ import '../services/document_models.dart';
 import '../data/document_templates.dart';
 import '../ui/editor_intents.dart';
 import '../ui/editor_workspace.dart';
+import '../ui/inline_format.dart';
 import '../ui/ribbon.dart';
 import '../ui/side_panels.dart';
 import '../ui/common_controls.dart';
@@ -42,6 +43,12 @@ class _DocumentStudioState extends State<DocumentStudio> {
   final DocumentImportService _importService = const DocumentImportService();
   int _currentMatchIndex = -1;
   int? _activeOpenXmlBlockIndex;
+
+  // ─── Floating Word-style mini-toolbar state ─────────────────────────────────
+  OverlayEntry? _formatToolbarEntry;
+  RichRunController? _activeRunController;
+  LayerLink? _activeLayerLink;
+  FocusNode? _activeFieldFocus;
 
   bool _showRuler = true;
   bool _showNavigation = true;
@@ -111,6 +118,9 @@ class _DocumentStudioState extends State<DocumentStudio> {
       ..dispose();
     _replaceController.dispose();
     _editorFocusNode.dispose();
+    _activeFieldFocus?.removeListener(_handleActiveFocusChange);
+    _formatToolbarEntry?.remove();
+    _formatToolbarEntry = null;
     super.dispose();
   }
 
@@ -140,18 +150,42 @@ class _DocumentStudioState extends State<DocumentStudio> {
     return block is OpenXmlParagraphBlock ? block : null;
   }
 
-  bool get _bold => _isNativeOpenXmlEditor
-      ? _activeOpenXmlParagraph?.runs.any((run) => run.bold) ?? false
-      : _srqController.selectionBoldActive;
-  bool get _italic => _isNativeOpenXmlEditor
-      ? _activeOpenXmlParagraph?.runs.any((run) => run.italic) ?? false
-      : _srqController.selectionItalicActive;
-  bool get _underline => _isNativeOpenXmlEditor
-      ? _activeOpenXmlParagraph?.runs.any((run) => run.underline) ?? false
-      : _srqController.selectionUnderlineActive;
-  bool get _strikethrough => _isNativeOpenXmlEditor
-      ? _activeOpenXmlParagraph?.runs.any((run) => run.strike) ?? false
-      : _srqController.selectionStrikethroughActive;
+  bool get _bold => _formatActive(RunAttr.bold);
+  bool get _italic => _formatActive(RunAttr.italic);
+  bool get _underline => _formatActive(RunAttr.underline);
+  bool get _strikethrough => _formatActive(RunAttr.strike);
+
+  /// Reflects the formatting of the live selection when a paragraph is being
+  /// edited (so the ribbon and floating toolbar light up correctly), falling
+  /// back to the active paragraph or the markdown controller otherwise.
+  bool _formatActive(RunAttr attr) {
+    if (_isNativeOpenXmlEditor) {
+      final controller = _activeRunController;
+      if (controller != null) {
+        final selection = controller.selection;
+        if (selection.isValid && !selection.isCollapsed) {
+          return controller.isActive(selection.start, selection.end, attr);
+        }
+        return controller.text.isNotEmpty &&
+            controller.isActive(0, controller.text.length, attr);
+      }
+      final paragraph = _activeOpenXmlParagraph;
+      return paragraph?.runs.any((run) => _runHasAttr(run, attr)) ?? false;
+    }
+    return switch (attr) {
+      RunAttr.bold => _srqController.selectionBoldActive,
+      RunAttr.italic => _srqController.selectionItalicActive,
+      RunAttr.underline => _srqController.selectionUnderlineActive,
+      RunAttr.strike => _srqController.selectionStrikethroughActive,
+    };
+  }
+
+  bool _runHasAttr(OpenXmlRun run, RunAttr attr) => switch (attr) {
+    RunAttr.bold => run.bold,
+    RunAttr.italic => run.italic,
+    RunAttr.underline => run.underline,
+    RunAttr.strike => run.strike,
+  };
 
   bool get _isNativeOpenXmlEditor =>
       _editMode == DocumentEditMode.openXml ||
@@ -708,12 +742,148 @@ class _DocumentStudioState extends State<DocumentStudio> {
     };
   }
 
-  void _focusOpenXmlParagraph(int index, OpenXmlParagraphBlock block) {
+  void _activateOpenXmlParagraph(
+    int index,
+    OpenXmlParagraphBlock block,
+    RichRunController controller,
+    LayerLink link,
+    FocusNode focusNode,
+  ) {
+    _activeRunController = controller;
+    _activeLayerLink = link;
+    _bindActiveFocus(focusNode);
     setState(() {
       _activeOpenXmlBlockIndex = index;
       _style = _ribbonStyleForOpenXml(block.style);
       _alignment = _ribbonAlignForOpenXml(block.align);
     });
+    _showFormatToolbar();
+  }
+
+  void _onOpenXmlSelectionChanged() {
+    if (!mounted) return;
+    setState(() {});
+    _formatToolbarEntry?.markNeedsBuild();
+  }
+
+  void _bindActiveFocus(FocusNode node) {
+    if (identical(_activeFieldFocus, node)) return;
+    _activeFieldFocus?.removeListener(_handleActiveFocusChange);
+    _activeFieldFocus = node;
+    _activeFieldFocus!.addListener(_handleActiveFocusChange);
+  }
+
+  void _handleActiveFocusChange() {
+    final node = _activeFieldFocus;
+    if (node == null || node.hasFocus) return;
+    // Defer the hide so that focus moving to another paragraph (which rebinds
+    // _activeFieldFocus) cancels it. Tapping the toolbar keeps focus because
+    // its descendants are not focusable, so it never triggers this path.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (identical(_activeFieldFocus, node) && !node.hasFocus) {
+        _hideFormatToolbar();
+      }
+    });
+  }
+
+  /// Applies an inline run attribute to the live selection, or to the whole
+  /// paragraph when the cursor is collapsed — matching Word's behavior.
+  void _applyInlineFormat(RunAttr attr) {
+    final controller = _activeRunController;
+    if (controller == null) {
+      _toggleOpenXmlRunFormat(
+        bold: attr == RunAttr.bold,
+        italic: attr == RunAttr.italic,
+        underline: attr == RunAttr.underline,
+        strike: attr == RunAttr.strike,
+      );
+      return;
+    }
+    final selection = controller.selection;
+    final int start;
+    final int end;
+    if (selection.isValid && !selection.isCollapsed) {
+      start = selection.start;
+      end = selection.end;
+    } else {
+      start = 0;
+      end = controller.text.length;
+    }
+    if (end <= start) {
+      _showSnack('Type some text before applying formatting.');
+      return;
+    }
+    final active = controller.isActive(start, end, attr);
+    controller.setAttr(start, end, attr, !active);
+    setState(() {});
+    _formatToolbarEntry?.markNeedsBuild();
+  }
+
+  void _showFormatToolbar() {
+    if (!_isNativeOpenXmlEditor || _focusMode) {
+      _hideFormatToolbar();
+      return;
+    }
+    if (_formatToolbarEntry == null) {
+      _formatToolbarEntry = OverlayEntry(
+        builder: (_) => _buildFloatingToolbar(),
+      );
+      Overlay.of(context).insert(_formatToolbarEntry!);
+    } else {
+      _formatToolbarEntry!.markNeedsBuild();
+    }
+  }
+
+  void _hideFormatToolbar() {
+    _formatToolbarEntry?.remove();
+    _formatToolbarEntry = null;
+  }
+
+  /// Drops references to the active paragraph's (about-to-be-disposed)
+  /// controller when the whole document is swapped out.
+  void _resetActiveParagraph() {
+    _hideFormatToolbar();
+    _activeFieldFocus?.removeListener(_handleActiveFocusChange);
+    _activeFieldFocus = null;
+    _activeRunController = null;
+    _activeLayerLink = null;
+  }
+
+  Widget _buildFloatingToolbar() {
+    final link = _activeLayerLink;
+    if (link == null) {
+      return const SizedBox.shrink();
+    }
+    return CompositedTransformFollower(
+      link: link,
+      showWhenUnlinked: false,
+      targetAnchor: Alignment.topLeft,
+      followerAnchor: Alignment.bottomLeft,
+      offset: const Offset(0, -8),
+      child: FloatingFormatToolbar(
+        bold: _bold,
+        italic: _italic,
+        underline: _underline,
+        strikethrough: _strikethrough,
+        style: _style,
+        alignment: _alignment,
+        onBold: () => _applyInlineFormat(RunAttr.bold),
+        onItalic: () => _applyInlineFormat(RunAttr.italic),
+        onUnderline: () => _applyInlineFormat(RunAttr.underline),
+        onStrikethrough: () => _applyInlineFormat(RunAttr.strike),
+        onStyle: _applySelectedStyle,
+        onAlignment: (value) {
+          setState(() => _alignment = value);
+          if (_isNativeOpenXmlEditor) {
+            _updateActiveOpenXmlParagraph(
+              (block) =>
+                  block.copyWith(align: _openXmlAlignForRibbon(value)),
+            );
+          }
+          _formatToolbarEntry?.markNeedsBuild();
+        },
+      ),
+    );
   }
 
   void _toggleOpenXmlRunFormat({
@@ -765,6 +935,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
   }
 
   void _newDocument() {
+    _resetActiveParagraph();
     _srqController.setMarkdownSilently('');
     setState(() {
       _titleController.text = 'Untitled document';
@@ -1058,6 +1229,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
       return;
     }
 
+    _resetActiveParagraph();
     _srqController.setMarkdownSilently(cleanText);
     for (final font in customFonts) {
       await _registerCustomFont(font);
@@ -1279,6 +1451,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                       selected: entry.key == _template,
                       onTap: () {
                         Navigator.of(context).pop();
+                        _resetActiveParagraph();
                         _srqController.setMarkdownSilently(entry.value);
                         setState(() {
                           _template = entry.key;
@@ -1420,6 +1593,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                       trailing: TextButton(
                         onPressed: () {
                           Navigator.of(context).pop();
+                          _resetActiveParagraph();
                           _srqController.setMarkdownSilently(version.body);
                           setState(() {
                             _activeVersion = version.id;
@@ -1755,6 +1929,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
   }
 
   void _switchToOpenXmlEditing() {
+    _resetActiveParagraph();
     setState(() {
       if (_editMode == DocumentEditMode.wysiwyg) {
         _srqController.setMarkdownSilently(
@@ -1776,6 +1951,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
   }
 
   void _switchToWysiwyg() {
+    _resetActiveParagraph();
     setState(() {
       _wysiwygBlocks = WysiwygDocumentCodec.fromMarkdown(_markdownText);
       _quillDeltaJson = WysiwygDocumentCodec.toQuillDeltaJson(_wysiwygBlocks);
@@ -2377,7 +2553,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
           ToggleBoldIntent: CallbackAction<ToggleBoldIntent>(
             onInvoke: (_) {
               if (_isNativeOpenXmlEditor) {
-                _toggleOpenXmlRunFormat(bold: true);
+                _applyInlineFormat(RunAttr.bold);
               } else {
                 _srqController.toggleBold();
                 setState(() {});
@@ -2388,7 +2564,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
           ToggleItalicIntent: CallbackAction<ToggleItalicIntent>(
             onInvoke: (_) {
               if (_isNativeOpenXmlEditor) {
-                _toggleOpenXmlRunFormat(italic: true);
+                _applyInlineFormat(RunAttr.italic);
               } else {
                 _srqController.toggleItalic();
                 setState(() {});
@@ -2399,7 +2575,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
           ToggleUnderlineIntent: CallbackAction<ToggleUnderlineIntent>(
             onInvoke: (_) {
               if (_isNativeOpenXmlEditor) {
-                _toggleOpenXmlRunFormat(underline: true);
+                _applyInlineFormat(RunAttr.underline);
               } else {
                 _srqController.toggleUnderline();
                 setState(() {});
@@ -2410,7 +2586,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
           ToggleStrikethroughIntent: CallbackAction<ToggleStrikethroughIntent>(
             onInvoke: (_) {
               if (_isNativeOpenXmlEditor) {
-                _toggleOpenXmlRunFormat(strike: true);
+                _applyInlineFormat(RunAttr.strike);
               } else {
                 _srqController.toggleStrikethrough();
                 setState(() {});
@@ -2454,8 +2630,10 @@ class _DocumentStudioState extends State<DocumentStudio> {
                       onShare: _showShareSheet,
                       onHistory: _showVersionHistorySheet,
                       onExport: _showExportSheet,
-                      onToggleFocus: () =>
-                          setState(() => _focusMode = !_focusMode),
+                      onToggleFocus: () {
+                        setState(() => _focusMode = !_focusMode);
+                        if (_focusMode) _hideFormatToolbar();
+                      },
                     ),
                     if (!_focusMode)
                       Ribbon(
@@ -2481,7 +2659,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                         pageColor: _pageColor,
                         onBold: () {
                           if (_isNativeOpenXmlEditor) {
-                            _toggleOpenXmlRunFormat(bold: true);
+                            _applyInlineFormat(RunAttr.bold);
                           } else {
                             _srqController.toggleBold();
                             setState(() {});
@@ -2489,7 +2667,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                         },
                         onItalic: () {
                           if (_isNativeOpenXmlEditor) {
-                            _toggleOpenXmlRunFormat(italic: true);
+                            _applyInlineFormat(RunAttr.italic);
                           } else {
                             _srqController.toggleItalic();
                             setState(() {});
@@ -2497,7 +2675,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                         },
                         onUnderline: () {
                           if (_isNativeOpenXmlEditor) {
-                            _toggleOpenXmlRunFormat(underline: true);
+                            _applyInlineFormat(RunAttr.underline);
                           } else {
                             _srqController.toggleUnderline();
                             setState(() {});
@@ -2505,7 +2683,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                         },
                         onStrikethrough: () {
                           if (_isNativeOpenXmlEditor) {
-                            _toggleOpenXmlRunFormat(strike: true);
+                            _applyInlineFormat(RunAttr.strike);
                           } else {
                             _srqController.toggleStrikethrough();
                             setState(() {});
@@ -2643,7 +2821,10 @@ class _DocumentStudioState extends State<DocumentStudio> {
                               sourcePackageBytes: _sourcePackageBytes,
                               openXmlDocument: _openXmlDocument,
                               onOpenXmlDocumentChanged: _updateOpenXmlDocument,
-                              onOpenXmlParagraphFocused: _focusOpenXmlParagraph,
+                              onOpenXmlParagraphActivated:
+                                  _activateOpenXmlParagraph,
+                              onOpenXmlSelectionChanged:
+                                  _onOpenXmlSelectionChanged,
                               ooxmlBlocks: _ooxmlBlocks,
                               onOoxmlBlockChanged: _updateOoxmlBlock,
                               wysiwygBlocks: _wysiwygBlocks,
