@@ -41,6 +41,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
   final DocumentExportService _exportService = const DocumentExportService();
   final DocumentImportService _importService = const DocumentImportService();
   int _currentMatchIndex = -1;
+  int? _activeOpenXmlBlockIndex;
 
   bool _showRuler = true;
   bool _showNavigation = true;
@@ -125,10 +126,32 @@ class _DocumentStudioState extends State<DocumentStudio> {
 
   // ─── Selection-aware format state (computed from SrqController) ──────────────
 
-  bool get _bold => _srqController.selectionBoldActive;
-  bool get _italic => _srqController.selectionItalicActive;
-  bool get _underline => _srqController.selectionUnderlineActive;
-  bool get _strikethrough => _srqController.selectionStrikethroughActive;
+  OpenXmlParagraphBlock? get _activeOpenXmlParagraph {
+    final index = _activeOpenXmlBlockIndex;
+    if (index == null || index < 0 || index >= _openXmlDocument.blocks.length) {
+      for (final block in _openXmlDocument.blocks) {
+        if (block is OpenXmlParagraphBlock) {
+          return block;
+        }
+      }
+      return null;
+    }
+    final block = _openXmlDocument.blocks[index];
+    return block is OpenXmlParagraphBlock ? block : null;
+  }
+
+  bool get _bold => _isNativeOpenXmlEditor
+      ? _activeOpenXmlParagraph?.runs.any((run) => run.bold) ?? false
+      : _srqController.selectionBoldActive;
+  bool get _italic => _isNativeOpenXmlEditor
+      ? _activeOpenXmlParagraph?.runs.any((run) => run.italic) ?? false
+      : _srqController.selectionItalicActive;
+  bool get _underline => _isNativeOpenXmlEditor
+      ? _activeOpenXmlParagraph?.runs.any((run) => run.underline) ?? false
+      : _srqController.selectionUnderlineActive;
+  bool get _strikethrough => _isNativeOpenXmlEditor
+      ? _activeOpenXmlParagraph?.runs.any((run) => run.strike) ?? false
+      : _srqController.selectionStrikethroughActive;
 
   bool get _isNativeOpenXmlEditor =>
       _editMode == DocumentEditMode.openXml ||
@@ -575,6 +598,10 @@ class _DocumentStudioState extends State<DocumentStudio> {
   void _updateOpenXmlDocument(OpenXmlDocument document) {
     setState(() {
       _openXmlDocument = document;
+      if (_activeOpenXmlBlockIndex != null &&
+          _activeOpenXmlBlockIndex! >= document.blocks.length) {
+        _activeOpenXmlBlockIndex = null;
+      }
       _srqController.setMarkdownSilently(document.plainText);
       _saved = false;
     });
@@ -592,17 +619,22 @@ class _DocumentStudioState extends State<DocumentStudio> {
       _ooxmlBlocks = [];
       _sourcePackageFormat = null;
       _sourcePackageBytes = null;
+      _activeOpenXmlBlockIndex = _openXmlDocument.blocks.length - 1;
       _saved = false;
     });
   }
 
-  void _updateLastOpenXmlParagraph(
+  void _updateActiveOpenXmlParagraph(
     OpenXmlParagraphBlock Function(OpenXmlParagraphBlock block) update,
   ) {
     final blocks = List<OpenXmlBlock>.of(_openXmlDocument.blocks);
-    var index = blocks.lastIndexWhere(
-      (block) => block is OpenXmlParagraphBlock,
-    );
+    var index = _activeOpenXmlBlockIndex;
+    if (index == null ||
+        index < 0 ||
+        index >= blocks.length ||
+        blocks[index] is! OpenXmlParagraphBlock) {
+      index = blocks.lastIndexWhere((block) => block is OpenXmlParagraphBlock);
+    }
     if (index == -1) {
       blocks.add(const OpenXmlParagraphBlock(runs: [OpenXmlRun('')]));
       index = blocks.length - 1;
@@ -619,6 +651,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
       _ooxmlBlocks = [];
       _sourcePackageFormat = null;
       _sourcePackageBytes = null;
+      _activeOpenXmlBlockIndex = index;
       _saved = false;
     });
   }
@@ -649,13 +682,47 @@ class _DocumentStudioState extends State<DocumentStudio> {
     };
   }
 
+  String _ribbonStyleForOpenXml(OpenXmlTextStyle style) {
+    return switch (style) {
+      OpenXmlTextStyle.title => 'Title',
+      OpenXmlTextStyle.subtitle => 'Subtitle',
+      OpenXmlTextStyle.heading1 => 'Heading 1',
+      OpenXmlTextStyle.heading2 => 'Heading 2',
+      OpenXmlTextStyle.heading3 => 'Heading 3',
+      OpenXmlTextStyle.heading4 => 'Heading 4',
+      OpenXmlTextStyle.heading5 => 'Heading 5',
+      OpenXmlTextStyle.heading6 => 'Heading 6',
+      OpenXmlTextStyle.quote => 'Quote',
+      OpenXmlTextStyle.code => 'Code',
+      OpenXmlTextStyle.caption => 'Caption',
+      OpenXmlTextStyle.normal => 'Normal',
+    };
+  }
+
+  String _ribbonAlignForOpenXml(OoxmlTextAlign align) {
+    return switch (align) {
+      OoxmlTextAlign.center => 'Center',
+      OoxmlTextAlign.right => 'Right',
+      OoxmlTextAlign.justify => 'Justify',
+      OoxmlTextAlign.left => 'Left',
+    };
+  }
+
+  void _focusOpenXmlParagraph(int index, OpenXmlParagraphBlock block) {
+    setState(() {
+      _activeOpenXmlBlockIndex = index;
+      _style = _ribbonStyleForOpenXml(block.style);
+      _alignment = _ribbonAlignForOpenXml(block.align);
+    });
+  }
+
   void _toggleOpenXmlRunFormat({
     bool bold = false,
     bool italic = false,
     bool underline = false,
     bool strike = false,
   }) {
-    _updateLastOpenXmlParagraph((block) {
+    _updateActiveOpenXmlParagraph((block) {
       final runs = block.runs.isEmpty ? const [OpenXmlRun('')] : block.runs;
       return block.copyWith(
         runs: [
@@ -714,6 +781,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
       _sourcePackageFormat = null;
       _sourcePackageBytes = null;
       _editMode = DocumentEditMode.openXml;
+      _activeOpenXmlBlockIndex = 0;
       _captureVersion('Started blank document');
     });
     _editorFocusNode.requestFocus();
@@ -1027,6 +1095,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
           : sourcePackageBytes != null && sourcePackageFormat == 'docx'
           ? DocumentEditMode.docxView
           : DocumentEditMode.openXml;
+      _activeOpenXmlBlockIndex = 0;
       final importedFamily = selectedFontFamily?.trim();
       if (importedFamily != null &&
           importedFamily.isNotEmpty &&
@@ -1220,6 +1289,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                           _sourcePackageFormat = null;
                           _sourcePackageBytes = null;
                           _editMode = DocumentEditMode.openXml;
+                          _activeOpenXmlBlockIndex = 0;
                           _style = 'Normal';
                           _captureVersion('Applied ${entry.key} template');
                         });
@@ -1540,7 +1610,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
       _fontSize = size;
     });
     if (_isNativeOpenXmlEditor) {
-      _updateLastOpenXmlParagraph(
+      _updateActiveOpenXmlParagraph(
         (block) => block.copyWith(style: _openXmlStyleForRibbon(value)),
       );
       return;
@@ -1698,6 +1768,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
       _ooxmlBlocks = [];
       _sourcePackageFormat = null;
       _sourcePackageBytes = null;
+      _activeOpenXmlBlockIndex = 0;
       _saved = false;
     });
     _editorFocusNode.requestFocus();
@@ -2455,7 +2526,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                         onAlignment: (value) {
                           setState(() => _alignment = value);
                           if (_isNativeOpenXmlEditor) {
-                            _updateLastOpenXmlParagraph(
+                            _updateActiveOpenXmlParagraph(
                               (block) => block.copyWith(
                                 align: _openXmlAlignForRibbon(value),
                               ),
@@ -2572,6 +2643,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                               sourcePackageBytes: _sourcePackageBytes,
                               openXmlDocument: _openXmlDocument,
                               onOpenXmlDocumentChanged: _updateOpenXmlDocument,
+                              onOpenXmlParagraphFocused: _focusOpenXmlParagraph,
                               ooxmlBlocks: _ooxmlBlocks,
                               onOoxmlBlockChanged: _updateOoxmlBlock,
                               wysiwygBlocks: _wysiwygBlocks,

@@ -29,6 +29,7 @@ class EditorWorkspace extends StatelessWidget {
     required this.sourcePackageFormat,
     required this.openXmlDocument,
     required this.onOpenXmlDocumentChanged,
+    required this.onOpenXmlParagraphFocused,
     required this.ooxmlBlocks,
     required this.onOoxmlBlockChanged,
     required this.wysiwygBlocks,
@@ -61,6 +62,8 @@ class EditorWorkspace extends StatelessWidget {
   final String? sourcePackageFormat;
   final OpenXmlDocument openXmlDocument;
   final ValueChanged<OpenXmlDocument> onOpenXmlDocumentChanged;
+  final void Function(int index, OpenXmlParagraphBlock block)
+  onOpenXmlParagraphFocused;
   final List<OoxmlVisualBlock> ooxmlBlocks;
   final void Function(int index, OoxmlVisualBlock block) onOoxmlBlockChanged;
   final List<WysiwygBlock> wysiwygBlocks;
@@ -271,6 +274,8 @@ class EditorWorkspace extends StatelessWidget {
                                         style: editorStyle,
                                         textAlign: textAlign,
                                         onChanged: onOpenXmlDocumentChanged,
+                                        onParagraphFocused:
+                                            onOpenXmlParagraphFocused,
                                       )
                                     else
                                       TextField(
@@ -521,12 +526,15 @@ class _OpenXmlStructuredEditor extends StatelessWidget {
     required this.style,
     required this.textAlign,
     required this.onChanged,
+    required this.onParagraphFocused,
   });
 
   final OpenXmlDocument document;
   final TextStyle style;
   final TextAlign textAlign;
   final ValueChanged<OpenXmlDocument> onChanged;
+  final void Function(int index, OpenXmlParagraphBlock block)
+  onParagraphFocused;
 
   @override
   Widget build(BuildContext context) {
@@ -584,6 +592,7 @@ class _OpenXmlStructuredEditor extends StatelessWidget {
         style: _styleForParagraph(block),
         textAlign: _flutterAlignFor(block.align, textAlign),
         onChanged: (updated) => _replaceBlock(index, updated),
+        onFocused: () => onParagraphFocused(index, block),
         onInsertAfter: () => _insertBlock(
           index,
           const OpenXmlParagraphBlock(runs: [OpenXmlRun('')]),
@@ -719,6 +728,7 @@ class _OpenXmlParagraphEditor extends StatelessWidget {
     required this.style,
     required this.textAlign,
     required this.onChanged,
+    required this.onFocused,
     required this.onInsertAfter,
     required this.onRemove,
   });
@@ -727,6 +737,7 @@ class _OpenXmlParagraphEditor extends StatelessWidget {
   final TextStyle style;
   final TextAlign textAlign;
   final ValueChanged<OpenXmlParagraphBlock> onChanged;
+  final VoidCallback onFocused;
   final VoidCallback onInsertAfter;
   final VoidCallback onRemove;
 
@@ -753,311 +764,44 @@ class _OpenXmlParagraphEditor extends StatelessWidget {
               ],
             ),
           ),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _OpenXmlParagraphFormatBar(
-                    block: block,
-                    onStyleChanged: (value) =>
-                        onChanged(block.copyWith(style: value)),
-                    onAlignChanged: (value) =>
-                        onChanged(block.copyWith(align: value)),
-                    onToggleBold: () =>
-                        onChanged(_copyWithRunFormat(block, toggleBold: true)),
-                    onToggleItalic: () => onChanged(
-                      _copyWithRunFormat(block, toggleItalic: true),
-                    ),
-                    onToggleUnderline: () => onChanged(
-                      _copyWithRunFormat(block, toggleUnderline: true),
-                    ),
-                    onToggleStrike: () => onChanged(
-                      _copyWithRunFormat(block, toggleStrike: true),
-                    ),
-                    onInsertAfter: onInsertAfter,
-                    onRemove: onRemove,
-                  ),
-                  const SizedBox(height: 6),
-                  TextFormField(
-                    initialValue: block.plainText,
-                    maxLines: null,
-                    keyboardType: TextInputType.multiline,
-                    textAlign: textAlign,
-                    style: style,
-                    cursorColor: const Color(0xff2563eb),
-                    decoration: InputDecoration(
-                      border: InputBorder.none,
-                      isDense: true,
-                      hintText: block.style == OpenXmlTextStyle.title
-                          ? 'Document title'
-                          : 'Type here',
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    onChanged: (value) {
-                      final previous = block.runs.isEmpty
-                          ? const OpenXmlRun('')
-                          : block.runs.first;
-                      onChanged(
-                        block.copyWith(
-                          runs: [
-                            OpenXmlRun(
-                              value,
-                              bold: previous.bold,
-                              italic: previous.italic,
-                              underline: previous.underline,
-                              strike: previous.strike,
-                              href: previous.href,
-                            ),
-                          ],
-                        ),
-                      );
-                    },
+        TextFormField(
+          initialValue: block.plainText,
+          maxLines: null,
+          keyboardType: TextInputType.multiline,
+          textAlign: textAlign,
+          style: style,
+          cursorColor: const Color(0xff2563eb),
+          decoration: InputDecoration(
+            border: InputBorder.none,
+            isDense: true,
+            hintText: block.style == OpenXmlTextStyle.title
+                ? 'Document title'
+                : 'Type here',
+            contentPadding: EdgeInsets.zero,
+          ),
+          onTap: onFocused,
+          onChanged: (value) {
+            onFocused();
+            final previous = block.runs.isEmpty
+                ? const OpenXmlRun('')
+                : block.runs.first;
+            onChanged(
+              block.copyWith(
+                runs: [
+                  OpenXmlRun(
+                    value,
+                    bold: previous.bold,
+                    italic: previous.italic,
+                    underline: previous.underline,
+                    strike: previous.strike,
+                    href: previous.href,
                   ),
                 ],
               ),
-            ),
-          ],
+            );
+          },
         ),
       ],
-    );
-  }
-
-  OpenXmlParagraphBlock _copyWithRunFormat(
-    OpenXmlParagraphBlock block, {
-    bool toggleBold = false,
-    bool toggleItalic = false,
-    bool toggleUnderline = false,
-    bool toggleStrike = false,
-  }) {
-    final runs = block.runs.isEmpty ? const [OpenXmlRun('')] : block.runs;
-    return block.copyWith(
-      runs: [
-        for (final run in runs)
-          OpenXmlRun(
-            run.text,
-            bold: toggleBold ? !run.bold : run.bold,
-            italic: toggleItalic ? !run.italic : run.italic,
-            underline: toggleUnderline ? !run.underline : run.underline,
-            strike: toggleStrike ? !run.strike : run.strike,
-            href: run.href,
-          ),
-      ],
-    );
-  }
-}
-
-class _OpenXmlParagraphFormatBar extends StatelessWidget {
-  const _OpenXmlParagraphFormatBar({
-    required this.block,
-    required this.onStyleChanged,
-    required this.onAlignChanged,
-    required this.onToggleBold,
-    required this.onToggleItalic,
-    required this.onToggleUnderline,
-    required this.onToggleStrike,
-    required this.onInsertAfter,
-    required this.onRemove,
-  });
-
-  final OpenXmlParagraphBlock block;
-  final ValueChanged<OpenXmlTextStyle> onStyleChanged;
-  final ValueChanged<OoxmlTextAlign> onAlignChanged;
-  final VoidCallback onToggleBold;
-  final VoidCallback onToggleItalic;
-  final VoidCallback onToggleUnderline;
-  final VoidCallback onToggleStrike;
-  final VoidCallback onInsertAfter;
-  final VoidCallback onRemove;
-
-  bool get _bold => block.runs.any((run) => run.bold);
-  bool get _italic => block.runs.any((run) => run.italic);
-  bool get _underline => block.runs.any((run) => run.underline);
-  bool get _strike => block.runs.any((run) => run.strike);
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: const Color(0xfff8fafc),
-        border: Border.all(color: const Color(0xffdbe3ef)),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-        child: Wrap(
-          spacing: 4,
-          runSpacing: 4,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            SizedBox(
-              width: 136,
-              height: 32,
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<OpenXmlTextStyle>(
-                  value: block.style,
-                  isExpanded: true,
-                  iconSize: 18,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: const Color(0xff0f172a),
-                    fontWeight: FontWeight.w700,
-                  ),
-                  items: [
-                    for (final value in OpenXmlTextStyle.values)
-                      DropdownMenuItem(
-                        value: value,
-                        child: Text(
-                          value.label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) {
-                      onStyleChanged(value);
-                    }
-                  },
-                ),
-              ),
-            ),
-            _MiniToggle(
-              icon: Icons.format_bold,
-              selected: _bold,
-              tooltip: 'Bold',
-              onPressed: onToggleBold,
-            ),
-            _MiniToggle(
-              icon: Icons.format_italic,
-              selected: _italic,
-              tooltip: 'Italic',
-              onPressed: onToggleItalic,
-            ),
-            _MiniToggle(
-              icon: Icons.format_underlined,
-              selected: _underline,
-              tooltip: 'Underline',
-              onPressed: onToggleUnderline,
-            ),
-            _MiniToggle(
-              icon: Icons.format_strikethrough,
-              selected: _strike,
-              tooltip: 'Strikethrough',
-              onPressed: onToggleStrike,
-            ),
-            const SizedBox(width: 2),
-            _MiniToggle(
-              icon: Icons.format_align_left,
-              selected: block.align == OoxmlTextAlign.left,
-              tooltip: 'Align left',
-              onPressed: () => onAlignChanged(OoxmlTextAlign.left),
-            ),
-            _MiniToggle(
-              icon: Icons.format_align_center,
-              selected: block.align == OoxmlTextAlign.center,
-              tooltip: 'Align center',
-              onPressed: () => onAlignChanged(OoxmlTextAlign.center),
-            ),
-            _MiniToggle(
-              icon: Icons.format_align_right,
-              selected: block.align == OoxmlTextAlign.right,
-              tooltip: 'Align right',
-              onPressed: () => onAlignChanged(OoxmlTextAlign.right),
-            ),
-            _MiniToggle(
-              icon: Icons.format_align_justify,
-              selected: block.align == OoxmlTextAlign.justify,
-              tooltip: 'Justify',
-              onPressed: () => onAlignChanged(OoxmlTextAlign.justify),
-            ),
-            const SizedBox(width: 2),
-            _MiniCommand(
-              icon: Icons.add,
-              tooltip: 'Insert paragraph below',
-              onInsertAfter: onInsertAfter,
-            ),
-            _MiniCommand(
-              icon: Icons.delete_outline,
-              tooltip: 'Remove paragraph',
-              onInsertAfter: onRemove,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MiniToggle extends StatelessWidget {
-  const _MiniToggle({
-    required this.icon,
-    required this.selected,
-    required this.tooltip,
-    required this.onPressed,
-  });
-
-  final IconData icon;
-  final bool selected;
-  final String tooltip;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: IconButton(
-        onPressed: onPressed,
-        icon: Icon(icon, size: 17),
-        visualDensity: VisualDensity.compact,
-        style: IconButton.styleFrom(
-          fixedSize: const Size(32, 32),
-          minimumSize: const Size(32, 32),
-          padding: EdgeInsets.zero,
-          foregroundColor: selected
-              ? const Color(0xff1d4ed8)
-              : const Color(0xff334155),
-          backgroundColor: selected ? const Color(0xffdbeafe) : Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
-          side: BorderSide(
-            color: selected ? const Color(0xff93c5fd) : const Color(0xffe2e8f0),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _MiniCommand extends StatelessWidget {
-  const _MiniCommand({
-    required this.icon,
-    required this.tooltip,
-    required this.onInsertAfter,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onInsertAfter;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: IconButton(
-        onPressed: onInsertAfter,
-        icon: Icon(icon, size: 17),
-        visualDensity: VisualDensity.compact,
-        style: IconButton.styleFrom(
-          fixedSize: const Size(32, 32),
-          minimumSize: const Size(32, 32),
-          padding: EdgeInsets.zero,
-          foregroundColor: const Color(0xff334155),
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
-          side: const BorderSide(color: Color(0xffe2e8f0)),
-        ),
-      ),
     );
   }
 }
