@@ -164,6 +164,7 @@ class OpenXmlRun {
     this.italic = false,
     this.underline = false,
     this.strike = false,
+    this.colorHex,
     this.href,
   });
 
@@ -172,6 +173,7 @@ class OpenXmlRun {
   final bool italic;
   final bool underline;
   final bool strike;
+  final String? colorHex;
   final String? href;
 
   docx.DocxText toDocxText() {
@@ -183,6 +185,7 @@ class OpenXmlRun {
         if (underline) docx.DocxTextDecoration.underline,
         if (strike) docx.DocxTextDecoration.strikethrough,
       ],
+      color: colorHex == null ? null : docx.DocxColor(colorHex!),
       href: href,
     );
   }
@@ -194,6 +197,7 @@ class OpenXmlRun {
       if (italic) 'italic': true,
       if (underline) 'underline': true,
       if (strike) 'strike': true,
+      if (colorHex != null) 'colorHex': colorHex,
       if (href != null) 'href': href,
     };
   }
@@ -596,9 +600,21 @@ List<OpenXmlRun> _openXmlRunsFromJson(Object? value) {
           italic: item['italic'] == true,
           underline: item['underline'] == true,
           strike: item['strike'] == true,
+          colorHex: item['colorHex'] is String
+              ? _normalizeOpenXmlColor(item['colorHex'] as String)
+              : null,
           href: item['href'] is String ? item['href'] as String : null,
         ),
   ];
+}
+
+String? _normalizeOpenXmlColor(String value) {
+  final cleaned = value
+      .trim()
+      .replaceFirst('#', '')
+      .replaceFirst('0x', '')
+      .toUpperCase();
+  return RegExp(r'^[0-9A-F]{6}$').hasMatch(cleaned) ? cleaned : null;
 }
 
 List<List<String>> _openXmlRowsFromJson(Object? value) {

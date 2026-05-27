@@ -15,6 +15,7 @@ class CharFormat {
     this.italic = false,
     this.underline = false,
     this.strike = false,
+    this.colorHex,
     this.href,
   });
 
@@ -22,6 +23,7 @@ class CharFormat {
   final bool italic;
   final bool underline;
   final bool strike;
+  final String? colorHex;
   final String? href;
 
   CharFormat copyWith({
@@ -29,6 +31,8 @@ class CharFormat {
     bool? italic,
     bool? underline,
     bool? strike,
+    String? colorHex,
+    bool clearColor = false,
     String? href,
   }) {
     return CharFormat(
@@ -36,6 +40,7 @@ class CharFormat {
       italic: italic ?? this.italic,
       underline: underline ?? this.underline,
       strike: strike ?? this.strike,
+      colorHex: clearColor ? null : colorHex ?? this.colorHex,
       href: href ?? this.href,
     );
   }
@@ -59,6 +64,7 @@ class CharFormat {
       italic == other.italic &&
       underline == other.underline &&
       strike == other.strike &&
+      colorHex == other.colorHex &&
       href == other.href;
 }
 
@@ -82,6 +88,7 @@ class RichRunController extends TextEditingController {
         italic: run.italic,
         underline: run.underline,
         strike: run.strike,
+        colorHex: _normalizeColorHex(run.colorHex),
         href: run.href,
       );
       for (var i = 0; i < run.text.length; i += 1) {
@@ -118,14 +125,17 @@ class RichRunController extends TextEditingController {
     italic: format.italic,
     underline: format.underline,
     strike: format.strike,
+    colorHex: format.colorHex,
     href: format.href,
   );
 
   /// Replaces the formatting map (e.g. when the backing block is swapped for
   /// an unrelated document) without disturbing the text the field already has.
-  void resetRuns(List<OpenXmlRun> runs) {
+  void resetRuns(List<OpenXmlRun> runs, {bool notify = true}) {
     _formats = _expand(runs);
-    notifyListeners();
+    if (notify) {
+      notifyListeners();
+    }
   }
 
   @override
@@ -205,6 +215,52 @@ class RichRunController extends TextEditingController {
     notifyListeners();
   }
 
+  String? colorAt(int start, int end) {
+    final lo = start.clamp(0, _formats.length);
+    final hi = end.clamp(0, _formats.length);
+    if (lo >= hi) {
+      return null;
+    }
+    final first = _formats[lo].colorHex;
+    for (var i = lo + 1; i < hi; i += 1) {
+      if (_formats[i].colorHex != first) {
+        return null;
+      }
+    }
+    return first;
+  }
+
+  bool anyColor(int start, int end, String colorHex) {
+    final normalized = _normalizeColorHex(colorHex);
+    if (normalized == null) {
+      return false;
+    }
+    final lo = start.clamp(0, _formats.length);
+    final hi = end.clamp(0, _formats.length);
+    for (var i = lo; i < hi; i += 1) {
+      if (_formats[i].colorHex == normalized) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void setColor(int start, int end, String colorHex) {
+    final normalized = _normalizeColorHex(colorHex);
+    if (normalized == null) {
+      return;
+    }
+    final lo = start.clamp(0, _formats.length);
+    final hi = end.clamp(0, _formats.length);
+    if (lo >= hi) {
+      return;
+    }
+    for (var i = lo; i < hi; i += 1) {
+      _formats[i] = _formats[i].copyWith(colorHex: normalized);
+    }
+    notifyListeners();
+  }
+
   @override
   TextSpan buildTextSpan({
     required BuildContext context,
@@ -251,9 +307,28 @@ class RichRunController extends TextEditingController {
       decoration: decorations.isEmpty
           ? base.decoration
           : TextDecoration.combine(decorations),
-      color: format.href != null ? const Color(0xff2563eb) : base.color,
+      color:
+          _colorFromHex(format.colorHex) ??
+          (format.href != null ? const Color(0xff2563eb) : base.color),
     );
   }
+}
+
+String? _normalizeColorHex(String? value) {
+  if (value == null) {
+    return null;
+  }
+  final cleaned = value
+      .trim()
+      .replaceFirst('#', '')
+      .replaceFirst('0x', '')
+      .toUpperCase();
+  return RegExp(r'^[0-9A-F]{6}$').hasMatch(cleaned) ? cleaned : null;
+}
+
+Color? _colorFromHex(String? value) {
+  final hex = _normalizeColorHex(value);
+  return hex == null ? null : Color(int.parse('0xff$hex'));
 }
 
 /// Microsoft Word style floating mini-toolbar that appears next to the active

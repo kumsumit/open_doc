@@ -68,7 +68,6 @@ class EditorWorkspace extends StatelessWidget {
     int index,
     OpenXmlParagraphBlock block,
     RichRunController controller,
-    LayerLink link,
     FocusNode focusNode,
   )
   onOpenXmlParagraphActivated;
@@ -549,7 +548,6 @@ class _OpenXmlStructuredEditor extends StatelessWidget {
     int index,
     OpenXmlParagraphBlock block,
     RichRunController controller,
-    LayerLink link,
     FocusNode focusNode,
   )
   onParagraphActivated;
@@ -742,7 +740,6 @@ class _OpenXmlParagraphEditor extends StatefulWidget {
     int index,
     OpenXmlParagraphBlock block,
     RichRunController controller,
-    LayerLink link,
     FocusNode focusNode,
   )
   onActivated;
@@ -756,7 +753,6 @@ class _OpenXmlParagraphEditor extends StatefulWidget {
 class _OpenXmlParagraphEditorState extends State<_OpenXmlParagraphEditor> {
   late RichRunController _controller;
   final FocusNode _focusNode = FocusNode();
-  final LayerLink _link = LayerLink();
   TextSelection _lastSelection = const TextSelection.collapsed(offset: 0);
   late String _lastText;
   late String _lastSignature;
@@ -784,6 +780,12 @@ class _OpenXmlParagraphEditorState extends State<_OpenXmlParagraphEditor> {
       _lastText = _controller.text;
       _lastSignature = _runSignature(_controller.runs);
       _controller.addListener(_handleControllerChanged);
+    } else {
+      final blockSignature = _runSignature(widget.block.runs);
+      if (blockSignature != _lastSignature) {
+        _lastSignature = blockSignature;
+        _controller.resetRuns(widget.block.runs, notify: false);
+      }
     }
   }
 
@@ -792,7 +794,8 @@ class _OpenXmlParagraphEditorState extends State<_OpenXmlParagraphEditor> {
         .map(
           (run) =>
               '${run.text.length}:${run.bold ? 1 : 0}${run.italic ? 1 : 0}'
-              '${run.underline ? 1 : 0}${run.strike ? 1 : 0}',
+              '${run.underline ? 1 : 0}${run.strike ? 1 : 0}'
+              ':${run.colorHex ?? ''}',
         )
         .join('|');
   }
@@ -807,7 +810,7 @@ class _OpenXmlParagraphEditorState extends State<_OpenXmlParagraphEditor> {
 
   void _handleFocusChanged() {
     if (_focusNode.hasFocus) {
-      widget.onActivated(widget.index, widget.block, _controller, _link, _focusNode);
+      widget.onActivated(widget.index, widget.block, _controller, _focusNode);
     }
   }
 
@@ -851,31 +854,27 @@ class _OpenXmlParagraphEditorState extends State<_OpenXmlParagraphEditor> {
               ],
             ),
           ),
-        CompositedTransformTarget(
-          link: _link,
-          child: TextField(
-            controller: _controller,
-            focusNode: _focusNode,
-            maxLines: null,
-            keyboardType: TextInputType.multiline,
-            textAlign: widget.textAlign,
-            style: widget.style,
-            cursorColor: const Color(0xff2563eb),
-            decoration: InputDecoration(
-              border: InputBorder.none,
-              isDense: true,
-              hintText: widget.block.style == OpenXmlTextStyle.title
-                  ? 'Document title'
-                  : 'Type here',
-              contentPadding: EdgeInsets.zero,
-            ),
-            onTap: () => widget.onActivated(
-              widget.index,
-              widget.block,
-              _controller,
-              _link,
-              _focusNode,
-            ),
+        TextField(
+          controller: _controller,
+          focusNode: _focusNode,
+          maxLines: null,
+          keyboardType: TextInputType.multiline,
+          textAlign: widget.textAlign,
+          style: widget.style,
+          cursorColor: const Color(0xff2563eb),
+          decoration: InputDecoration(
+            border: InputBorder.none,
+            isDense: true,
+            hintText: widget.block.style == OpenXmlTextStyle.title
+                ? 'Document title'
+                : 'Type here',
+            contentPadding: EdgeInsets.zero,
+          ),
+          onTap: () => widget.onActivated(
+            widget.index,
+            widget.block,
+            _controller,
+            _focusNode,
           ),
         ),
       ],

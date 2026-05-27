@@ -235,6 +235,7 @@ class DocumentImportService {
                   italic: child.isItalic,
                   underline: child.isUnderline,
                   strike: child.isStrike,
+                  colorHex: child.color?.hex,
                   href: child.href,
                 ),
             ],

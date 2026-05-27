@@ -1,8 +1,8 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:open_doc/app.dart';
@@ -11,6 +11,7 @@ import 'package:open_doc/src/services/document_export_service.dart';
 import 'package:open_doc/src/services/document_import_service.dart';
 import 'package:open_doc/src/services/language_support_service.dart';
 import 'package:open_doc/src/services/document_models.dart';
+import 'package:open_doc/src/ui/inline_format.dart';
 
 void main() {
   const exportService = DocumentExportService();
@@ -301,6 +302,7 @@ Open Doc writes real DOCX files now.
               runs: [
                 OpenXmlRun('Plain run with '),
                 OpenXmlRun('bold', bold: true),
+                OpenXmlRun(' and blue', colorHex: '1D4ED8'),
               ],
             ),
             OpenXmlTableBlock(
@@ -321,6 +323,7 @@ Open Doc writes real DOCX files now.
     expect(documentXml, contains('Native OpenXML heading'));
     expect(documentXml, contains('Heading1'));
     expect(documentXml, contains('<w:b/>'));
+    expect(documentXml, contains('w:color w:val="1D4ED8"'));
     expect(documentXml, contains('OpenXML model'));
     expect(documentXml, isNot(contains('Legacy compatibility text')));
   });
@@ -764,6 +767,114 @@ Second page content.
 
     expect(find.text('Resume'), findsOneWidget);
     expect(find.text('Contract'), findsOneWidget);
+  });
+
+  testWidgets('ribbon formatting applies to selected OpenXML text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1440, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(const OpenDocApp());
+    await tester.pumpAndSettle();
+
+    final paragraphFinder = find.byWidgetPredicate(
+      (widget) =>
+          widget is EditableText &&
+          widget.controller is RichRunController &&
+          widget.controller.text.startsWith('Executive summary'),
+    );
+    expect(paragraphFinder, findsOneWidget);
+
+    await tester.tap(paragraphFinder);
+    await tester.pump();
+
+    var paragraph = tester.widget<EditableText>(paragraphFinder);
+    const selectedText = 'Executive';
+    paragraph.controller.selection = const TextSelection(
+      baseOffset: 0,
+      extentOffset: selectedText.length,
+    );
+    await tester.pump();
+
+    final boldButton = find.widgetWithIcon(IconButton, Icons.format_bold).first;
+    await tester.ensureVisible(boldButton);
+    await tester.tap(boldButton);
+    await tester.pumpAndSettle();
+
+    paragraph = tester.widget<EditableText>(paragraphFinder);
+    final controller = paragraph.controller as RichRunController;
+    expect(controller.isActive(0, selectedText.length, RunAttr.bold), isTrue);
+    expect(
+      controller.anyActive(
+        selectedText.length,
+        controller.text.length,
+        RunAttr.bold,
+      ),
+      isFalse,
+    );
+    expect(paragraph.focusNode.hasFocus, isTrue);
+    expect(find.byType(FloatingFormatToolbar), findsNothing);
+
+    await tester.scrollUntilVisible(
+      find.byTooltip('Ink').last,
+      220,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    paragraph = tester.widget<EditableText>(paragraphFinder);
+    FocusManager.instance.primaryFocus?.unfocus();
+    paragraph.controller.selection = TextSelection.collapsed(
+      offset: selectedText.length,
+    );
+    await tester.pump();
+
+    await tester.tap(find.byTooltip('Ink').last);
+    await tester.pump();
+
+    paragraph = tester.widget<EditableText>(paragraphFinder);
+    final coloredController = paragraph.controller as RichRunController;
+    expect(
+      coloredController.anyColor(0, selectedText.length, '1D4ED8'),
+      isTrue,
+    );
+    expect(
+      coloredController.anyColor(
+        selectedText.length,
+        coloredController.text.length,
+        '1D4ED8',
+      ),
+      isFalse,
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.meta);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.meta);
+    await tester.pump();
+
+    paragraph = tester.widget<EditableText>(paragraphFinder);
+    final undoneController = paragraph.controller as RichRunController;
+    expect(
+      undoneController.isActive(0, selectedText.length, RunAttr.bold),
+      isTrue,
+    );
+    expect(
+      undoneController.anyColor(0, selectedText.length, '1D4ED8'),
+      isFalse,
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.meta);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shift);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shift);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.meta);
+    await tester.pump();
+
+    paragraph = tester.widget<EditableText>(paragraphFinder);
+    final redoneController = paragraph.controller as RichRunController;
+    expect(redoneController.anyColor(0, selectedText.length, '1D4ED8'), isTrue);
   });
 
   testWidgets('Open Doc adapts to phone and landscape sizes', (tester) async {
