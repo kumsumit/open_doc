@@ -3,6 +3,7 @@ import 'package:markdown/markdown.dart' as md;
 import '../docx.dart';
 import '../utils/document_builder.dart';
 import '../utils/image_resolver.dart';
+import 'html/color_utils.dart';
 
 /// Parses Markdown content into [DocxNode] elements.
 class MarkdownParser {
@@ -27,7 +28,9 @@ class MarkdownParser {
 
     try {
       // Enable GFM (tables, strikethrough, autolinks, task lists)
-      final document = md.Document(extensionSet: md.ExtensionSet.gitHubFlavored);
+      final document = md.Document(
+        extensionSet: md.ExtensionSet.gitHubFlavored,
+      );
       final nodes = document.parseLines(markdown.split('\n'));
       return _parseNodes(nodes);
     } catch (e) {
@@ -71,10 +74,7 @@ class MarkdownParser {
         // For blockquote, we might want to wrap/style each child paragraph as a quote
         return children.map((node) {
           if (node is DocxParagraph) {
-            return node.copyWith(
-              styleId: 'Quote',
-              indentLeft: 720,
-            );
+            return node.copyWith(styleId: 'Quote', indentLeft: 720);
           }
           return node;
         }).toList();
@@ -100,8 +100,10 @@ class MarkdownParser {
       // Paragraph
       case 'p':
         if (inlines.isEmpty) return [];
-        final p =
-            DocumentBuilder.buildBlockElement(tag: 'p', children: inlines);
+        final p = DocumentBuilder.buildBlockElement(
+          tag: 'p',
+          children: inlines,
+        );
         return p != null ? [p] : [];
 
       // Lists
@@ -116,8 +118,10 @@ class MarkdownParser {
 
       default:
         if (inlines.isNotEmpty) {
-          final p =
-              DocumentBuilder.buildBlockElement(tag: 'p', children: inlines);
+          final p = DocumentBuilder.buildBlockElement(
+            tag: 'p',
+            children: inlines,
+          );
           return p != null ? [p] : [];
         }
         return [];
@@ -162,27 +166,30 @@ class MarkdownParser {
         case 'strike':
           return children.map((c) {
             if (c is DocxText) {
-              return c.copyWith(decorations: [
-                ...c.decorations,
-                DocxTextDecoration.strikethrough
-              ]);
+              return c.copyWith(
+                decorations: [
+                  ...c.decorations,
+                  DocxTextDecoration.strikethrough,
+                ],
+              );
             }
             return c;
           }).toList();
         case 'u':
           return children.map((c) {
             if (c is DocxText) {
-              return c.copyWith(decorations: [
-                ...c.decorations,
-                DocxTextDecoration.underline
-              ]);
+              return c.copyWith(
+                decorations: [...c.decorations, DocxTextDecoration.underline],
+              );
             }
             return c;
           }).toList();
         case 'code':
           if (children.every((c) => c is DocxText)) {
             return [
-              DocxText.code(children.map((c) => (c as DocxText).content).join())
+              DocxText.code(
+                children.map((c) => (c as DocxText).content).join(),
+              ),
             ];
           }
           return children;
@@ -195,6 +202,17 @@ class MarkdownParser {
                 color: DocxColor.blue,
                 decorations: [...c.decorations, DocxTextDecoration.underline],
               );
+            }
+            return c;
+          }).toList();
+        case 'span':
+          final colorHex = _spanColor(node.attributes['style']);
+          if (colorHex == null) {
+            return children;
+          }
+          return children.map((c) {
+            if (c is DocxText) {
+              return c.copyWith(color: DocxColor(colorHex));
             }
             return c;
           }).toList();
@@ -214,7 +232,7 @@ class MarkdownParser {
                 width: result.width,
                 height: result.height,
                 altText: result.altText,
-              )
+              ),
             ];
           }
           return [
@@ -236,6 +254,16 @@ class MarkdownParser {
     }
 
     return [];
+  }
+
+  static String? _spanColor(String? style) {
+    if (style == null) return null;
+    final match = RegExp(
+      r"(?<!-)color:\s*['\x22]?([^;'\x22]+)['\x22]?",
+      caseSensitive: false,
+    ).firstMatch(style);
+    final value = match?.group(1);
+    return value == null ? null : ColorUtils.parseColor(value);
   }
 
   static Future<DocxList> _parseList(
@@ -261,8 +289,11 @@ class MarkdownParser {
           if (node is md.Element && (node.tag == 'ul' || node.tag == 'ol')) {
             flushInlines();
             // Found nested list
-            final nested = await _parseList(node,
-                ordered: node.tag == 'ol', level: level + 1);
+            final nested = await _parseList(
+              node,
+              ordered: node.tag == 'ol',
+              level: level + 1,
+            );
             items.addAll(nested.items);
           } else if (node is md.Element && node.tag == 'p') {
             flushInlines();
@@ -293,7 +324,8 @@ class MarkdownParser {
           for (var tr in child.children ?? []) {
             if (tr is md.Element && tr.tag == 'tr') {
               rows.add(
-                  await _parseTableRow(tr, isHeader: child.tag == 'thead'));
+                await _parseTableRow(tr, isHeader: child.tag == 'thead'),
+              );
             }
           }
         } else if (child.tag == 'tr') {
@@ -305,8 +337,10 @@ class MarkdownParser {
     return DocxTable(rows: rows, style: DocxTableStyle.headerHighlight);
   }
 
-  static Future<DocxTableRow> _parseTableRow(md.Element tr,
-      {required bool isHeader}) async {
+  static Future<DocxTableRow> _parseTableRow(
+    md.Element tr, {
+    required bool isHeader,
+  }) async {
     final cells = <DocxTableCell>[];
 
     for (var child in tr.children ?? []) {
@@ -323,11 +357,7 @@ class MarkdownParser {
         cells.add(
           DocxTableCell(
             shadingFill: isHeader ? 'E0E0E0' : null,
-            children: [
-              DocxParagraph(
-                children: inlines,
-              )
-            ],
+            children: [DocxParagraph(children: inlines)],
           ),
         );
       }

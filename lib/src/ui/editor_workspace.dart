@@ -36,6 +36,8 @@ class EditorWorkspace extends StatelessWidget {
     required this.onOoxmlBlockChanged,
     required this.wysiwygBlocks,
     required this.quillDeltaJson,
+    required this.wysiwygInkCommandColor,
+    required this.wysiwygInkCommandId,
     required this.onWysiwygBlockChanged,
     required this.onQuillDeltaChanged,
     required this.onAddWysiwygBlockAfter,
@@ -76,6 +78,8 @@ class EditorWorkspace extends StatelessWidget {
   final void Function(int index, OoxmlVisualBlock block) onOoxmlBlockChanged;
   final List<WysiwygBlock> wysiwygBlocks;
   final List<Object?> quillDeltaJson;
+  final Color? wysiwygInkCommandColor;
+  final int wysiwygInkCommandId;
   final void Function(int index, WysiwygBlock block) onWysiwygBlockChanged;
   final ValueChanged<List<Object?>> onQuillDeltaChanged;
   final ValueChanged<int> onAddWysiwygBlockAfter;
@@ -272,6 +276,8 @@ class EditorWorkspace extends StatelessWidget {
                                       _QuillWysiwygEditor(
                                         blocks: wysiwygBlocks,
                                         deltaJson: quillDeltaJson,
+                                        inkCommandColor: wysiwygInkCommandColor,
+                                        inkCommandId: wysiwygInkCommandId,
                                         onDeltaChanged: onQuillDeltaChanged,
                                       )
                                     else if (editMode ==
@@ -886,11 +892,15 @@ class _QuillWysiwygEditor extends StatefulWidget {
   const _QuillWysiwygEditor({
     required this.blocks,
     required this.deltaJson,
+    required this.inkCommandColor,
+    required this.inkCommandId,
     required this.onDeltaChanged,
   });
 
   final List<WysiwygBlock> blocks;
   final List<Object?> deltaJson;
+  final Color? inkCommandColor;
+  final int inkCommandId;
   final ValueChanged<List<Object?>> onDeltaChanged;
 
   @override
@@ -901,6 +911,7 @@ class _QuillWysiwygEditorState extends State<_QuillWysiwygEditor> {
   late quill.QuillController _controller;
   late FocusNode _focusNode;
   late ScrollController _scrollController;
+  TextSelection? _lastSelection;
 
   @override
   void initState() {
@@ -909,6 +920,7 @@ class _QuillWysiwygEditorState extends State<_QuillWysiwygEditor> {
     _scrollController = ScrollController();
     _controller = _controllerFromWidget();
     _controller.addListener(_notifyDeltaChanged);
+    _controller.addListener(_rememberSelection);
   }
 
   @override
@@ -918,9 +930,18 @@ class _QuillWysiwygEditorState extends State<_QuillWysiwygEditor> {
         !_sameDelta(oldWidget.deltaJson, widget.deltaJson)) {
       _controller
         ..removeListener(_notifyDeltaChanged)
+        ..removeListener(_rememberSelection)
         ..dispose();
       _controller = _controllerFromWidget();
       _controller.addListener(_notifyDeltaChanged);
+      _controller.addListener(_rememberSelection);
+    }
+    if (oldWidget.inkCommandId != widget.inkCommandId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _applyInkCommand();
+        }
+      });
     }
   }
 
@@ -928,6 +949,7 @@ class _QuillWysiwygEditorState extends State<_QuillWysiwygEditor> {
   void dispose() {
     _controller
       ..removeListener(_notifyDeltaChanged)
+      ..removeListener(_rememberSelection)
       ..dispose();
     _focusNode.dispose();
     _scrollController.dispose();
@@ -950,7 +972,19 @@ class _QuillWysiwygEditorState extends State<_QuillWysiwygEditor> {
             child: quill.QuillToolbar.basic(
               controller: _controller,
               showFontFamily: false,
-              showFontSize: true,
+              showFontSize: false,
+              fontSizeValues: const {
+                'Small': 'small',
+                'Large': 'large',
+                'Huge': 'huge',
+                'Clear': '0',
+              },
+              fontFamilyValues: const {
+                'Sans Serif': 'sans-serif',
+                'Serif': 'serif',
+                'Monospace': 'monospace',
+                'Clear': 'Clear',
+              },
               showInlineCode: false,
               showCodeBlock: false,
               showSearchButton: false,
@@ -991,6 +1025,66 @@ class _QuillWysiwygEditorState extends State<_QuillWysiwygEditor> {
     widget.onDeltaChanged(
       List<Object?>.of(_controller.document.toDelta().toJson()),
     );
+  }
+
+  void _rememberSelection() {
+    final selection = _controller.selection;
+    if (selection.isValid && !selection.isCollapsed) {
+      _lastSelection = selection;
+    }
+  }
+
+  void _applyInkCommand() {
+    final color = widget.inkCommandColor;
+    if (color == null) {
+      return;
+    }
+    final documentLength = math.max(0, _controller.document.length - 1);
+    final selection =
+        _controller.selection.isValid && !_controller.selection.isCollapsed
+        ? _controller.selection
+        : _lastSelection;
+    final range =
+        selection != null &&
+            selection.isValid &&
+            !selection.isCollapsed &&
+            selection.start < documentLength
+        ? selection
+        : _paragraphSelectionForQuill(documentLength);
+    final start = range.start.clamp(0, documentLength);
+    final end = range.end.clamp(0, documentLength);
+    if (end <= start) {
+      return;
+    }
+    _controller.updateSelection(
+      TextSelection(baseOffset: start, extentOffset: end),
+      quill.ChangeSource.LOCAL,
+    );
+    _controller.formatSelection(quill.ColorAttribute(_hexColor(color)));
+    _lastSelection = TextSelection(baseOffset: start, extentOffset: end);
+  }
+
+  TextSelection _paragraphSelectionForQuill(int documentLength) {
+    final plainText = _controller.document.toPlainText();
+    if (plainText.isEmpty || documentLength == 0) {
+      return const TextSelection.collapsed(offset: 0);
+    }
+    final selection = _controller.selection;
+    final cursor = selection.isValid
+        ? selection.start.clamp(0, documentLength)
+        : documentLength;
+    final start = plainText.lastIndexOf('\n', math.max(0, cursor - 1)) + 1;
+    final nextBreak = plainText.indexOf('\n', cursor);
+    final end = (nextBreak == -1 ? documentLength : nextBreak).clamp(
+      0,
+      documentLength,
+    );
+    return TextSelection(baseOffset: start, extentOffset: end);
+  }
+
+  String _hexColor(Color color) {
+    final rgb = color.toARGB32() & 0x00ffffff;
+    return '#${rgb.toRadixString(16).padLeft(6, '0').toUpperCase()}';
   }
 
   bool _sameDelta(List<Object?> left, List<Object?> right) {

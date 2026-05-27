@@ -75,6 +75,8 @@ class _DocumentStudioState extends State<DocumentStudio> {
   DocumentMarginPreset _marginPreset = DocumentMarginPreset.normal;
   Color _inkColor = const Color(0xff111827);
   Color _pageColor = Colors.white;
+  Color? _wysiwygInkCommandColor;
+  int _wysiwygInkCommandId = 0;
   DateTime _savedAt = DateTime.now();
   final List<MediaBlock> _mediaBlocks = [];
   final List<CustomFontFile> _customFonts = [];
@@ -589,7 +591,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
   }
 
   TextStyle get _editorStyle => TextStyle(
-    color: _inkColor,
+    color: const Color(0xff111827),
     fontFamily: _fontFamily == 'Aptos' ? null : _fontFamily,
     fontSize: _fontSize,
     height: 1.55,
@@ -965,6 +967,55 @@ class _DocumentStudioState extends State<DocumentStudio> {
     controller.setColor(start, end, colorHex);
     _refocusActiveOpenXmlEditor();
     setState(() {});
+  }
+
+  void _applyWysiwygTextColor(Color color) {
+    setState(() {
+      _inkColor = color;
+      _wysiwygInkCommandColor = color;
+      _wysiwygInkCommandId += 1;
+    });
+  }
+
+  void _applyPlainTextColor(Color color) {
+    final controller = _srqController.textController;
+    final selection = controller.selection;
+    final text = controller.text;
+    if (text.isEmpty) {
+      setState(() => _inkColor = color);
+      return;
+    }
+    final range = selection.isValid && !selection.isCollapsed
+        ? selection
+        : _paragraphSelectionFor(text, selection);
+    final start = range.start.clamp(0, text.length);
+    final end = range.end.clamp(0, text.length);
+    if (end <= start) {
+      setState(() => _inkColor = color);
+      return;
+    }
+    final hex = _hexForColor(color);
+    final selected = text.substring(start, end);
+    final wrapped = '<span style="color:#$hex">$selected</span>';
+    _srqController.setMarkdown(
+      '${text.substring(0, start)}$wrapped${text.substring(end)}',
+    );
+    _srqController.textController.selection = TextSelection(
+      baseOffset: start,
+      extentOffset: start + wrapped.length,
+    );
+    _editorFocusNode.requestFocus();
+    setState(() => _inkColor = color);
+  }
+
+  TextSelection _paragraphSelectionFor(String text, TextSelection selection) {
+    final cursor = selection.isValid
+        ? selection.start.clamp(0, text.length)
+        : text.length;
+    final start = text.lastIndexOf('\n', math.max(0, cursor - 1)) + 1;
+    final nextBreak = text.indexOf('\n', cursor);
+    final end = nextBreak == -1 ? text.length : nextBreak;
+    return TextSelection(baseOffset: start, extentOffset: end);
   }
 
   /// Drops references to the active paragraph's (about-to-be-disposed)
@@ -2846,10 +2897,13 @@ class _DocumentStudioState extends State<DocumentStudio> {
                             onMarginPreset: (value) =>
                                 setState(() => _marginPreset = value),
                             onInkColor: (value) {
-                              if (_isNativeOpenXmlEditor) {
+                              if (_editMode == DocumentEditMode.openXml) {
                                 _applyTextColor(value);
+                              } else if (_editMode ==
+                                  DocumentEditMode.wysiwyg) {
+                                _applyWysiwygTextColor(value);
                               } else {
-                                setState(() => _inkColor = value);
+                                _applyPlainTextColor(value);
                               }
                             },
                             onPageColor: (value) =>
@@ -2958,6 +3012,8 @@ class _DocumentStudioState extends State<DocumentStudio> {
                               onOoxmlBlockChanged: _updateOoxmlBlock,
                               wysiwygBlocks: _wysiwygBlocks,
                               quillDeltaJson: _quillDeltaJson,
+                              wysiwygInkCommandColor: _wysiwygInkCommandColor,
+                              wysiwygInkCommandId: _wysiwygInkCommandId,
                               onWysiwygBlockChanged: _updateWysiwygBlock,
                               onQuillDeltaChanged: _updateQuillDelta,
                               onAddWysiwygBlockAfter: _addWysiwygBlockAfter,
