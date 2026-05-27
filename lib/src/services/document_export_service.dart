@@ -215,6 +215,7 @@ class DocumentExportService {
     final footnotes = <docx.DocxFootnote>[];
     final endnotes = <docx.DocxEndnote>[];
     final chunk = StringBuffer();
+    var commentId = 0;
 
     Future<void> flushChunk() async {
       final text = chunk.toString().trim();
@@ -271,6 +272,22 @@ class DocumentExportService {
           ).firstMatch(line);
           final linkMatch = RegExp(
             r'^\[\[LINK:([^|]+)\|(.+)\]\]$',
+            caseSensitive: false,
+          ).firstMatch(line);
+          final commentMatch = RegExp(
+            r'^\[\[COMMENT:([^|]+)\|([^|]+)\|(.+)\]\]$',
+            caseSensitive: false,
+          ).firstMatch(line);
+          final suggestionMatch = RegExp(
+            r'^\[\[SUGGEST:(insert|delete)\|(.+)\]\]$',
+            caseSensitive: false,
+          ).firstMatch(line);
+          final citationMatch = RegExp(
+            r'^\[\[CITATION:([^|]+)\|(.+)\]\]$',
+            caseSensitive: false,
+          ).firstMatch(line);
+          final sectionBreakMatch = RegExp(
+            r'^\[\[SECTION_BREAK:([^|]+)\|?(.*)\]\]$',
             caseSensitive: false,
           ).firstMatch(line);
           if (footnoteMatch != null) {
@@ -340,6 +357,38 @@ class DocumentExportService {
                 children: [docx.DocxText.link(label, href: url)],
               ),
             );
+          } else if (commentMatch != null) {
+            await flushChunk();
+            final id = commentId++;
+            final anchor = commentMatch.group(3)?.trim() ?? 'Comment anchor';
+            nodes.add(docx.DocxRawXml(_commentAnchorXml(id, anchor)));
+          } else if (suggestionMatch != null) {
+            await flushChunk();
+            final kind = suggestionMatch.group(1)?.toLowerCase() ?? 'insert';
+            final text = suggestionMatch.group(2)?.trim() ?? '';
+            if (text.isNotEmpty) {
+              nodes.add(docx.DocxRawXml(_revisionXml(kind, text)));
+            }
+          } else if (citationMatch != null) {
+            await flushChunk();
+            final label = citationMatch.group(1)?.trim() ?? 'Citation';
+            final target = citationMatch.group(2)?.trim() ?? '';
+            nodes.add(docx.DocxRawXml(_citationXml(label, target)));
+          } else if (line.toUpperCase() == '[[BIBLIOGRAPHY]]') {
+            await flushChunk();
+            nodes.add(docx.DocxRawXml(_bibliographyXml()));
+          } else if (sectionBreakMatch != null) {
+            await flushChunk();
+            final breakType = sectionBreakMatch.group(1)?.trim() ?? 'nextPage';
+            final options = _parseOptions(sectionBreakMatch.group(2) ?? '');
+            nodes.add(
+              docx.DocxRawXml(
+                _sectionBreakXml(
+                  breakType,
+                  int.tryParse(options['columns'] ?? '') ?? 1,
+                ),
+              ),
+            );
           } else {
             chunk.writeln(rawLine);
           }
@@ -352,6 +401,85 @@ class DocumentExportService {
       footnotes: footnotes,
       endnotes: endnotes,
     );
+  }
+
+  String _commentAnchorXml(int id, String anchor) {
+    final safeAnchor = _xmlEscape(anchor);
+    return '''
+<w:p>
+  <w:commentRangeStart w:id="$id"/>
+  <w:r><w:t xml:space="preserve">$safeAnchor</w:t></w:r>
+  <w:commentRangeEnd w:id="$id"/>
+  <w:r><w:commentReference w:id="$id"/></w:r>
+</w:p>
+''';
+  }
+
+  String _revisionXml(String kind, String text) {
+    final safeText = _xmlEscape(text);
+    final date = DateTime.now().toUtc().toIso8601String();
+    if (kind == 'delete') {
+      return '''
+<w:p>
+  <w:del w:id="1" w:author="Open Doc" w:date="$date">
+    <w:r><w:delText xml:space="preserve">$safeText</w:delText></w:r>
+  </w:del>
+</w:p>
+''';
+    }
+    return '''
+<w:p>
+  <w:ins w:id="1" w:author="Open Doc" w:date="$date">
+    <w:r><w:t xml:space="preserve">$safeText</w:t></w:r>
+  </w:ins>
+</w:p>
+''';
+  }
+
+  String _citationXml(String label, String target) {
+    final safeLabel = _xmlEscape(label);
+    final safeTarget = _xmlEscape(target);
+    return '''
+<w:p>
+  <w:r><w:t xml:space="preserve">$safeLabel </w:t></w:r>
+  <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+  <w:r><w:instrText xml:space="preserve"> CITATION "$safeTarget" </w:instrText></w:r>
+  <w:r><w:fldChar w:fldCharType="separate"/></w:r>
+  <w:r><w:t xml:space="preserve">$safeTarget</w:t></w:r>
+  <w:r><w:fldChar w:fldCharType="end"/></w:r>
+</w:p>
+''';
+  }
+
+  String _bibliographyXml() {
+    return '''
+<w:sdt>
+  <w:sdtPr><w:docPartObj><w:docPartGallery w:val="Bibliographies"/></w:docPartObj></w:sdtPr>
+  <w:sdtContent>
+    <w:p><w:r><w:t>Bibliography</w:t></w:r></w:p>
+  </w:sdtContent>
+</w:sdt>
+''';
+  }
+
+  String _sectionBreakXml(String breakType, int columns) {
+    final normalizedBreak = switch (breakType.toLowerCase()) {
+      'continuous' => 'continuous',
+      'evenpage' => 'evenPage',
+      'oddpage' => 'oddPage',
+      _ => 'nextPage',
+    };
+    final columnCount = columns.clamp(1, 6);
+    return '''
+<w:p>
+  <w:pPr>
+    <w:sectPr>
+      <w:type w:val="$normalizedBreak"/>
+      <w:cols w:num="$columnCount" w:space="720"/>
+    </w:sectPr>
+  </w:pPr>
+</w:p>
+''';
   }
 
   _BuiltExportNodes _buildNodesFromQuillDelta(List<Object?> deltaJson) {
@@ -506,6 +634,9 @@ class DocumentExportService {
       1 => 'Heading1',
       2 => 'Heading2',
       3 => 'Heading3',
+      4 => 'Heading4',
+      5 => 'Heading5',
+      6 => 'Heading6',
       _ => attributes['blockquote'] == true ? 'Quote' : null,
     };
   }
@@ -660,7 +791,8 @@ class DocumentExportService {
   Future<Uint8List> exportDocx(DocumentExportPayload payload) async {
     ensureLanguageSupport(payload);
     final document = await buildDocument(payload);
-    return docx.DocxExporter().exportToBytes(document);
+    final bytes = await docx.DocxExporter().exportToBytes(document);
+    return _withOpenXmlReviewParts(bytes, payload);
   }
 
   Future<Uint8List> exportPdf(DocumentExportPayload payload) async {
@@ -776,6 +908,178 @@ class DocumentExportService {
       fonts: _embeddedFonts(payload.customFonts),
     );
     return docx.DocxExporter().exportToBytes(document);
+  }
+
+  List<String> exportPreviewNotes(DocumentExportPayload payload) {
+    final notes = <String>[];
+    if (payload.sourcePackageFormat == 'docx' &&
+        payload.sourcePackageBytes != null &&
+        payload.ooxmlBlocks.isNotEmpty) {
+      notes.add('DOCX export patches editable body/header/footer text and keeps unknown OpenXML parts.');
+    }
+    if (payload.quillDeltaJson.isNotEmpty) {
+      notes.add('Rich text exports through the Quill bridge; unsupported embeds become text placeholders.');
+    }
+    if (payload.markdown.contains(RegExp(r'\[\[(COMMENT|SUGGEST|CITATION|BIBLIOGRAPHY|SECTION_BREAK):?', caseSensitive: false))) {
+      notes.add('Review, citation, bibliography, and section markers are emitted as Word OpenXML.');
+    }
+    if (payload.mediaBlocks.any((block) => block.type == ExportMediaType.video)) {
+      notes.add('Video blocks export as linked references outside DOCX/PDF page rendering.');
+    }
+    if (payload.customFonts.isEmpty && payload.selectedFontFamily != null) {
+      notes.add('Non-embedded fonts may substitute on other devices.');
+    }
+    return notes.isEmpty ? const ['Export should preserve visible document content.'] : notes;
+  }
+
+  Uint8List _withOpenXmlReviewParts(
+    Uint8List bytes,
+    DocumentExportPayload payload,
+  ) {
+    final comments = _commentMarkers(payload.markdown);
+    if (comments.isEmpty) {
+      return bytes;
+    }
+
+    final source = ZipDecoder().decodeBytes(bytes);
+    final output = Archive();
+    for (final file in source.files) {
+      if (file.name == '[Content_Types].xml') {
+        output.addFile(
+          ArchiveFile.string(
+            file.name,
+            _ensureContentTypeOverride(
+              utf8.decode(file.content as List<int>),
+              '/word/comments.xml',
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml',
+            ),
+          ),
+        );
+      } else if (file.name == 'word/_rels/document.xml.rels') {
+        output.addFile(
+          ArchiveFile.string(
+            file.name,
+            _ensureRelationship(
+              utf8.decode(file.content as List<int>),
+              'rIdComments',
+              'http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments',
+              'comments.xml',
+            ),
+          ),
+        );
+      } else {
+        output.addFile(
+          ArchiveFile(file.name, file.size, file.content)..mode = file.mode,
+        );
+      }
+    }
+    output.addFile(ArchiveFile.string('word/comments.xml', _commentsXml(comments)));
+    return Uint8List.fromList(ZipEncoder().encode(output));
+  }
+
+  List<_OpenXmlComment> _commentMarkers(String markdown) {
+    final expression = RegExp(
+      r'^\[\[COMMENT:([^|]+)\|([^|]+)\|(.+)\]\]$',
+      caseSensitive: false,
+      multiLine: true,
+    );
+    var id = 0;
+    return [
+      for (final match in expression.allMatches(markdown))
+        _OpenXmlComment(
+          id: id++,
+          author: match.group(1)?.trim() ?? 'Open Doc',
+          text: match.group(2)?.trim() ?? '',
+        ),
+    ];
+  }
+
+  String _commentsXml(List<_OpenXmlComment> comments) {
+    final builder = XmlBuilder();
+    builder.processing('xml', 'version="1.0" encoding="UTF-8" standalone="yes"');
+    builder.element(
+      'w:comments',
+      nest: () {
+        builder.attribute(
+          'xmlns:w',
+          'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+        );
+        for (final comment in comments) {
+          builder.element(
+            'w:comment',
+            nest: () {
+              builder.attribute('w:id', comment.id.toString());
+              builder.attribute('w:author', comment.author);
+              builder.attribute('w:date', DateTime.now().toUtc().toIso8601String());
+              builder.element(
+                'w:p',
+                nest: () {
+                  builder.element(
+                    'w:r',
+                    nest: () {
+                      builder.element('w:t', nest: () => builder.text(comment.text));
+                    },
+                  );
+                },
+              );
+            },
+          );
+        }
+      },
+    );
+    return builder.buildDocument().toXmlString();
+  }
+
+  String _ensureContentTypeOverride(
+    String xml,
+    String partName,
+    String contentType,
+  ) {
+    if (xml.contains('PartName="$partName"')) {
+      return xml;
+    }
+    final document = XmlDocument.parse(xml);
+    document.rootElement.children.add(
+      XmlElement(
+        XmlName('Override'),
+        [
+          XmlAttribute(XmlName('PartName'), partName),
+          XmlAttribute(XmlName('ContentType'), contentType),
+        ],
+      ),
+    );
+    return document.toXmlString();
+  }
+
+  String _ensureRelationship(
+    String xml,
+    String id,
+    String type,
+    String target,
+  ) {
+    if (xml.contains('Id="$id"')) {
+      return xml;
+    }
+    final document = XmlDocument.parse(xml);
+    document.rootElement.children.add(
+      XmlElement(
+        XmlName('Relationship'),
+        [
+          XmlAttribute(XmlName('Id'), id),
+          XmlAttribute(XmlName('Type'), type),
+          XmlAttribute(XmlName('Target'), target),
+        ],
+      ),
+    );
+    return document.toXmlString();
+  }
+
+  String _xmlEscape(String value) {
+    return value
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;');
   }
 
   docx.DocxNode? _visualNodeFor(OoxmlVisualBlock block, String? fontFamily) {
@@ -1210,6 +1514,18 @@ class _BuiltExportNodes {
   final List<docx.DocxNode> nodes;
   final List<docx.DocxFootnote> footnotes;
   final List<docx.DocxEndnote> endnotes;
+}
+
+class _OpenXmlComment {
+  const _OpenXmlComment({
+    required this.id,
+    required this.author,
+    required this.text,
+  });
+
+  final int id;
+  final String author;
+  final String text;
 }
 
 class _QuillLine {

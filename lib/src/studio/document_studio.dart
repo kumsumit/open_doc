@@ -52,7 +52,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
   double _fontSize = 16;
   double _zoom = 1;
   String _fontFamily = 'Aptos';
-  String _style = 'Body';
+  String _style = 'Normal';
   String _alignment = 'Left';
   String _permission = 'Can comment';
   String _template = 'Proposal';
@@ -547,7 +547,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
     _srqController.setMarkdownSilently('');
     setState(() {
       _titleController.text = 'Untitled document';
-      _style = 'Body';
+      _style = 'Normal';
       _fontSize = 16;
       _zoom = 1;
       _template = 'Blank';
@@ -1057,7 +1057,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                           _sourcePackageFormat = null;
                           _sourcePackageBytes = null;
                           _editMode = DocumentEditMode.markdown;
-                          _style = 'Body';
+                          _style = 'Normal';
                           _captureVersion('Applied ${entry.key} template');
                         });
                       },
@@ -1212,6 +1212,16 @@ class _DocumentStudioState extends State<DocumentStudio> {
   }
 
   void _acceptAllChanges() {
+    final accepted = _markdownText
+        .replaceAllMapped(
+          RegExp(r'\[\[SUGGEST:insert\|(.+?)\]\]', caseSensitive: false),
+          (match) => match.group(1) ?? '',
+        )
+        .replaceAll(
+          RegExp(r'\n?\[\[SUGGEST:delete\|.+?\]\]\n?', caseSensitive: false),
+          '\n',
+        );
+    _srqController.setMarkdownSilently(accepted);
     setState(() {
       _trackChanges = false;
       _captureVersion('Accepted review changes');
@@ -1311,9 +1321,9 @@ class _DocumentStudioState extends State<DocumentStudio> {
 
   void _insertCitationNudge() {
     _insertText(
-      '\nSource: paste link, DOI, dataset, or interview note here.\n',
+      '\n\n[[CITATION:Source|https://example.com/source]]\n\n[[BIBLIOGRAPHY]]\n',
     );
-    _showSnack('Source placeholder inserted.');
+    _showSnack('Citation and bibliography placeholders inserted.');
   }
 
   void _insertActionDigest() {
@@ -1321,6 +1331,51 @@ class _DocumentStudioState extends State<DocumentStudio> {
         ? ['[ ] Add owner, due date, and next step.']
         : _actionItems;
     _insertText('\n\nAction digest\n${actions.join('\n')}\n');
+  }
+
+  void _applySelectedStyle(String value) {
+    final size = switch (value) {
+      'Title' => 28.0,
+      'Subtitle' => 20.0,
+      'Heading 1' => 24.0,
+      'Heading 2' => 22.0,
+      'Heading 3' => 20.0,
+      'Heading 4' => 18.0,
+      'Heading 5' => 16.0,
+      'Heading 6' => 15.0,
+      'Caption' => 13.0,
+      'Code' => 15.0,
+      _ => 16.0,
+    };
+    setState(() {
+      _style = value;
+      _fontSize = size;
+    });
+    switch (value) {
+      case 'Title':
+        _srqController.setHeading(1);
+      case 'Heading 1':
+        _srqController.setHeading(2);
+      case 'Heading 2':
+        _srqController.setHeading(3);
+      case 'Heading 3':
+        _srqController.setHeading(4);
+      case 'Heading 4':
+        _srqController.setHeading(5);
+      case 'Heading 5':
+      case 'Heading 6':
+        _srqController.setHeading(6);
+      case 'Quote':
+        _srqController.toggleBlockquote();
+      case 'Subtitle':
+        _insertText('\n\n[[SUBTITLE:Subtitle text]]\n\n');
+      case 'Caption':
+        _insertText('\n\n[[CAPTION:Figure 1. Caption text.]]\n\n');
+      case 'Code':
+        _insertText('\n\n```\nCode block\n```\n\n');
+      default:
+        _srqController.clearBlockFormat();
+    }
   }
 
   void _insertPageBreak() {
@@ -1802,6 +1857,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
   }
 
   void _showExportSheet() {
+    final previewNotes = _exportService.exportPreviewNotes(_exportPayload);
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -1817,6 +1873,28 @@ class _DocumentStudioState extends State<DocumentStudio> {
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 14),
+              for (final note in previewNotes)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.info_outline,
+                        size: 16,
+                        color: Color(0xff2563eb),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          note,
+                          style: const TextStyle(color: Color(0xff475569)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 8),
               Wrap(
                 spacing: 12,
                 runSpacing: 12,
@@ -2039,26 +2117,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                         onFontFamily: (value) =>
                             setState(() => _fontFamily = value),
                         onImportFont: _pickAndImportFont,
-                        onStyle: (value) {
-                          setState(() {
-                            _style = value;
-                            _fontSize = value == 'Title'
-                                ? 28
-                                : value == 'Heading'
-                                ? 22
-                                : 16;
-                          });
-                          switch (value) {
-                            case 'Title':
-                              _srqController.setHeading(1);
-                            case 'Heading':
-                              _srqController.setHeading(2);
-                            case 'Quote':
-                              _srqController.toggleBlockquote();
-                            default:
-                              _srqController.clearBlockFormat();
-                          }
-                        },
+                        onStyle: _applySelectedStyle,
                         onAlignment: (value) =>
                             setState(() => _alignment = value),
                         onAudienceProfile: (value) =>

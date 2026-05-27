@@ -246,8 +246,21 @@ class Ribbon extends StatelessWidget {
                     children: [
                       DropdownChip(
                         value: style,
-                        width: 112,
-                        values: const ['Body', 'Title', 'Heading', 'Quote'],
+                        width: 132,
+                        values: const [
+                          'Normal',
+                          'Title',
+                          'Subtitle',
+                          'Heading 1',
+                          'Heading 2',
+                          'Heading 3',
+                          'Heading 4',
+                          'Heading 5',
+                          'Heading 6',
+                          'Quote',
+                          'Code',
+                          'Caption',
+                        ],
                         onChanged: onStyle,
                       ),
                       const SizedBox(width: 8),

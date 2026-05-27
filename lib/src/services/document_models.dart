@@ -21,9 +21,17 @@ enum OoxmlTextAlign { left, center, right, justify }
 
 enum WysiwygBlockType {
   title('Title'),
-  heading('Heading'),
+  subtitle('Subtitle'),
+  heading1('Heading 1'),
+  heading2('Heading 2'),
+  heading3('Heading 3'),
+  heading4('Heading 4'),
+  heading5('Heading 5'),
+  heading6('Heading 6'),
   paragraph('Paragraph'),
   quote('Quote'),
+  code('Code'),
+  caption('Caption'),
   bulletList('Bullet'),
   orderedList('Numbered'),
   checklist('Checklist');
@@ -101,7 +109,29 @@ class WysiwygDocumentCodec {
         blocks.add(_block(WysiwygBlockType.title, trimmed.substring(2)));
       } else if (trimmed.startsWith('## ')) {
         flushParagraph();
-        blocks.add(_block(WysiwygBlockType.heading, trimmed.substring(3)));
+        blocks.add(_block(WysiwygBlockType.heading1, trimmed.substring(3)));
+      } else if (trimmed.startsWith('### ')) {
+        flushParagraph();
+        blocks.add(_block(WysiwygBlockType.heading2, trimmed.substring(4)));
+      } else if (trimmed.startsWith('#### ')) {
+        flushParagraph();
+        blocks.add(_block(WysiwygBlockType.heading3, trimmed.substring(5)));
+      } else if (trimmed.startsWith('##### ')) {
+        flushParagraph();
+        blocks.add(_block(WysiwygBlockType.heading4, trimmed.substring(6)));
+      } else if (trimmed.startsWith('###### ')) {
+        flushParagraph();
+        blocks.add(_block(WysiwygBlockType.heading5, trimmed.substring(7)));
+      } else if (trimmed.startsWith('[[SUBTITLE:') &&
+          trimmed.endsWith(']]')) {
+        flushParagraph();
+        blocks.add(_block(WysiwygBlockType.subtitle, trimmed.substring(11, trimmed.length - 2)));
+      } else if (trimmed.startsWith('[[CAPTION:') && trimmed.endsWith(']]')) {
+        flushParagraph();
+        blocks.add(_block(WysiwygBlockType.caption, trimmed.substring(10, trimmed.length - 2)));
+      } else if (trimmed.startsWith('```')) {
+        flushParagraph();
+        blocks.add(_block(WysiwygBlockType.code, trimmed.replaceAll('`', '').trim()));
       } else if (trimmed.startsWith('> ')) {
         flushParagraph();
         blocks.add(_block(WysiwygBlockType.quote, trimmed.substring(2)));
@@ -149,8 +179,16 @@ class WysiwygDocumentCodec {
           final text = block.text.trimRight();
           return switch (block.type) {
             WysiwygBlockType.title => '# $text',
-            WysiwygBlockType.heading => '## $text',
+            WysiwygBlockType.subtitle => '[[SUBTITLE:$text]]',
+            WysiwygBlockType.heading1 => '## $text',
+            WysiwygBlockType.heading2 => '### $text',
+            WysiwygBlockType.heading3 => '#### $text',
+            WysiwygBlockType.heading4 => '##### $text',
+            WysiwygBlockType.heading5 => '###### $text',
+            WysiwygBlockType.heading6 => '###### $text',
             WysiwygBlockType.quote => '> $text',
+            WysiwygBlockType.code => '```\n$text\n```',
+            WysiwygBlockType.caption => '[[CAPTION:$text]]',
             WysiwygBlockType.bulletList => '- $text',
             WysiwygBlockType.orderedList => '${orderedIndex[0]++}. $text',
             WysiwygBlockType.checklist =>
@@ -170,10 +208,25 @@ class WysiwygDocumentCodec {
       switch (block.type) {
         case WysiwygBlockType.title:
           attrs['header'] = 1;
-        case WysiwygBlockType.heading:
+        case WysiwygBlockType.subtitle:
+          attrs['subtitle'] = true;
+        case WysiwygBlockType.heading1:
           attrs['header'] = 2;
+        case WysiwygBlockType.heading2:
+          attrs['header'] = 3;
+        case WysiwygBlockType.heading3:
+          attrs['header'] = 4;
+        case WysiwygBlockType.heading4:
+          attrs['header'] = 5;
+        case WysiwygBlockType.heading5:
+        case WysiwygBlockType.heading6:
+          attrs['header'] = 6;
         case WysiwygBlockType.quote:
           attrs['blockquote'] = true;
+        case WysiwygBlockType.code:
+          attrs['code-block'] = true;
+        case WysiwygBlockType.caption:
+          attrs['caption'] = true;
         case WysiwygBlockType.bulletList:
           attrs['list'] = 'bullet';
         case WysiwygBlockType.orderedList:
@@ -259,10 +312,31 @@ class WysiwygDocumentCodec {
       return WysiwygBlockType.title;
     }
     if (attributes['header'] == 2) {
-      return WysiwygBlockType.heading;
+      return WysiwygBlockType.heading1;
+    }
+    if (attributes['header'] == 3) {
+      return WysiwygBlockType.heading2;
+    }
+    if (attributes['header'] == 4) {
+      return WysiwygBlockType.heading3;
+    }
+    if (attributes['header'] == 5) {
+      return WysiwygBlockType.heading4;
+    }
+    if (attributes['header'] == 6) {
+      return WysiwygBlockType.heading5;
+    }
+    if (attributes['subtitle'] == true) {
+      return WysiwygBlockType.subtitle;
     }
     if (attributes['blockquote'] == true) {
       return WysiwygBlockType.quote;
+    }
+    if (attributes['code-block'] == true) {
+      return WysiwygBlockType.code;
+    }
+    if (attributes['caption'] == true) {
+      return WysiwygBlockType.caption;
     }
     return switch (attributes['list']) {
       'bullet' => WysiwygBlockType.bulletList,
