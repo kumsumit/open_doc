@@ -1,5 +1,5 @@
 name: open_doc
-description: "A new Flutter project."
+description: "Flutter package that opens a document file path in a view-only viewer or full editor (DOCX, TXT, MD, RTF, HTML, CSV, ODOC)."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev

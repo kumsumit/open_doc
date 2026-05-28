@@ -5,13 +5,34 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:open_doc/app.dart';
+import 'package:open_doc/open_doc.dart';
 import 'package:open_doc/src/engine/docx.dart' as docx;
 import 'package:open_doc/src/services/document_export_service.dart';
 import 'package:open_doc/src/services/document_import_service.dart';
 import 'package:open_doc/src/services/language_support_service.dart';
 import 'package:open_doc/src/services/document_models.dart';
 import 'package:open_doc/src/ui/inline_format.dart';
+
+class OpenDocApp extends StatelessWidget {
+  const OpenDocApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xff2563eb),
+          brightness: Brightness.light,
+        ),
+        scaffoldBackgroundColor: const Color(0xfff4f7fb),
+        useMaterial3: true,
+        fontFamily: 'Arial',
+      ),
+      home: const DocumentStudio(),
+    );
+  }
+}
 
 void main() {
   const exportService = DocumentExportService();

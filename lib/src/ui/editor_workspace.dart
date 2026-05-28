@@ -49,6 +49,7 @@ class EditorWorkspace extends StatelessWidget {
     required this.onToggleNavigation,
     required this.onToggleInspector,
     this.sourcePackageBytes,
+    this.readOnly = false,
   });
 
   final SrqController srqController;
@@ -91,6 +92,7 @@ class EditorWorkspace extends StatelessWidget {
   final VoidCallback onToggleNavigation;
   final VoidCallback onToggleInspector;
   final Uint8List? sourcePackageBytes;
+  final bool readOnly;
 
   @override
   Widget build(BuildContext context) {
@@ -279,6 +281,7 @@ class EditorWorkspace extends StatelessWidget {
                                         inkCommandColor: wysiwygInkCommandColor,
                                         inkCommandId: wysiwygInkCommandId,
                                         onDeltaChanged: onQuillDeltaChanged,
+                                        readOnly: readOnly,
                                       )
                                     else if (editMode ==
                                         DocumentEditMode.openXml)
@@ -292,6 +295,7 @@ class EditorWorkspace extends StatelessWidget {
                                             onOpenXmlParagraphActivated,
                                         onSelectionChanged:
                                             onOpenXmlSelectionChanged,
+                                        readOnly: readOnly,
                                       )
                                     else
                                       TextField(
@@ -301,8 +305,9 @@ class EditorWorkspace extends StatelessWidget {
                                         maxLines: null,
                                         minLines: 28,
                                         readOnly:
+                                            readOnly ||
                                             editMode ==
-                                            DocumentEditMode.docxRoundTrip,
+                                                DocumentEditMode.docxRoundTrip,
                                         keyboardType: TextInputType.multiline,
                                         textAlign: textAlign,
                                         style: editorStyle,
@@ -544,6 +549,7 @@ class _OpenXmlStructuredEditor extends StatelessWidget {
     required this.onChanged,
     required this.onParagraphActivated,
     required this.onSelectionChanged,
+    this.readOnly = false,
   });
 
   final OpenXmlDocument document;
@@ -558,6 +564,7 @@ class _OpenXmlStructuredEditor extends StatelessWidget {
   )
   onParagraphActivated;
   final VoidCallback onSelectionChanged;
+  final bool readOnly;
 
   @override
   Widget build(BuildContext context) {
@@ -573,36 +580,37 @@ class _OpenXmlStructuredEditor extends StatelessWidget {
           _buildBlock(context, index, blocks[index]),
           const SizedBox(height: 12),
         ],
-        Align(
-          alignment: Alignment.centerLeft,
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              OutlinedButton.icon(
-                onPressed: () => _insertBlock(
-                  blocks.length - 1,
-                  const OpenXmlParagraphBlock(runs: [OpenXmlRun('')]),
-                ),
-                icon: const Icon(Icons.notes_outlined, size: 18),
-                label: const Text('Paragraph'),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => _insertBlock(
-                  blocks.length - 1,
-                  const OpenXmlTableBlock(
-                    rows: [
-                      ['Header 1', 'Header 2'],
-                      ['', ''],
-                    ],
+        if (!readOnly)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => _insertBlock(
+                    blocks.length - 1,
+                    const OpenXmlParagraphBlock(runs: [OpenXmlRun('')]),
                   ),
+                  icon: const Icon(Icons.notes_outlined, size: 18),
+                  label: const Text('Paragraph'),
                 ),
-                icon: const Icon(Icons.table_chart_outlined, size: 18),
-                label: const Text('Table'),
-              ),
-            ],
+                OutlinedButton.icon(
+                  onPressed: () => _insertBlock(
+                    blocks.length - 1,
+                    const OpenXmlTableBlock(
+                      rows: [
+                        ['Header 1', 'Header 2'],
+                        ['', ''],
+                      ],
+                    ),
+                  ),
+                  icon: const Icon(Icons.table_chart_outlined, size: 18),
+                  label: const Text('Table'),
+                ),
+              ],
+            ),
           ),
-        ),
       ],
     );
   }
@@ -618,6 +626,7 @@ class _OpenXmlStructuredEditor extends StatelessWidget {
         onChanged: (updated) => _replaceBlock(index, updated),
         onActivated: onParagraphActivated,
         onSelectionChanged: onSelectionChanged,
+        readOnly: readOnly,
       ),
       OpenXmlTableBlock() => _OoxmlTableEditor(
         index: index,
@@ -735,6 +744,7 @@ class _OpenXmlParagraphEditor extends StatefulWidget {
     required this.onChanged,
     required this.onActivated,
     required this.onSelectionChanged,
+    this.readOnly = false,
   });
 
   final int index;
@@ -750,6 +760,7 @@ class _OpenXmlParagraphEditor extends StatefulWidget {
   )
   onActivated;
   final VoidCallback onSelectionChanged;
+  final bool readOnly;
 
   @override
   State<_OpenXmlParagraphEditor> createState() =>
@@ -864,6 +875,7 @@ class _OpenXmlParagraphEditorState extends State<_OpenXmlParagraphEditor> {
           controller: _controller,
           focusNode: _focusNode,
           maxLines: null,
+          readOnly: widget.readOnly,
           keyboardType: TextInputType.multiline,
           textAlign: widget.textAlign,
           style: widget.style,
@@ -895,6 +907,7 @@ class _QuillWysiwygEditor extends StatefulWidget {
     required this.inkCommandColor,
     required this.inkCommandId,
     required this.onDeltaChanged,
+    this.readOnly = false,
   });
 
   final List<WysiwygBlock> blocks;
@@ -902,6 +915,7 @@ class _QuillWysiwygEditor extends StatefulWidget {
   final Color? inkCommandColor;
   final int inkCommandId;
   final ValueChanged<List<Object?>> onDeltaChanged;
+  final bool readOnly;
 
   @override
   State<_QuillWysiwygEditor> createState() => _QuillWysiwygEditorState();
@@ -961,6 +975,7 @@ class _QuillWysiwygEditorState extends State<_QuillWysiwygEditor> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (!widget.readOnly)
         DecoratedBox(
           decoration: BoxDecoration(
             color: const Color(0xfff8fafc),
@@ -1002,7 +1017,7 @@ class _QuillWysiwygEditorState extends State<_QuillWysiwygEditor> {
           scrollable: false,
           padding: EdgeInsets.zero,
           autoFocus: false,
-          readOnly: false,
+          readOnly: widget.readOnly,
           expands: false,
           minHeight: 420,
           placeholder: 'Start writing your document...',

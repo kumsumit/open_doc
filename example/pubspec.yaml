@@ -1,0 +1,24 @@
+name: open_doc_example
+description: Example app demonstrating the open_doc package.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  open_doc:
+    path: ../
+  file_picker:
+    git: "https://github.com/sumitsharansatsangi/flutter_file_picker.git"
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

@@ -24,8 +24,39 @@ String _formatTime(DateTime value) {
   return '$hour:$minute';
 }
 
+/// Whether [DocumentStudio] opens a file as a read-only viewer or the
+/// full-featured editor. In [view] mode the editing chrome is hidden and
+/// an Edit button lets the user switch into [edit].
+enum OpenDocMode { view, edit }
+
+/// Thin convenience wrapper around [DocumentStudio] for host apps that just
+/// want to point at a file path.
+class OpenDocViewer extends StatelessWidget {
+  const OpenDocViewer({
+    super.key,
+    required this.filePath,
+    this.mode = OpenDocMode.view,
+  });
+
+  final String filePath;
+  final OpenDocMode mode;
+
+  @override
+  Widget build(BuildContext context) {
+    return DocumentStudio(filePath: filePath, mode: mode);
+  }
+}
+
 class DocumentStudio extends StatefulWidget {
-  const DocumentStudio({super.key});
+  const DocumentStudio({super.key, this.filePath, this.mode = OpenDocMode.edit});
+
+  /// Optional absolute path to a document the package should load on startup.
+  /// Supported extensions: docx, txt, md/markdown, rtf, html/htm, csv, odoc.
+  final String? filePath;
+
+  /// Initial mode. The user can flip from [OpenDocMode.view] to
+  /// [OpenDocMode.edit] using the Edit button shown in view mode.
+  final OpenDocMode mode;
 
   @override
   State<DocumentStudio> createState() => _DocumentStudioState();
@@ -98,9 +129,12 @@ class _DocumentStudioState extends State<DocumentStudio> {
     Collaborator('Mina', 'Viewing', Color(0xffb45309)),
   ];
 
+  late OpenDocMode _mode;
+
   @override
   void initState() {
     super.initState();
+    _mode = widget.mode;
     _srqController = SrqControllerFactory.create(
       initialMarkdown: starterDocument,
     );
@@ -108,6 +142,44 @@ class _DocumentStudioState extends State<DocumentStudio> {
     _titleController.addListener(_refresh);
     _searchController.addListener(_refresh);
     _captureVersion('Created first draft');
+    if (widget.filePath != null && widget.filePath!.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _loadFromPath(widget.filePath!);
+      });
+    }
+  }
+
+  Future<void> _loadFromPath(String path) async {
+    final file = File(path);
+    if (!await file.exists()) {
+      _showSnack('File not found: $path');
+      return;
+    }
+    try {
+      final bytes = await file.readAsBytes();
+      final fileName = path.split(RegExp(r'[/\\]')).last;
+      final imported = await _importService.parseAsync(bytes, fileName);
+      await _applyImportedDocument(
+        name: fileName,
+        text: imported.text,
+        format: imported.formatLabel,
+        title: imported.title,
+        selectedFontFamily: imported.selectedFontFamily,
+        mediaBlocks: imported.mediaBlocks,
+        pageSetup: imported.pageSetup,
+        customFonts: imported.customFonts,
+        sourcePackageFormat: imported.sourcePackageFormat,
+        sourcePackageBytes: imported.sourcePackageBytes,
+        ooxmlBlocks: imported.ooxmlBlocks,
+        wysiwygBlocks: imported.wysiwygBlocks,
+        quillDeltaJson: imported.quillDeltaJson,
+        openXmlDocument: imported.openXmlDocument,
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Failed to load $path: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      _showSnack('Could not open $path: $error');
+    }
   }
 
   @override
@@ -2776,12 +2848,22 @@ class _DocumentStudioState extends State<DocumentStudio> {
           body: SafeArea(
             child: LayoutBuilder(
               builder: (context, constraints) {
+                final viewMode = _mode == OpenDocMode.view;
                 final compact = constraints.maxWidth < 900;
-                final showLeft = _showNavigation && !compact && !_focusMode;
-                final showRight = _showInspector && !compact && !_focusMode;
+                final showLeft =
+                    _showNavigation && !compact && !_focusMode && !viewMode;
+                final showRight =
+                    _showInspector && !compact && !_focusMode && !viewMode;
 
                 return Column(
                   children: [
+                    if (viewMode)
+                      _ViewModeHeader(
+                        title: _titleController.text,
+                        onEdit: () =>
+                            setState(() => _mode = OpenDocMode.edit),
+                      )
+                    else
                     TopBar(
                       titleController: _titleController,
                       focusMode: _focusMode,
@@ -2799,7 +2881,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                         setState(() => _focusMode = !_focusMode);
                       },
                     ),
-                    if (!_focusMode)
+                    if (!_focusMode && !viewMode)
                       TapRegion(
                         groupId: EditableText,
                         child: Listener(
@@ -2988,6 +3070,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                             ),
                           Expanded(
                             child: EditorWorkspace(
+                              readOnly: viewMode,
                               srqController: _srqController,
                               editorFocusNode: _editorFocusNode,
                               editorStyle: _editorStyle,
@@ -3050,6 +3133,53 @@ class _DocumentStudioState extends State<DocumentStudio> {
               },
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ViewModeHeader extends StatelessWidget {
+  const _ViewModeHeader({required this.title, required this.onEdit});
+
+  final String title;
+  final VoidCallback onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xfff8fafc),
+      elevation: 0,
+      child: Container(
+        decoration: const BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: Color(0xffe2e8f0)),
+          ),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            const Icon(Icons.visibility_outlined,
+                size: 18, color: Color(0xff475569)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                title.isEmpty ? 'Document' : title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xff0f172a),
+                ),
+              ),
+            ),
+            FilledButton.icon(
+              onPressed: onEdit,
+              icon: const Icon(Icons.edit_outlined, size: 18),
+              label: const Text('Edit'),
+            ),
+          ],
         ),
       ),
     );
