@@ -14,4 +14,5 @@
 /// ```
 library;
 
-export 'src/studio/document_studio.dart' show DocumentStudio, OpenDocViewer, OpenDocMode;
+export 'src/studio/document_studio.dart'
+    show DocumentStudio, OpenDocViewer, OpenDocTabsHost, OpenDocMode;

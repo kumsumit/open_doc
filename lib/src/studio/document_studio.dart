@@ -29,8 +29,9 @@ String _formatTime(DateTime value) {
 /// an Edit button lets the user switch into [edit].
 enum OpenDocMode { view, edit }
 
-/// Thin convenience wrapper around [DocumentStudio] for host apps that just
-/// want to point at a file path.
+/// Thin convenience wrapper around [OpenDocTabsHost] for host apps that just
+/// want to point at a file path. Tabs are enabled by default so the Import
+/// button opens additional files in new tabs.
 class OpenDocViewer extends StatelessWidget {
   const OpenDocViewer({
     super.key,
@@ -43,12 +44,207 @@ class OpenDocViewer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DocumentStudio(filePath: filePath, mode: mode);
+    return OpenDocTabsHost(initialFilePath: filePath, initialMode: mode);
+  }
+}
+
+/// Holds a list of [DocumentStudio] tabs and switches between them. When the
+/// user clicks Import inside any tab, the picked file opens in a new tab.
+class OpenDocTabsHost extends StatefulWidget {
+  const OpenDocTabsHost({
+    super.key,
+    this.initialFilePath,
+    this.initialMode = OpenDocMode.edit,
+  });
+
+  final String? initialFilePath;
+  final OpenDocMode initialMode;
+
+  @override
+  State<OpenDocTabsHost> createState() => _OpenDocTabsHostState();
+}
+
+class _OpenDocTab {
+  _OpenDocTab({required this.id, this.filePath, required this.mode});
+
+  final String id;
+  final String? filePath;
+  final OpenDocMode mode;
+
+  String get label {
+    final path = filePath;
+    if (path == null || path.isEmpty) return 'Untitled';
+    return path.split(RegExp(r'[/\\]')).last;
+  }
+}
+
+class _OpenDocTabsHostState extends State<OpenDocTabsHost> {
+  final List<_OpenDocTab> _tabs = [];
+  int _activeIndex = 0;
+  int _idCounter = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabs.add(_OpenDocTab(
+      id: _nextId(),
+      filePath: widget.initialFilePath,
+      mode: widget.initialMode,
+    ));
+  }
+
+  String _nextId() => 'tab-${_idCounter++}';
+
+  void _openInNewTab(String path) {
+    setState(() {
+      _tabs.add(_OpenDocTab(
+        id: _nextId(),
+        filePath: path,
+        mode: OpenDocMode.edit,
+      ));
+      _activeIndex = _tabs.length - 1;
+    });
+  }
+
+  void _closeTab(int index) {
+    if (_tabs.length <= 1) return;
+    setState(() {
+      _tabs.removeAt(index);
+      if (_activeIndex >= _tabs.length) {
+        _activeIndex = _tabs.length - 1;
+      } else if (_activeIndex > index) {
+        _activeIndex -= 1;
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xfff4f7fb),
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            _TabStrip(
+              tabs: _tabs,
+              activeIndex: _activeIndex,
+              onSelect: (i) => setState(() => _activeIndex = i),
+              onClose: _closeTab,
+            ),
+            Expanded(
+              child: IndexedStack(
+                index: _activeIndex,
+                children: [
+                  for (final tab in _tabs)
+                    DocumentStudio(
+                      key: ValueKey(tab.id),
+                      filePath: tab.filePath,
+                      mode: tab.mode,
+                      onOpenInNewTab: _openInNewTab,
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TabStrip extends StatelessWidget {
+  const _TabStrip({
+    required this.tabs,
+    required this.activeIndex,
+    required this.onSelect,
+    required this.onClose,
+  });
+
+  final List<_OpenDocTab> tabs;
+  final int activeIndex;
+  final ValueChanged<int> onSelect;
+  final ValueChanged<int> onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 38,
+      decoration: const BoxDecoration(
+        color: Color(0xffe9eff7),
+        border: Border(bottom: BorderSide(color: Color(0xffd6dee9))),
+      ),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        itemCount: tabs.length,
+        itemBuilder: (context, index) {
+          final isActive = index == activeIndex;
+          final canClose = tabs.length > 1;
+          return Padding(
+            padding: const EdgeInsets.only(right: 4, top: 6, bottom: 4),
+            child: Material(
+              color: isActive ? Colors.white : const Color(0xffdfe7f1),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+              child: InkWell(
+                onTap: () => onSelect(index),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(6)),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 180),
+                        child: Text(
+                          tabs[index].label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight:
+                                isActive ? FontWeight.w600 : FontWeight.w500,
+                            color: isActive
+                                ? const Color(0xff0f172a)
+                                : const Color(0xff475569),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      InkWell(
+                        onTap: canClose ? () => onClose(index) : null,
+                        borderRadius: BorderRadius.circular(10),
+                        child: Padding(
+                          padding: const EdgeInsets.all(2),
+                          child: Icon(
+                            Icons.close,
+                            size: 14,
+                            color: canClose
+                                ? const Color(0xff64748b)
+                                : const Color(0xffcbd5e1),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 }
 
 class DocumentStudio extends StatefulWidget {
-  const DocumentStudio({super.key, this.filePath, this.mode = OpenDocMode.edit});
+  const DocumentStudio({
+    super.key,
+    this.filePath,
+    this.mode = OpenDocMode.edit,
+    this.onOpenInNewTab,
+  });
 
   /// Optional absolute path to a document the package should load on startup.
   /// Supported extensions: docx, txt, md/markdown, rtf, html/htm, csv, odoc.
@@ -57,6 +253,11 @@ class DocumentStudio extends StatefulWidget {
   /// Initial mode. The user can flip from [OpenDocMode.view] to
   /// [OpenDocMode.edit] using the Edit button shown in view mode.
   final OpenDocMode mode;
+
+  /// When provided, the Import button delegates file selection here so the
+  /// host can open the picked file in a new tab instead of replacing the
+  /// current document.
+  final ValueChanged<String>? onOpenInNewTab;
 
   @override
   State<DocumentStudio> createState() => _DocumentStudioState();
@@ -1530,6 +1731,11 @@ class _DocumentStudioState extends State<DocumentStudio> {
         return;
       }
       pickedName = picked.name;
+      final newTabHandler = widget.onOpenInNewTab;
+      if (newTabHandler != null && picked.path != null && picked.path!.isNotEmpty) {
+        newTabHandler(picked.path!);
+        return;
+      }
       final bytes = await _readPickedFileBytes(picked);
       if (bytes == null) {
         _showSnack('Could not read that file.');

@@ -440,10 +440,10 @@ packages:
     description:
       path: "."
       ref: HEAD
-      resolved-ref: "5effc49127e2f4e58341d6a5aa0817d15d1187d0"
+      resolved-ref: fdd2f738be19b2ec77bb1779a6336f64ebcf6c1b
       url: "https://github.com/sumitsharansatsangi/i18n_extension.git"
     source: git
-    version: "15.1.0"
+    version: "15.1.1"
   i18n_extension_core:
     dependency: transitive
     description:
