@@ -52,7 +52,7 @@ dependencies:
   crypto: ^3.0.7
   web: ^1.1.1
   smart_rich_text_quill:
-    path: /Users/amitsharan/StudioProjects/smart_rich_text_quill
+    git: "https://github.com/kumsumit/smart_rich_text_quill.git"
   url_launcher:
     git: "https://github.com/kumsumit/url_launcher.git"
 
