@@ -51,6 +51,7 @@ class DocumentExportPayload {
     this.wysiwygBlocks = const [],
     this.quillDeltaJson = const [],
     this.pageSetup = const DocumentPageSetup(),
+    this.metadata = const DocumentMetadata(),
   });
 
   final String title;
@@ -64,6 +65,7 @@ class DocumentExportPayload {
   final List<OoxmlVisualBlock> ooxmlBlocks;
   final List<WysiwygBlock> wysiwygBlocks;
   final List<Object?> quillDeltaJson;
+  final DocumentMetadata metadata;
   final DocumentPageSetup pageSetup;
 }
 
@@ -102,21 +104,36 @@ class DocumentPageSetup {
     this.pageSize = DocumentPageSize.a4,
     this.orientation = DocumentPageOrientation.portrait,
     this.marginPreset = DocumentMarginPreset.normal,
+    this.columns = 1,
+    this.gutterTwips = 0,
+    this.mirrorMargins = false,
   });
 
   final DocumentPageSize pageSize;
   final DocumentPageOrientation orientation;
   final DocumentMarginPreset marginPreset;
+  /// Number of text columns (1, 2, or 3).
+  final int columns;
+  /// Gutter margin in twips added to the binding edge.
+  final int gutterTwips;
+  /// Whether to mirror margins for facing pages (odd/even).
+  final bool mirrorMargins;
 
   DocumentPageSetup copyWith({
     DocumentPageSize? pageSize,
     DocumentPageOrientation? orientation,
     DocumentMarginPreset? marginPreset,
+    int? columns,
+    int? gutterTwips,
+    bool? mirrorMargins,
   }) {
     return DocumentPageSetup(
       pageSize: pageSize ?? this.pageSize,
       orientation: orientation ?? this.orientation,
       marginPreset: marginPreset ?? this.marginPreset,
+      columns: columns ?? this.columns,
+      gutterTwips: gutterTwips ?? this.gutterTwips,
+      mirrorMargins: mirrorMargins ?? this.mirrorMargins,
     );
   }
 }

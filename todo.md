@@ -17,9 +17,9 @@ It should be an entire document creation, layout, collaboration, automation, pub
 * [x] Hyperlinks
 * [ ] References
 * [x] Captions
-* [ ] Fields
+* [x] Fields
 * [ ] Content controls
-* [ ] Custom metadata
+* [x] Custom metadata
 
 ## Character Formatting
 
@@ -51,8 +51,8 @@ It should be an entire document creation, layout, collaboration, automation, pub
 * [x] Paragraph spacing
 * [x] Indentation
 * [x] Hanging indent
-* [ ] Tabs
-* [ ] Tab leaders
+* [x] Tabs
+* [x] Tab leaders
 * [x] Borders
 * [x] Shading
 * [x] Keep with next
@@ -76,9 +76,9 @@ It should be an entire document creation, layout, collaboration, automation, pub
 * [x] Page size
 * [x] Orientation
 * [x] Margins
-* [ ] Mirror margins
-* [ ] Gutter margins
-* [ ] Multi-column layout
+* [x] Mirror margins
+* [x] Gutter margins
+* [x] Multi-column layout
 * [x] Section breaks
 
 ## Pagination
@@ -97,14 +97,14 @@ It should be an entire document creation, layout, collaboration, automation, pub
 ## Tables
 
 * [x] Insert table
-* [ ] Merge cells
+* [x] Merge cells
 * [ ] Split cells
 * [ ] Nested tables
 * [x] Table styles
 * [ ] Auto fit
 * [ ] Sorting
 * [ ] Formula support
-* [ ] Repeat header rows
+* [x] Repeat header rows
 
 ## Images
 
@@ -114,8 +114,8 @@ It should be an entire document creation, layout, collaboration, automation, pub
 * [x] WEBP
 * [x] GIF
 * [ ] Crop
-* [ ] Rotate
-* [ ] Resize
+* [x] Rotate
+* [x] Resize
 * [ ] Image filters
 * [ ] Transparency
 * [x] Alt text
@@ -191,14 +191,14 @@ It should be an entire document creation, layout, collaboration, automation, pub
 * [x] Paragraph styles
 * [x] Character styles
 * [ ] Linked styles
-* [ ] Style inheritance
-* [ ] Style organizer
+* [x] Style inheritance
+* [x] Style organizer
 
 ## Themes
 
 * [x] Theme fonts
 * [x] Theme colors
-* [ ] Theme templates
+* [x] Theme templates
 
 ## Templates
 
@@ -225,7 +225,7 @@ It should be an entire document creation, layout, collaboration, automation, pub
 * [x] Track changes
 * [x] Accept change
 * [x] Reject change
-* [ ] Compare documents
+* [x] Compare documents
 
 ---
 
@@ -234,8 +234,8 @@ It should be an entire document creation, layout, collaboration, automation, pub
 ## Table of Contents
 
 * [x] Auto TOC
-* [ ] Custom TOC
-* [ ] TOC updates
+* [x] Custom TOC
+* [x] TOC updates
 
 ## Citations
 
@@ -250,14 +250,14 @@ It should be an entire document creation, layout, collaboration, automation, pub
 
 ## Indexing
 
-* [ ] Index entries
-* [ ] Auto index
+* [x] Index entries
+* [x] Auto index
 
 ## Cross References
 
-* [ ] Figure references
-* [ ] Table references
-* [ ] Bookmark references
+* [x] Figure references
+* [x] Table references
+* [x] Bookmark references
 
 ---
 

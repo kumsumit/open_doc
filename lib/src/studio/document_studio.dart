@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/material.dart' hide ShortcutRegistry;
+import 'package:flutter/material.dart' hide ShortcutRegistry, TabAlignment;
 import 'package:flutter/services.dart';
 import 'package:smart_rich_text_quill/smart_rich_text_quill.dart';
 
@@ -332,6 +332,16 @@ class _DocumentStudioState extends State<DocumentStudio> {
   DateTime _savedAt = DateTime.now();
   final List<MediaBlock> _mediaBlocks = [];
   final List<CustomFontFile> _customFonts = [];
+
+  // ── New feature state ──────────────────────────────────────────────────────
+  DocumentMetadata _metadata = const DocumentMetadata();
+  int _columnCount = 1;
+  int _gutterTwips = 0;
+  bool _mirrorMargins = false;
+  String _activeThemeId = 'default';
+  final List<IndexEntry> _indexEntries = [];
+  final List<CrossReference> _crossReferences = [];
+  final List<CustomDocumentStyle> _customStyles = [];
   String? _sourcePackageFormat;
   Uint8List? _sourcePackageBytes;
   DocumentEditMode _editMode = DocumentEditMode.openXml;
@@ -956,7 +966,11 @@ class _DocumentStudioState extends State<DocumentStudio> {
         pageSize: _pageSize,
         orientation: _pageOrientation,
         marginPreset: _marginPreset,
+        columns: _columnCount,
+        gutterTwips: _gutterTwips,
+        mirrorMargins: _mirrorMargins,
       ),
+      metadata: _metadata,
       mediaBlocks: _mediaBlocks
           .map(
             (block) => ExportMediaBlock(
@@ -1491,6 +1505,1841 @@ class _DocumentStudioState extends State<DocumentStudio> {
       _bookmarks.add((name: name, offset: offset));
     });
     _showSnack('Bookmark "$name" inserted.');
+  }
+
+  // ── Document Properties ────────────────────────────────────────────────────
+
+  void _showDocumentPropertiesDialog() {
+    final authorCtrl = TextEditingController(text: _metadata.author);
+    final subjectCtrl = TextEditingController(text: _metadata.subject);
+    final keywordsCtrl = TextEditingController(text: _metadata.keywords);
+    final descCtrl = TextEditingController(text: _metadata.description);
+    final companyCtrl = TextEditingController(text: _metadata.company);
+    final categoryCtrl = TextEditingController(text: _metadata.category);
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Document Properties'),
+        content: SizedBox(
+          width: 480,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _metaField('Author', authorCtrl),
+                _metaField('Subject', subjectCtrl),
+                _metaField('Keywords', keywordsCtrl),
+                _metaField('Description', descCtrl, maxLines: 3),
+                _metaField('Company', companyCtrl),
+                _metaField('Category', categoryCtrl),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              setState(() {
+                _metadata = DocumentMetadata(
+                  author: authorCtrl.text.trim(),
+                  subject: subjectCtrl.text.trim(),
+                  keywords: keywordsCtrl.text.trim(),
+                  description: descCtrl.text.trim(),
+                  company: companyCtrl.text.trim(),
+                  category: categoryCtrl.text.trim(),
+                );
+              });
+              _showSnack('Document properties saved.');
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _metaField(
+    String label,
+    TextEditingController ctrl, {
+    int maxLines = 1,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: TextField(
+        controller: ctrl,
+        maxLines: maxLines,
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
+          isDense: true,
+        ),
+      ),
+    );
+  }
+
+  // ── Page layout (multi-column, mirror margins, gutter) ────────────────────
+
+  void _showPageLayoutDialog() {
+    var columns = _columnCount;
+    var gutter = _gutterTwips;
+    var mirror = _mirrorMargins;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Page Layout'),
+          content: SizedBox(
+            width: 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Columns',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                SegmentedButton<int>(
+                  segments: const [
+                    ButtonSegment(value: 1, label: Text('1')),
+                    ButtonSegment(value: 2, label: Text('2')),
+                    ButtonSegment(value: 3, label: Text('3')),
+                  ],
+                  selected: {columns},
+                  onSelectionChanged: (s) =>
+                      setDlg(() => columns = s.first),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Gutter margin',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<int>(
+                  value: gutter,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                    suffixText: 'twips',
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 0, child: Text('None (0)')),
+                    DropdownMenuItem(value: 360, child: Text('Narrow (0.25")')),
+                    DropdownMenuItem(value: 720, child: Text('Normal (0.5")')),
+                    DropdownMenuItem(value: 1440, child: Text('Wide (1")')),
+                  ],
+                  onChanged: (v) => setDlg(() => gutter = v ?? 0),
+                ),
+                const SizedBox(height: 16),
+                SwitchListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Mirror margins'),
+                  subtitle:
+                      const Text('Inside/outside for double-sided printing'),
+                  value: mirror,
+                  onChanged: (v) => setDlg(() => mirror = v),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                setState(() {
+                  _columnCount = columns;
+                  _gutterTwips = gutter;
+                  _mirrorMargins = mirror;
+                });
+                _showSnack('Page layout updated.');
+              },
+              child: const Text('Apply'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Paragraph spacing & line spacing dialog ───────────────────────────────
+
+  void _showParagraphSpacingDialog() {
+    final paragraph = _activeOpenXmlParagraph;
+    if (paragraph == null) {
+      _showSnack('Click inside a paragraph first.');
+      return;
+    }
+
+    var lineSpacing = paragraph.lineSpacingTwips ?? 240;
+    var spaceBefore = paragraph.spaceBefore ?? 0;
+    var spaceAfter = paragraph.spaceAfter ?? 0;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Paragraph Spacing'),
+          content: SizedBox(
+            width: 360,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _spacingRow(
+                  'Line spacing',
+                  lineSpacing,
+                  [
+                    const DropdownMenuItem(value: 240, child: Text('Single')),
+                    const DropdownMenuItem(value: 360, child: Text('1.5 lines')),
+                    const DropdownMenuItem(value: 480, child: Text('Double')),
+                    const DropdownMenuItem(value: 276, child: Text('1.15')),
+                    const DropdownMenuItem(value: 312, child: Text('1.3')),
+                  ],
+                  (v) => setDlg(() => lineSpacing = v ?? 240),
+                ),
+                const SizedBox(height: 12),
+                _spacingRow(
+                  'Space before (pt)',
+                  spaceBefore,
+                  [
+                    const DropdownMenuItem(value: 0, child: Text('0 pt')),
+                    const DropdownMenuItem(value: 120, child: Text('6 pt')),
+                    const DropdownMenuItem(value: 160, child: Text('8 pt')),
+                    const DropdownMenuItem(value: 240, child: Text('12 pt')),
+                    const DropdownMenuItem(value: 360, child: Text('18 pt')),
+                  ],
+                  (v) => setDlg(() => spaceBefore = v ?? 0),
+                ),
+                const SizedBox(height: 12),
+                _spacingRow(
+                  'Space after (pt)',
+                  spaceAfter,
+                  [
+                    const DropdownMenuItem(value: 0, child: Text('0 pt')),
+                    const DropdownMenuItem(value: 120, child: Text('6 pt')),
+                    const DropdownMenuItem(value: 160, child: Text('8 pt')),
+                    const DropdownMenuItem(value: 240, child: Text('12 pt')),
+                    const DropdownMenuItem(value: 360, child: Text('18 pt')),
+                  ],
+                  (v) => setDlg(() => spaceAfter = v ?? 0),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _updateActiveOpenXmlParagraph(
+                  (b) => b.copyWith(
+                    lineSpacingTwips: lineSpacing,
+                    spaceBefore: spaceBefore,
+                    spaceAfter: spaceAfter,
+                  ),
+                );
+              },
+              child: const Text('Apply'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _spacingRow<T>(
+    String label,
+    T value,
+    List<DropdownMenuItem<T>> items,
+    ValueChanged<T?> onChanged,
+  ) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 140,
+          child: Text(label, style: const TextStyle(fontSize: 13)),
+        ),
+        Expanded(
+          child: DropdownButtonFormField<T>(
+            value: value,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            items: items,
+            onChanged: onChanged,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── Tab stops dialog ───────────────────────────────────────────────────────
+
+  void _showTabStopsDialog() {
+    final paragraph = _activeOpenXmlParagraph;
+    if (paragraph == null) {
+      _showSnack('Click inside a paragraph first.');
+      return;
+    }
+
+    var tabs = List<TabStop>.from(paragraph.tabs);
+    var newPosTwips = 720;
+    var newAlign = TabAlignment.left;
+    var newLeader = TabLeader.none;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Tab Stops'),
+          content: SizedBox(
+            width: 480,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (tabs.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      'No tab stops defined.',
+                      style: TextStyle(color: Color(0xff6b7280)),
+                    ),
+                  )
+                else
+                  ...tabs.asMap().entries.map(
+                    (e) => ListTile(
+                      dense: true,
+                      title: Text(
+                        '${(e.value.positionTwips / 1440).toStringAsFixed(2)}"'
+                        ' — ${e.value.alignment.name}'
+                        '${e.value.leader != TabLeader.none ? ' (${e.value.leader.name})' : ''}',
+                      ),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.delete_outline, size: 18),
+                        onPressed: () =>
+                            setDlg(() => tabs.removeAt(e.key)),
+                      ),
+                    ),
+                  ),
+                const Divider(),
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<int>(
+                        value: newPosTwips,
+                        decoration: const InputDecoration(
+                          labelText: 'Position',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        items: [
+                          for (final inch in [0.5, 1.0, 1.5, 2.0, 2.5, 3.0,
+                              3.5, 4.0, 4.5, 5.0, 5.5, 6.0])
+                            DropdownMenuItem(
+                              value: (inch * 1440).round(),
+                              child: Text('$inch"'),
+                            ),
+                        ],
+                        onChanged: (v) =>
+                            setDlg(() => newPosTwips = v ?? 720),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: DropdownButtonFormField<TabAlignment>(
+                        value: newAlign,
+                        decoration: const InputDecoration(
+                          labelText: 'Align',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        items: [
+                          for (final a in TabAlignment.values)
+                            DropdownMenuItem(
+                              value: a,
+                              child: Text(a.name),
+                            ),
+                        ],
+                        onChanged: (v) =>
+                            setDlg(() => newAlign = v ?? TabAlignment.left),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: DropdownButtonFormField<TabLeader>(
+                        value: newLeader,
+                        decoration: const InputDecoration(
+                          labelText: 'Leader',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        items: [
+                          for (final l in TabLeader.values)
+                            DropdownMenuItem(
+                              value: l,
+                              child: Text(l.name),
+                            ),
+                        ],
+                        onChanged: (v) =>
+                            setDlg(() => newLeader = v ?? TabLeader.none),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: () {
+                        final stop = TabStop(
+                          positionTwips: newPosTwips,
+                          alignment: newAlign,
+                          leader: newLeader,
+                        );
+                        setDlg(() {
+                          tabs
+                            ..removeWhere(
+                              (t) => t.positionTwips == stop.positionTwips,
+                            )
+                            ..add(stop)
+                            ..sort(
+                              (a, b) => a.positionTwips
+                                  .compareTo(b.positionTwips),
+                            );
+                        });
+                      },
+                      child: const Text('Add'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _updateActiveOpenXmlParagraph(
+                  (b) => b.copyWith(tabs: const []),
+                );
+              },
+              child: const Text('Clear All'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _updateActiveOpenXmlParagraph(
+                  (b) => b.copyWith(tabs: List.unmodifiable(tabs)),
+                );
+              },
+              child: const Text('Apply'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Theme selector ─────────────────────────────────────────────────────────
+
+  void _showThemeDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Document Theme'),
+          content: SizedBox(
+            width: 480,
+            child: GridView.builder(
+              shrinkWrap: true,
+              gridDelegate:
+                  const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                mainAxisExtent: 110,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+              ),
+              itemCount: DocumentTheme.presets.length,
+              itemBuilder: (context, index) {
+                final theme = DocumentTheme.presets[index];
+                final isActive = theme.id == _activeThemeId;
+                return InkWell(
+                  onTap: () {
+                    setDlg(() {});
+                    _applyTheme(theme);
+                    Navigator.of(ctx).pop();
+                  },
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: isActive
+                            ? const Color(0xff2563eb)
+                            : const Color(0xffcbd5e1),
+                        width: isActive ? 2 : 1,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                      color: Color(
+                        int.parse(
+                              'FF${theme.pageColorHex.toUpperCase()}',
+                              radix: 16,
+                            ),
+                      ),
+                    ),
+                    padding: const EdgeInsets.all(10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          theme.name,
+                          style: TextStyle(
+                            fontFamily: theme.headingFont == 'Aptos'
+                                ? null
+                                : theme.headingFont,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                            color: Color(
+                              int.parse(
+                                'FF${theme.headingColorHex.toUpperCase()}',
+                                radix: 16,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Heading font',
+                          style: TextStyle(
+                            fontFamily: theme.headingFont == 'Aptos'
+                                ? null
+                                : theme.headingFont,
+                            fontSize: 11,
+                            color: const Color(0xff64748b),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Body font',
+                          style: TextStyle(
+                            fontFamily: theme.bodyFont == 'Aptos'
+                                ? null
+                                : theme.bodyFont,
+                            fontSize: 11,
+                            color: const Color(0xff64748b),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            _colorChip(theme.accentColorHex),
+                            const SizedBox(width: 4),
+                            _colorChip(theme.headingColorHex),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _colorChip(String hex) {
+    return Container(
+      width: 14,
+      height: 14,
+      decoration: BoxDecoration(
+        color: Color(int.parse('FF$hex', radix: 16)),
+        shape: BoxShape.circle,
+        border: Border.all(color: const Color(0xffe2e8f0)),
+      ),
+    );
+  }
+
+  void _applyTheme(DocumentTheme theme) {
+    setState(() {
+      _activeThemeId = theme.id;
+      _fontFamily = theme.bodyFont;
+      _pageColor = Color(
+        int.parse('FF${theme.pageColorHex.toUpperCase()}', radix: 16),
+      );
+    });
+    _showSnack('Theme "${theme.name}" applied.');
+  }
+
+  // ── Index entries ──────────────────────────────────────────────────────────
+
+  void _showInsertIndexEntryDialog() {
+    final termCtrl = TextEditingController();
+    final subtermCtrl = TextEditingController();
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Mark Index Entry'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: termCtrl,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Main entry',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: subtermCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Sub-entry (optional)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final term = termCtrl.text.trim();
+              if (term.isEmpty) return;
+              Navigator.of(ctx).pop();
+              setState(() {
+                _indexEntries.add(
+                  IndexEntry(
+                    id: DateTime.now().microsecondsSinceEpoch.toString(),
+                    term: term,
+                    subterm: subtermCtrl.text.trim(),
+                    blockIndex: _activeOpenXmlBlockIndex ?? 0,
+                  ),
+                );
+              });
+              _showSnack('Index entry "$term" marked.');
+            },
+            child: const Text('Mark'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showIndexDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Index'),
+          content: SizedBox(
+            width: 480,
+            child: _indexEntries.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Text(
+                      'No index entries. Use Insert › Index Entry to mark terms.',
+                      style: TextStyle(color: Color(0xff6b7280)),
+                    ),
+                  )
+                : SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: () {
+                        final grouped = <String, List<IndexEntry>>{};
+                        for (final e in _indexEntries) {
+                          grouped.putIfAbsent(e.term, () => []).add(e);
+                        }
+                        final keys = grouped.keys.toList()..sort();
+                        return [
+                          for (final key in keys) ...[
+                            Text(
+                              key,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            for (final entry in grouped[key]!)
+                              if (entry.subterm.isNotEmpty)
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.only(left: 16, top: 2),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          entry.subterm,
+                                          style: const TextStyle(fontSize: 13),
+                                        ),
+                                      ),
+                                      Text(
+                                        'para ${entry.blockIndex + 1}',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Color(0xff6b7280),
+                                        ),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(
+                                          Icons.delete_outline,
+                                          size: 16,
+                                        ),
+                                        onPressed: () {
+                                          setState(
+                                            () => _indexEntries.remove(entry),
+                                          );
+                                          setDlg(() {});
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              else
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2),
+                                  child: Row(
+                                    children: [
+                                      Text(
+                                        'para ${entry.blockIndex + 1}',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Color(0xff6b7280),
+                                        ),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(
+                                          Icons.delete_outline,
+                                          size: 16,
+                                        ),
+                                        onPressed: () {
+                                          setState(
+                                            () => _indexEntries.remove(entry),
+                                          );
+                                          setDlg(() {});
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            const SizedBox(height: 6),
+                          ],
+                        ];
+                      }(),
+                    ),
+                  ),
+          ),
+          actions: [
+            if (_indexEntries.isNotEmpty)
+              TextButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  _insertGeneratedIndex();
+                },
+                child: const Text('Insert Index'),
+              ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _insertGeneratedIndex() {
+    final grouped = <String, List<IndexEntry>>{};
+    for (final e in _indexEntries) {
+      grouped.putIfAbsent(e.term, () => []).add(e);
+    }
+    final keys = grouped.keys.toList()..sort();
+    _appendOpenXmlBlock(
+      const OpenXmlParagraphBlock(
+        runs: [OpenXmlRun('INDEX')],
+        style: OpenXmlTextStyle.heading1,
+      ),
+    );
+    for (final key in keys) {
+      final entries = grouped[key]!;
+      final pages = entries.map((e) => 'para ${e.blockIndex + 1}').join(', ');
+      _appendOpenXmlBlock(
+        OpenXmlParagraphBlock(
+          runs: [OpenXmlRun('$key ........... $pages')],
+        ),
+      );
+    }
+    _showSnack('Index inserted.');
+  }
+
+  // ── Cross references ───────────────────────────────────────────────────────
+
+  void _showInsertCrossReferenceDialog() {
+    final sources = <CrossReference>[];
+    for (var i = 0; i < _openXmlDocument.blocks.length; i++) {
+      final b = _openXmlDocument.blocks[i];
+      if (b is OpenXmlParagraphBlock &&
+          (b.style == OpenXmlTextStyle.heading1 ||
+              b.style == OpenXmlTextStyle.heading2 ||
+              b.style == OpenXmlTextStyle.heading3)) {
+        sources.add(
+          CrossReference(
+            id: 'auto-$i',
+            label: b.plainText.trim(),
+            blockIndex: i,
+            type: CrossReferenceType.section,
+          ),
+        );
+      }
+    }
+    sources.addAll(_crossReferences);
+
+    CrossReference? selected = sources.isNotEmpty ? sources.first : null;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Insert Cross-Reference'),
+          content: SizedBox(
+            width: 400,
+            child: sources.isEmpty
+                ? const Text(
+                    'No headings or references found. Add headings first.',
+                  )
+                : DropdownButtonFormField<CrossReference>(
+                    value: selected,
+                    decoration: const InputDecoration(
+                      labelText: 'Reference to',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      for (final ref in sources)
+                        DropdownMenuItem(
+                          value: ref,
+                          child: Text(
+                            ref.label.isEmpty
+                                ? '(para ${ref.blockIndex + 1})'
+                                : ref.label,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                    onChanged: (v) => setDlg(() => selected = v),
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final ref = selected;
+                if (ref == null) return;
+                Navigator.of(ctx).pop();
+                _appendOpenXmlBlock(
+                  OpenXmlParagraphBlock(
+                    runs: [
+                      OpenXmlRun(
+                        'See: ${ref.label.isEmpty ? '(para ${ref.blockIndex + 1})' : ref.label}',
+                      ),
+                    ],
+                  ),
+                );
+                _showSnack('Cross-reference inserted.');
+              },
+              child: const Text('Insert'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Custom styles organizer ────────────────────────────────────────────────
+
+  void _showStyleOrganizerDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Style Organizer'),
+          content: SizedBox(
+            width: 520,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_customStyles.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: Text(
+                      'No custom styles yet.',
+                      style: TextStyle(color: Color(0xff6b7280)),
+                    ),
+                  )
+                else
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 240),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: _customStyles.length,
+                      separatorBuilder: (context, i) =>
+                          const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final style = _customStyles[index];
+                        return ListTile(
+                          dense: true,
+                          title: Text(
+                            style.name,
+                            style: TextStyle(
+                              fontWeight: style.bold
+                                  ? FontWeight.w700
+                                  : FontWeight.normal,
+                              fontStyle: style.italic
+                                  ? FontStyle.italic
+                                  : FontStyle.normal,
+                              fontSize: style.fontSize ?? 14,
+                              color: style.colorHex != null
+                                  ? Color(
+                                      int.parse(
+                                        'FF${style.colorHex!.toUpperCase()}',
+                                        radix: 16,
+                                      ),
+                                    )
+                                  : null,
+                            ),
+                          ),
+                          subtitle: Text(
+                            style.parentStyleId != null
+                                ? 'Based on: ${style.parentStyleId}'
+                                : 'No parent style',
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.edit_outlined, size: 16),
+                                tooltip: 'Apply to paragraph',
+                                onPressed: () {
+                                  Navigator.of(ctx).pop();
+                                  _updateActiveOpenXmlParagraph(
+                                    (b) =>
+                                        b.copyWith(customStyleId: style.id),
+                                  );
+                                  _showSnack(
+                                    'Style "${style.name}" applied.',
+                                  );
+                                },
+                              ),
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.delete_outline,
+                                  size: 16,
+                                ),
+                                onPressed: () {
+                                  setState(
+                                    () => _customStyles.removeAt(index),
+                                  );
+                                  setDlg(() {});
+                                },
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.of(ctx).pop();
+                    _showCreateStyleDialog();
+                  },
+                  icon: const Icon(Icons.add_outlined, size: 18),
+                  label: const Text('Create new style'),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showCreateStyleDialog() {
+    final nameCtrl = TextEditingController();
+    var bold = false;
+    var italic = false;
+    var underline = false;
+    double fontSize = 12;
+    String? parentStyleId;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Create Style'),
+          content: SizedBox(
+            width: 360,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Style name',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String?>(
+                  value: parentStyleId,
+                  decoration: const InputDecoration(
+                    labelText: 'Based on (parent style)',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    const DropdownMenuItem(
+                      value: null,
+                      child: Text('None'),
+                    ),
+                    for (final s in OpenXmlTextStyle.values)
+                      DropdownMenuItem(
+                        value: s.styleId,
+                        child: Text(s.label),
+                      ),
+                    for (final s in _customStyles)
+                      DropdownMenuItem(
+                        value: s.id,
+                        child: Text(s.name),
+                      ),
+                  ],
+                  onChanged: (v) => setDlg(() => parentStyleId = v),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    FilterChip(
+                      label: const Text('Bold'),
+                      selected: bold,
+                      onSelected: (v) => setDlg(() => bold = v),
+                    ),
+                    const SizedBox(width: 8),
+                    FilterChip(
+                      label: const Text('Italic'),
+                      selected: italic,
+                      onSelected: (v) => setDlg(() => italic = v),
+                    ),
+                    const SizedBox(width: 8),
+                    FilterChip(
+                      label: const Text('Underline'),
+                      selected: underline,
+                      onSelected: (v) => setDlg(() => underline = v),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Text('Font size: '),
+                    Expanded(
+                      child: Slider(
+                        value: fontSize,
+                        min: 8,
+                        max: 36,
+                        divisions: 28,
+                        label: '${fontSize.round()} pt',
+                        onChanged: (v) => setDlg(() => fontSize = v),
+                      ),
+                    ),
+                    Text('${fontSize.round()} pt'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final name = nameCtrl.text.trim();
+                if (name.isEmpty) {
+                  _showSnack('Enter a style name.');
+                  return;
+                }
+                Navigator.of(ctx).pop();
+                final style = CustomDocumentStyle(
+                  id: DateTime.now().microsecondsSinceEpoch.toString(),
+                  name: name,
+                  parentStyleId: parentStyleId,
+                  bold: bold,
+                  italic: italic,
+                  underline: underline,
+                  fontSize: fontSize,
+                );
+                setState(() => _customStyles.add(style));
+                _showSnack('Style "$name" created.');
+              },
+              child: const Text('Create'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Image properties (resize / alt text) ──────────────────────────────────
+
+  void _showImagePropertiesForFirstBlock() {
+    if (_mediaBlocks.isEmpty) {
+      _showSnack('No images in document.');
+      return;
+    }
+    _showImagePropertiesDialog(0);
+  }
+
+  void _showImagePropertiesDialog(int mediaIndex) {
+    if (mediaIndex < 0 || mediaIndex >= _mediaBlocks.length) return;
+    final block = _mediaBlocks[mediaIndex];
+    var width = block.widthFraction ?? 1.0;
+    final altCtrl = TextEditingController(text: block.altText);
+    final captionCtrl = TextEditingController(text: block.caption);
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Image Properties'),
+          content: SizedBox(
+            width: 380,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Width (% of page)'),
+                Slider(
+                  value: width,
+                  min: 0.2,
+                  max: 1.0,
+                  divisions: 16,
+                  label: '${(width * 100).round()}%',
+                  onChanged: (v) => setDlg(() => width = v),
+                ),
+                Text('${(width * 100).round()}% of page width'),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: captionCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Caption',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: altCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Alt text',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                setState(() {
+                  _mediaBlocks[mediaIndex] = block.copyWith(
+                    widthFraction: width,
+                    caption: captionCtrl.text.trim(),
+                    altText: altCtrl.text.trim(),
+                  );
+                });
+                _showSnack('Image properties updated.');
+              },
+              child: const Text('Apply'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Compare documents ──────────────────────────────────────────────────────
+
+  void _showCompareDocumentsDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        final otherCtrl = TextEditingController();
+        return AlertDialog(
+          title: const Text('Compare Documents'),
+          content: SizedBox(
+            width: 480,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Paste the text of the document to compare against:',
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: otherCtrl,
+                  maxLines: 8,
+                  decoration: const InputDecoration(
+                    hintText: 'Paste document text here…',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _runDocumentComparison(otherCtrl.text);
+              },
+              child: const Text('Compare'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _runDocumentComparison(String other) {
+    final currentLines = _plainText.split('\n').where((l) => l.trim().isNotEmpty).toList();
+    final otherLines = other.split('\n').where((l) => l.trim().isNotEmpty).toList();
+
+    final added = <String>[];
+    final removed = <String>[];
+    final unchanged = <String>[];
+
+    final otherSet = otherLines.toSet();
+    final currentSet = currentLines.toSet();
+
+    for (final line in currentLines) {
+      if (!otherSet.contains(line)) removed.add(line);
+      else unchanged.add(line);
+    }
+    for (final line in otherLines) {
+      if (!currentSet.contains(line)) added.add(line);
+    }
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Comparison Result'),
+        content: SizedBox(
+          width: 560,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _diffStat(
+                'Added lines',
+                added.length,
+                const Color(0xff16a34a),
+              ),
+              _diffStat(
+                'Removed lines',
+                removed.length,
+                const Color(0xffdc2626),
+              ),
+              _diffStat(
+                'Unchanged lines',
+                unchanged.length,
+                const Color(0xff475569),
+              ),
+              const SizedBox(height: 12),
+              if (added.isNotEmpty) ...[
+                const Text(
+                  'Added:',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xff16a34a),
+                  ),
+                ),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 100),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (final l in added.take(6))
+                          Text(
+                            '+ ${l.length > 80 ? '${l.substring(0, 80)}…' : l}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xff16a34a),
+                            ),
+                          ),
+                        if (added.length > 6)
+                          Text(
+                            '… and ${added.length - 6} more',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Color(0xff6b7280),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+              if (removed.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  'Removed:',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xffdc2626),
+                  ),
+                ),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 100),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (final l in removed.take(6))
+                          Text(
+                            '- ${l.length > 80 ? '${l.substring(0, 80)}…' : l}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xffdc2626),
+                            ),
+                          ),
+                        if (removed.length > 6)
+                          Text(
+                            '… and ${removed.length - 6} more',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Color(0xff6b7280),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _diffStat(String label, int count, Color color) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 140,
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 13),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              '$count',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Insert field ───────────────────────────────────────────────────────────
+
+  void _showInsertFieldDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Insert Field'),
+        children: [
+          for (final fieldType in FieldType.values)
+            SimpleDialogOption(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _insertField(fieldType);
+              },
+              child: ListTile(
+                dense: true,
+                leading: const Icon(Icons.data_object_outlined, size: 18),
+                title: Text(fieldType.label),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _insertField(FieldType fieldType) {
+    final now = DateTime.now();
+    final text = switch (fieldType) {
+      FieldType.pageNumber => '[Page]',
+      FieldType.totalPages => '[Pages]',
+      FieldType.date => '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}',
+      FieldType.time => '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}',
+      FieldType.author => _metadata.author.isEmpty ? '[Author]' : _metadata.author,
+      FieldType.title => _titleController.text.isEmpty ? '[Title]' : _titleController.text,
+      FieldType.fileName => '[FileName]',
+      FieldType.wordCount => '$_wordCount words',
+    };
+    if (_isNativeOpenXmlEditor) {
+      final controller = _activeRunController;
+      if (controller != null) {
+        final sel = controller.selection;
+        final offset = sel.isValid ? sel.baseOffset : controller.text.length;
+        controller.text = controller.text.substring(0, offset) +
+            text +
+            controller.text.substring(sel.isValid ? sel.extentOffset : offset);
+        _refocusActiveOpenXmlEditor();
+        return;
+      }
+    }
+    _insertText(text);
+    _showSnack('Field "${fieldType.label}" inserted.');
+  }
+
+  // ── Custom TOC ─────────────────────────────────────────────────────────────
+
+  void _showCustomTocDialog() {
+    var levels = 3;
+    var includePageNumbers = true;
+    var rightAlignPageNumbers = true;
+    var useHyperlinks = false;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Table of Contents Options'),
+          content: SizedBox(
+            width: 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<int>(
+                  value: levels,
+                  decoration: const InputDecoration(
+                    labelText: 'Show levels',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 1, child: Text('1 level')),
+                    DropdownMenuItem(value: 2, child: Text('2 levels')),
+                    DropdownMenuItem(value: 3, child: Text('3 levels')),
+                    DropdownMenuItem(value: 4, child: Text('4 levels')),
+                    DropdownMenuItem(value: 5, child: Text('5 levels')),
+                    DropdownMenuItem(value: 6, child: Text('6 levels')),
+                  ],
+                  onChanged: (v) => setDlg(() => levels = v ?? 3),
+                ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Show page numbers'),
+                  value: includePageNumbers,
+                  onChanged: (v) => setDlg(() => includePageNumbers = v),
+                ),
+                SwitchListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Right-align page numbers'),
+                  value: rightAlignPageNumbers,
+                  onChanged: (v) =>
+                      setDlg(() => rightAlignPageNumbers = v),
+                ),
+                SwitchListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Use hyperlinks'),
+                  value: useHyperlinks,
+                  onChanged: (v) => setDlg(() => useHyperlinks = v),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _insertCustomToc(
+                  levels: levels,
+                  includePageNumbers: includePageNumbers,
+                );
+              },
+              child: const Text('Insert'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _insertCustomToc({required int levels, required bool includePageNumbers}) {
+    // Build TOC heading entries from document headings up to requested depth.
+    final styleMap = {
+      1: OpenXmlTextStyle.heading1,
+      2: OpenXmlTextStyle.heading2,
+      3: OpenXmlTextStyle.heading3,
+      4: OpenXmlTextStyle.heading4,
+      5: OpenXmlTextStyle.heading5,
+      6: OpenXmlTextStyle.heading6,
+    };
+    final allowedStyles = {
+      for (var i = 1; i <= levels; i++) styleMap[i],
+    }.whereType<OpenXmlTextStyle>().toSet();
+
+    _appendOpenXmlBlock(
+      const OpenXmlParagraphBlock(
+        runs: [OpenXmlRun('Table of Contents')],
+        style: OpenXmlTextStyle.heading1,
+      ),
+    );
+
+    var entryNum = 1;
+    for (final block in _openXmlDocument.blocks) {
+      if (block is OpenXmlParagraphBlock &&
+          allowedStyles.contains(block.style)) {
+        final text = block.plainText.trim();
+        if (text.isNotEmpty) {
+          final dots = includePageNumbers ? ' .' * 20 : '';
+          _appendOpenXmlBlock(
+            OpenXmlParagraphBlock(
+              runs: [OpenXmlRun('$entryNum. $text$dots')],
+            ),
+          );
+          entryNum++;
+        }
+      }
+    }
+    _showSnack('Custom TOC inserted ($levels level${levels != 1 ? 's' : ''}).');
+  }
+
+  void _updateToc() {
+    // Find the TOC heading and regenerate from headings.
+    final blocks = List<OpenXmlBlock>.from(_openXmlDocument.blocks);
+    final tocIdx = blocks.indexWhere(
+      (b) =>
+          b is OpenXmlParagraphBlock &&
+          b.style == OpenXmlTextStyle.heading1 &&
+          b.plainText.trim().toLowerCase() == 'table of contents',
+    );
+    if (tocIdx < 0) {
+      _showSnack('No Table of Contents found. Insert one first.');
+      return;
+    }
+
+    // Remove existing TOC entries (plain-style paragraphs after the TOC heading
+    // that start with digits and dots pattern).
+    var end = tocIdx + 1;
+    while (end < blocks.length) {
+      final b = blocks[end];
+      if (b is OpenXmlParagraphBlock && b.style == OpenXmlTextStyle.normal) {
+        final text = b.plainText.trim();
+        if (text.isEmpty || RegExp(r'^\d+\.').hasMatch(text)) {
+          end++;
+          continue;
+        }
+      }
+      break;
+    }
+    blocks.removeRange(tocIdx + 1, end);
+
+    // Re-insert headings as TOC entries.
+    var entryNum = 1;
+    for (final block in _openXmlDocument.blocks) {
+      if (block is OpenXmlParagraphBlock) {
+        if (block.style == OpenXmlTextStyle.heading1 ||
+            block.style == OpenXmlTextStyle.heading2 ||
+            block.style == OpenXmlTextStyle.heading3) {
+          final text = block.plainText.trim();
+          if (text.isNotEmpty && text.toLowerCase() != 'table of contents') {
+            blocks.insert(
+              tocIdx + entryNum,
+              OpenXmlParagraphBlock(
+                runs: [OpenXmlRun('$entryNum. $text')],
+              ),
+            );
+            entryNum++;
+          }
+        }
+      }
+    }
+
+    _recordOpenXmlUndoState();
+    setState(() {
+      _openXmlDocument = _openXmlDocument.copyWith(blocks: blocks);
+      _setMarkdownSilently(_openXmlDocument.plainText);
+      _saved = false;
+    });
+    _showSnack('Table of Contents updated.');
+  }
+
+  // ── Merge table cells dialog ───────────────────────────────────────────────
+
+  void _showMergeCellsDialog() {
+    final tableBlocks = <(int, OpenXmlTableBlock)>[];
+    for (var i = 0; i < _openXmlDocument.blocks.length; i++) {
+      final b = _openXmlDocument.blocks[i];
+      if (b is OpenXmlTableBlock) tableBlocks.add((i, b));
+    }
+    if (tableBlocks.isEmpty) {
+      _showSnack('No tables found in document.');
+      return;
+    }
+
+    var tableIdx = tableBlocks.first.$1;
+    var startRow = 0;
+    var startCol = 0;
+    var rowSpan = 2;
+    var colSpan = 2;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) {
+          final table = _openXmlDocument.blocks[tableIdx] as OpenXmlTableBlock;
+          final maxRow = table.rows.length;
+          final maxCol = table.rows.isEmpty ? 0 : table.rows[0].length;
+          return AlertDialog(
+            title: const Text('Merge Cells'),
+            content: SizedBox(
+              width: 420,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (tableBlocks.length > 1)
+                    DropdownButtonFormField<int>(
+                      value: tableIdx,
+                      decoration: const InputDecoration(
+                        labelText: 'Table',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: [
+                        for (final (idx, _) in tableBlocks)
+                          DropdownMenuItem(
+                            value: idx,
+                            child: Text('Table at para ${idx + 1}'),
+                          ),
+                      ],
+                      onChanged: (v) =>
+                          setDlg(() => tableIdx = v ?? tableIdx),
+                    ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          value: startRow.clamp(0, math.max(0, maxRow - 1)),
+                          decoration: const InputDecoration(
+                            labelText: 'Start row',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          items: [
+                            for (var i = 0; i < maxRow; i++)
+                              DropdownMenuItem(
+                                value: i,
+                                child: Text('Row ${i + 1}'),
+                              ),
+                          ],
+                          onChanged: (v) =>
+                              setDlg(() => startRow = v ?? 0),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          value: startCol.clamp(0, math.max(0, maxCol - 1)),
+                          decoration: const InputDecoration(
+                            labelText: 'Start col',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          items: [
+                            for (var i = 0; i < maxCol; i++)
+                              DropdownMenuItem(
+                                value: i,
+                                child: Text('Col ${i + 1}'),
+                              ),
+                          ],
+                          onChanged: (v) =>
+                              setDlg(() => startCol = v ?? 0),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          value: rowSpan.clamp(1, math.max(1, maxRow - startRow)),
+                          decoration: const InputDecoration(
+                            labelText: 'Row span',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          items: [
+                            for (var i = 1; i <= math.max(1, maxRow - startRow); i++)
+                              DropdownMenuItem(
+                                value: i,
+                                child: Text('$i row${i > 1 ? 's' : ''}'),
+                              ),
+                          ],
+                          onChanged: (v) =>
+                              setDlg(() => rowSpan = v ?? 1),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          value: colSpan.clamp(1, math.max(1, maxCol - startCol)),
+                          decoration: const InputDecoration(
+                            labelText: 'Col span',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          items: [
+                            for (var i = 1; i <= math.max(1, maxCol - startCol); i++)
+                              DropdownMenuItem(
+                                value: i,
+                                child: Text('$i col${i > 1 ? 's' : ''}'),
+                              ),
+                          ],
+                          onChanged: (v) =>
+                              setDlg(() => colSpan = v ?? 1),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  _applyMergeCells(
+                    tableIdx,
+                    startRow,
+                    startCol,
+                    rowSpan,
+                    colSpan,
+                  );
+                },
+                child: const Text('Merge'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _applyMergeCells(
+    int blockIndex,
+    int row,
+    int col,
+    int rowSpan,
+    int colSpan,
+  ) {
+    final block = _openXmlDocument.blocks[blockIndex];
+    if (block is! OpenXmlTableBlock) return;
+    final existing = List<(int, int, int, int)>.from(block.mergedCells);
+    existing.removeWhere(
+      (m) => m.$1 == row && m.$2 == col,
+    );
+    if (rowSpan > 1 || colSpan > 1) {
+      existing.add((row, col, rowSpan, colSpan));
+    }
+    final newBlock = block.copyWith(mergedCells: existing);
+    final blocks = List<OpenXmlBlock>.from(_openXmlDocument.blocks);
+    blocks[blockIndex] = newBlock;
+    _recordOpenXmlUndoState();
+    setState(() {
+      _openXmlDocument = _openXmlDocument.copyWith(blocks: blocks);
+      _setMarkdownSilently(_openXmlDocument.plainText);
+      _saved = false;
+    });
+    _showSnack('Cells merged.');
   }
 
   void _activateFormatPainter() {
@@ -4002,6 +5851,24 @@ class _DocumentStudioState extends State<DocumentStudio> {
                             onHighContrast: () =>
                                 setState(() => _highContrast = !_highContrast),
                             onPrintPreview: _showPrintPreview,
+                            onImageProperties:
+                                _showImagePropertiesForFirstBlock,
+                            onCustomToc: _showCustomTocDialog,
+                            onDocumentProperties:
+                                _showDocumentPropertiesDialog,
+                            onPageLayout: _showPageLayoutDialog,
+                            onParagraphSpacing: _showParagraphSpacingDialog,
+                            onTabStops: _showTabStopsDialog,
+                            onTheme: _showThemeDialog,
+                            onStyleOrganizer: _showStyleOrganizerDialog,
+                            onInsertField: _showInsertFieldDialog,
+                            onInsertIndexEntry: _showInsertIndexEntryDialog,
+                            onShowIndex: _showIndexDialog,
+                            onInsertCrossReference:
+                                _showInsertCrossReferenceDialog,
+                            onCompareDocuments: _showCompareDocumentsDialog,
+                            onUpdateToc: _updateToc,
+                            onMergeCells: _showMergeCellsDialog,
                           ),
                         ),
                       ),

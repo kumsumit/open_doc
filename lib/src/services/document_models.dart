@@ -132,6 +132,27 @@ class OpenXmlBlockFactory {
           OoxmlTextAlign.left,
         ),
         pageBreakBefore: json['pageBreakBefore'] == true,
+        indentLeft: json['indentLeft'] is int ? json['indentLeft'] as int : 0,
+        hangingIndent:
+            json['hangingIndent'] is int ? json['hangingIndent'] as int : 0,
+        keepWithNext: json['keepWithNext'] == true,
+        widowOrphanControl: json['widowOrphanControl'] != false,
+        lineSpacingTwips: json['lineSpacingTwips'] is int
+            ? json['lineSpacingTwips'] as int
+            : null,
+        spaceBefore:
+            json['spaceBefore'] is int ? json['spaceBefore'] as int : null,
+        spaceAfter:
+            json['spaceAfter'] is int ? json['spaceAfter'] as int : null,
+        tabs: json['tabs'] is List
+            ? (json['tabs'] as List)
+                  .whereType<Map<String, Object?>>()
+                  .map(TabStop.fromJson)
+                  .toList()
+            : const [],
+        customStyleId: json['customStyleId'] is String
+            ? json['customStyleId'] as String
+            : null,
         runs: _openXmlRunsFromJson(json['runs']),
       ),
       'table' => OpenXmlTableBlock(
@@ -139,6 +160,8 @@ class OpenXmlBlockFactory {
         hasHeader: json['hasHeader'] != false,
         columnWidths: _intListFromJson(json['columnWidths']),
         rowHeights: _intListFromJson(json['rowHeights']),
+        repeatHeaderRow: json['repeatHeaderRow'] == true,
+        mergedCells: _mergedCellsFromJson(json['mergedCells']),
       ),
       _ => null,
     };
@@ -175,6 +198,8 @@ class OpenXmlRun {
     this.highlightHex,
     this.letterSpacing,
     this.href,
+    this.fontFamily,
+    this.fontSize,
   });
 
   final String text;
@@ -193,6 +218,10 @@ class OpenXmlRun {
   final String? highlightHex;
   final double? letterSpacing;
   final String? href;
+  /// Run-level font family override (null = use document default).
+  final String? fontFamily;
+  /// Run-level font size override in points (null = use document default).
+  final double? fontSize;
 
   docx.DocxText toDocxText() {
     return docx.DocxText(
@@ -212,6 +241,8 @@ class OpenXmlRun {
       color: colorHex == null ? null : docx.DocxColor(colorHex!),
       shadingFill: highlightHex,
       href: href,
+      fontFamily: fontFamily,
+      fontSize: fontSize,
     );
   }
 
@@ -233,6 +264,8 @@ class OpenXmlRun {
       if (highlightHex != null) 'highlightHex': highlightHex,
       if (letterSpacing != null) 'letterSpacing': letterSpacing,
       if (href != null) 'href': href,
+      if (fontFamily != null) 'fontFamily': fontFamily,
+      if (fontSize != null) 'fontSize': fontSize,
     };
   }
 }
@@ -247,6 +280,11 @@ class OpenXmlParagraphBlock extends OpenXmlBlock {
     this.hangingIndent = 0,
     this.keepWithNext = false,
     this.widowOrphanControl = true,
+    this.lineSpacingTwips,
+    this.spaceBefore,
+    this.spaceAfter,
+    this.tabs = const [],
+    this.customStyleId,
   }) : super(OpenXmlBlockType.paragraph);
 
   final List<OpenXmlRun> runs;
@@ -261,6 +299,16 @@ class OpenXmlParagraphBlock extends OpenXmlBlock {
   final bool keepWithNext;
   /// Prevent orphaned/widowed lines at page breaks.
   final bool widowOrphanControl;
+  /// Line spacing in twips (240=single, 360=1.5x, 480=double). Null = auto.
+  final int? lineSpacingTwips;
+  /// Space before paragraph in twips.
+  final int? spaceBefore;
+  /// Space after paragraph in twips.
+  final int? spaceAfter;
+  /// Custom tab stops for this paragraph.
+  final List<TabStop> tabs;
+  /// ID of an applied custom style, overriding the built-in [style].
+  final String? customStyleId;
 
   OpenXmlParagraphBlock copyWith({
     List<OpenXmlRun>? runs,
@@ -271,6 +319,11 @@ class OpenXmlParagraphBlock extends OpenXmlBlock {
     int? hangingIndent,
     bool? keepWithNext,
     bool? widowOrphanControl,
+    int? lineSpacingTwips,
+    int? spaceBefore,
+    int? spaceAfter,
+    List<TabStop>? tabs,
+    String? customStyleId,
   }) {
     return OpenXmlParagraphBlock(
       runs: runs ?? this.runs,
@@ -281,6 +334,11 @@ class OpenXmlParagraphBlock extends OpenXmlBlock {
       hangingIndent: hangingIndent ?? this.hangingIndent,
       keepWithNext: keepWithNext ?? this.keepWithNext,
       widowOrphanControl: widowOrphanControl ?? this.widowOrphanControl,
+      lineSpacingTwips: lineSpacingTwips ?? this.lineSpacingTwips,
+      spaceBefore: spaceBefore ?? this.spaceBefore,
+      spaceAfter: spaceAfter ?? this.spaceAfter,
+      tabs: tabs ?? this.tabs,
+      customStyleId: customStyleId ?? this.customStyleId,
     );
   }
 
@@ -290,7 +348,7 @@ class OpenXmlParagraphBlock extends OpenXmlBlock {
   @override
   docx.DocxNode toDocxNode() {
     return docx.DocxParagraph(
-      styleId: style.styleId,
+      styleId: customStyleId ?? style.styleId,
       align: switch (align) {
         OoxmlTextAlign.center => docx.DocxAlign.center,
         OoxmlTextAlign.right => docx.DocxAlign.right,
@@ -302,6 +360,9 @@ class OpenXmlParagraphBlock extends OpenXmlBlock {
           ? indentLeft
           : (style == OpenXmlTextStyle.quote ? 720 : null),
       indentFirstLine: hangingIndent > 0 ? -hangingIndent : null,
+      lineSpacing: lineSpacingTwips,
+      spacingBefore: spaceBefore,
+      spacingAfter: spaceAfter,
       children: [for (final run in runs) run.toDocxText()],
     );
   }
@@ -314,6 +375,14 @@ class OpenXmlParagraphBlock extends OpenXmlBlock {
       'align': align.name,
       'pageBreakBefore': pageBreakBefore,
       if (indentLeft > 0) 'indentLeft': indentLeft,
+      if (hangingIndent > 0) 'hangingIndent': hangingIndent,
+      if (keepWithNext) 'keepWithNext': true,
+      if (!widowOrphanControl) 'widowOrphanControl': false,
+      if (lineSpacingTwips != null) 'lineSpacingTwips': lineSpacingTwips,
+      if (spaceBefore != null) 'spaceBefore': spaceBefore,
+      if (spaceAfter != null) 'spaceAfter': spaceAfter,
+      if (tabs.isNotEmpty) 'tabs': [for (final t in tabs) t.toJson()],
+      if (customStyleId != null) 'customStyleId': customStyleId,
       'runs': [for (final run in runs) run.toJson()],
     };
   }
@@ -325,24 +394,34 @@ class OpenXmlTableBlock extends OpenXmlBlock {
     this.hasHeader = true,
     this.columnWidths = const [],
     this.rowHeights = const [],
+    this.repeatHeaderRow = false,
+    this.mergedCells = const [],
   }) : super(OpenXmlBlockType.table);
 
   final List<List<String>> rows;
   final bool hasHeader;
   final List<int> columnWidths;
   final List<int> rowHeights;
+  /// Whether the header row repeats on each page.
+  final bool repeatHeaderRow;
+  /// Merged cell spans: each entry is (row, col, rowSpan, colSpan).
+  final List<(int, int, int, int)> mergedCells;
 
   OpenXmlTableBlock copyWith({
     List<List<String>>? rows,
     bool? hasHeader,
     List<int>? columnWidths,
     List<int>? rowHeights,
+    bool? repeatHeaderRow,
+    List<(int, int, int, int)>? mergedCells,
   }) {
     return OpenXmlTableBlock(
       rows: rows ?? this.rows,
       hasHeader: hasHeader ?? this.hasHeader,
       columnWidths: columnWidths ?? this.columnWidths,
       rowHeights: rowHeights ?? this.rowHeights,
+      repeatHeaderRow: repeatHeaderRow ?? this.repeatHeaderRow,
+      mergedCells: mergedCells ?? this.mergedCells,
     );
   }
 
@@ -389,6 +468,11 @@ class OpenXmlTableBlock extends OpenXmlBlock {
       'hasHeader': hasHeader,
       if (columnWidths.isNotEmpty) 'columnWidths': columnWidths,
       if (rowHeights.isNotEmpty) 'rowHeights': rowHeights,
+      if (repeatHeaderRow) 'repeatHeaderRow': true,
+      if (mergedCells.isNotEmpty)
+        'mergedCells': [
+          for (final (r, c, rs, cs) in mergedCells) [r, c, rs, cs],
+        ],
     };
   }
 }
@@ -658,10 +742,28 @@ List<OpenXmlRun> _openXmlRunsFromJson(Object? value) {
           italic: item['italic'] == true,
           underline: item['underline'] == true,
           strike: item['strike'] == true,
+          superscript: item['superscript'] == true,
+          subscript: item['subscript'] == true,
+          smallCaps: item['smallCaps'] == true,
+          allCaps: item['allCaps'] == true,
+          doubleUnderline: item['doubleUnderline'] == true,
+          doubleStrike: item['doubleStrike'] == true,
+          hidden: item['hidden'] == true,
           colorHex: item['colorHex'] is String
               ? _normalizeOpenXmlColor(item['colorHex'] as String)
               : null,
+          highlightHex: item['highlightHex'] is String
+              ? item['highlightHex'] as String
+              : null,
+          letterSpacing: item['letterSpacing'] is num
+              ? (item['letterSpacing'] as num).toDouble()
+              : null,
           href: item['href'] is String ? item['href'] as String : null,
+          fontFamily:
+              item['fontFamily'] is String ? item['fontFamily'] as String : null,
+          fontSize: item['fontSize'] is num
+              ? (item['fontSize'] as num).toDouble()
+              : null,
         ),
   ];
 }
@@ -1218,6 +1320,18 @@ List<int> _intListFromJson(Object? value) {
 
 String _newWysiwygBlockId() => DateTime.now().microsecondsSinceEpoch.toString();
 
+List<(int, int, int, int)> _mergedCellsFromJson(Object? value) {
+  if (value is! List) return const [];
+  final result = <(int, int, int, int)>[];
+  for (final item in value) {
+    if (item is List && item.length == 4) {
+      final nums = item.map((e) => e is num ? e.round() : 0).toList();
+      result.add((nums[0], nums[1], nums[2], nums[3]));
+    }
+  }
+  return result;
+}
+
 class DocumentVersion {
   const DocumentVersion(
     this.id,
@@ -1263,6 +1377,9 @@ class MediaBlock {
     required this.caption,
     required this.bytes,
     this.altText = '',
+    this.widthFraction,
+    this.heightPx,
+    this.rotation = 0.0,
   });
 
   final String id;
@@ -1271,6 +1388,12 @@ class MediaBlock {
   final String caption;
   final Uint8List? bytes;
   final String altText;
+  /// Width as a fraction of the page content width (0.0–1.0). Null = auto.
+  final double? widthFraction;
+  /// Fixed height in pixels. Null = auto (preserve aspect ratio).
+  final double? heightPx;
+  /// Rotation in degrees (0, 90, 180, 270).
+  final double rotation;
 
   MediaBlock copyWith({
     String? id,
@@ -1279,6 +1402,9 @@ class MediaBlock {
     String? caption,
     Uint8List? bytes,
     String? altText,
+    double? widthFraction,
+    double? heightPx,
+    double? rotation,
   }) {
     return MediaBlock(
       id: id ?? this.id,
@@ -1287,6 +1413,9 @@ class MediaBlock {
       caption: caption ?? this.caption,
       bytes: bytes ?? this.bytes,
       altText: altText ?? this.altText,
+      widthFraction: widthFraction ?? this.widthFraction,
+      heightPx: heightPx ?? this.heightPx,
+      rotation: rotation ?? this.rotation,
     );
   }
 }
@@ -1309,6 +1438,300 @@ class Collaborator {
   final String name;
   final String status;
   final Color color;
+}
+
+// ── Document metadata ─────────────────────────────────────────────────────────
+
+class DocumentMetadata {
+  const DocumentMetadata({
+    this.author = '',
+    this.subject = '',
+    this.keywords = '',
+    this.description = '',
+    this.company = '',
+    this.category = '',
+    this.manager = '',
+  });
+
+  final String author;
+  final String subject;
+  final String keywords;
+  final String description;
+  final String company;
+  final String category;
+  final String manager;
+
+  DocumentMetadata copyWith({
+    String? author,
+    String? subject,
+    String? keywords,
+    String? description,
+    String? company,
+    String? category,
+    String? manager,
+  }) {
+    return DocumentMetadata(
+      author: author ?? this.author,
+      subject: subject ?? this.subject,
+      keywords: keywords ?? this.keywords,
+      description: description ?? this.description,
+      company: company ?? this.company,
+      category: category ?? this.category,
+      manager: manager ?? this.manager,
+    );
+  }
+}
+
+// ── Tab stops ─────────────────────────────────────────────────────────────────
+
+enum TabAlignment { left, center, right, decimal, bar }
+
+enum TabLeader { none, dots, dashes, line, heavy, middleDot }
+
+class TabStop {
+  const TabStop({
+    required this.positionTwips,
+    this.alignment = TabAlignment.left,
+    this.leader = TabLeader.none,
+  });
+
+  factory TabStop.fromJson(Map<String, Object?> json) {
+    return TabStop(
+      positionTwips: json['pos'] is int ? json['pos'] as int : 720,
+      alignment: _enumByName(
+        TabAlignment.values,
+        json['align'],
+        TabAlignment.left,
+      ),
+      leader: _enumByName(TabLeader.values, json['leader'], TabLeader.none),
+    );
+  }
+
+  final int positionTwips;
+  final TabAlignment alignment;
+  final TabLeader leader;
+
+  Map<String, Object?> toJson() => {
+    'pos': positionTwips,
+    'align': alignment.name,
+    'leader': leader.name,
+  };
+}
+
+// ── Index entries ─────────────────────────────────────────────────────────────
+
+class IndexEntry {
+  const IndexEntry({
+    required this.id,
+    required this.term,
+    this.subterm = '',
+    required this.blockIndex,
+  });
+
+  final String id;
+  final String term;
+  final String subterm;
+  final int blockIndex;
+
+  IndexEntry copyWith({String? term, String? subterm, int? blockIndex}) {
+    return IndexEntry(
+      id: id,
+      term: term ?? this.term,
+      subterm: subterm ?? this.subterm,
+      blockIndex: blockIndex ?? this.blockIndex,
+    );
+  }
+}
+
+// ── Cross references ──────────────────────────────────────────────────────────
+
+enum CrossReferenceType { figure, table, section, equation, bookmark }
+
+class CrossReference {
+  const CrossReference({
+    required this.id,
+    required this.label,
+    required this.blockIndex,
+    this.type = CrossReferenceType.section,
+  });
+
+  final String id;
+  final String label;
+  final int blockIndex;
+  final CrossReferenceType type;
+
+  CrossReference copyWith({
+    String? label,
+    int? blockIndex,
+    CrossReferenceType? type,
+  }) {
+    return CrossReference(
+      id: id,
+      label: label ?? this.label,
+      blockIndex: blockIndex ?? this.blockIndex,
+      type: type ?? this.type,
+    );
+  }
+}
+
+// ── Custom styles ─────────────────────────────────────────────────────────────
+
+class CustomDocumentStyle {
+  const CustomDocumentStyle({
+    required this.id,
+    required this.name,
+    this.parentStyleId,
+    this.bold = false,
+    this.italic = false,
+    this.underline = false,
+    this.fontSize,
+    this.colorHex,
+    this.highlightHex,
+    this.lineSpacingTwips,
+    this.spaceBefore,
+    this.spaceAfter,
+    this.indentLeft = 0,
+  });
+
+  final String id;
+  final String name;
+  final String? parentStyleId;
+  final bool bold;
+  final bool italic;
+  final bool underline;
+  final double? fontSize;
+  final String? colorHex;
+  final String? highlightHex;
+  final int? lineSpacingTwips;
+  final int? spaceBefore;
+  final int? spaceAfter;
+  final int indentLeft;
+
+  CustomDocumentStyle copyWith({
+    String? name,
+    String? parentStyleId,
+    bool? bold,
+    bool? italic,
+    bool? underline,
+    double? fontSize,
+    String? colorHex,
+    String? highlightHex,
+    int? lineSpacingTwips,
+    int? spaceBefore,
+    int? spaceAfter,
+    int? indentLeft,
+  }) {
+    return CustomDocumentStyle(
+      id: id,
+      name: name ?? this.name,
+      parentStyleId: parentStyleId ?? this.parentStyleId,
+      bold: bold ?? this.bold,
+      italic: italic ?? this.italic,
+      underline: underline ?? this.underline,
+      fontSize: fontSize ?? this.fontSize,
+      colorHex: colorHex ?? this.colorHex,
+      highlightHex: highlightHex ?? this.highlightHex,
+      lineSpacingTwips: lineSpacingTwips ?? this.lineSpacingTwips,
+      spaceBefore: spaceBefore ?? this.spaceBefore,
+      spaceAfter: spaceAfter ?? this.spaceAfter,
+      indentLeft: indentLeft ?? this.indentLeft,
+    );
+  }
+}
+
+// ── Document themes ───────────────────────────────────────────────────────────
+
+class DocumentTheme {
+  const DocumentTheme({
+    required this.id,
+    required this.name,
+    required this.headingFont,
+    required this.bodyFont,
+    required this.accentColorHex,
+    required this.headingColorHex,
+    this.pageColorHex = 'FFFFFF',
+    this.linkColorHex = '1d4ed8',
+  });
+
+  final String id;
+  final String name;
+  final String headingFont;
+  final String bodyFont;
+  final String accentColorHex;
+  final String headingColorHex;
+  final String pageColorHex;
+  final String linkColorHex;
+
+  static const List<DocumentTheme> presets = [
+    DocumentTheme(
+      id: 'default',
+      name: 'Office',
+      headingFont: 'Aptos',
+      bodyFont: 'Aptos',
+      accentColorHex: '2563eb',
+      headingColorHex: '1e3a5f',
+    ),
+    DocumentTheme(
+      id: 'classic',
+      name: 'Classic',
+      headingFont: 'Times',
+      bodyFont: 'Times',
+      accentColorHex: '7c3aed',
+      headingColorHex: '1c1917',
+    ),
+    DocumentTheme(
+      id: 'modern',
+      name: 'Modern',
+      headingFont: 'Arial',
+      bodyFont: 'Arial',
+      accentColorHex: '0891b2',
+      headingColorHex: '0c4a6e',
+    ),
+    DocumentTheme(
+      id: 'elegant',
+      name: 'Elegant',
+      headingFont: 'Georgia',
+      bodyFont: 'Georgia',
+      accentColorHex: 'b45309',
+      headingColorHex: '451a03',
+      pageColorHex: 'FFFEF0',
+    ),
+    DocumentTheme(
+      id: 'dark',
+      name: 'Dark',
+      headingFont: 'Arial',
+      bodyFont: 'Arial',
+      accentColorHex: '60a5fa',
+      headingColorHex: 'e2e8f0',
+      pageColorHex: '1e293b',
+      linkColorHex: '93c5fd',
+    ),
+    DocumentTheme(
+      id: 'nature',
+      name: 'Nature',
+      headingFont: 'Georgia',
+      bodyFont: 'Aptos',
+      accentColorHex: '059669',
+      headingColorHex: '064e3b',
+      pageColorHex: 'f0fdf4',
+    ),
+  ];
+}
+
+// ── Field types ───────────────────────────────────────────────────────────────
+
+enum FieldType {
+  pageNumber('Page Number'),
+  totalPages('Total Pages'),
+  date('Date'),
+  time('Time'),
+  author('Author'),
+  title('Title'),
+  fileName('File Name'),
+  wordCount('Word Count');
+
+  const FieldType(this.label);
+  final String label;
 }
 
 class DocumentCommentReply {

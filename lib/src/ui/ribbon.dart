@@ -96,6 +96,21 @@ class Ribbon extends StatelessWidget {
     required this.highContrast,
     required this.onHighContrast,
     required this.onPrintPreview,
+    required this.onImageProperties,
+    required this.onCustomToc,
+    required this.onDocumentProperties,
+    required this.onPageLayout,
+    required this.onParagraphSpacing,
+    required this.onTabStops,
+    required this.onTheme,
+    required this.onStyleOrganizer,
+    required this.onInsertField,
+    required this.onInsertIndexEntry,
+    required this.onShowIndex,
+    required this.onInsertCrossReference,
+    required this.onCompareDocuments,
+    required this.onUpdateToc,
+    required this.onMergeCells,
   });
 
   final bool bold;
@@ -186,6 +201,21 @@ class Ribbon extends StatelessWidget {
   final bool highContrast;
   final VoidCallback onHighContrast;
   final VoidCallback onPrintPreview;
+  final VoidCallback onImageProperties;
+  final VoidCallback onCustomToc;
+  final VoidCallback onDocumentProperties;
+  final VoidCallback onPageLayout;
+  final VoidCallback onParagraphSpacing;
+  final VoidCallback onTabStops;
+  final VoidCallback onTheme;
+  final VoidCallback onStyleOrganizer;
+  final VoidCallback onInsertField;
+  final VoidCallback onInsertIndexEntry;
+  final VoidCallback onShowIndex;
+  final VoidCallback onInsertCrossReference;
+  final VoidCallback onCompareDocuments;
+  final VoidCallback onUpdateToc;
+  final VoidCallback onMergeCells;
 
   @override
   Widget build(BuildContext context) {
@@ -287,6 +317,51 @@ class Ribbon extends StatelessWidget {
                         label: 'Sign',
                         onTap: onInsertSignature,
                       ),
+                      ToolButton(
+                        icon: Icons.data_object_outlined,
+                        label: 'Field',
+                        onTap: onInsertField,
+                      ),
+                      ToolButton(
+                        icon: Icons.sort_by_alpha_outlined,
+                        label: 'Index',
+                        onTap: onInsertIndexEntry,
+                      ),
+                      ToolButton(
+                        icon: Icons.list_alt_outlined,
+                        label: 'Index…',
+                        onTap: onShowIndex,
+                      ),
+                      ToolButton(
+                        icon: Icons.link_off_outlined,
+                        label: 'CrossRef',
+                        onTap: onInsertCrossReference,
+                      ),
+                      ToolButton(
+                        icon: Icons.refresh_outlined,
+                        label: 'Upd TOC',
+                        onTap: onUpdateToc,
+                      ),
+                      ToolButton(
+                        icon: Icons.format_list_bulleted_add,
+                        label: 'Cust TOC',
+                        onTap: onCustomToc,
+                      ),
+                      ToolButton(
+                        icon: Icons.image_search_outlined,
+                        label: 'Img Prop',
+                        onTap: onImageProperties,
+                      ),
+                      ToolButton(
+                        icon: Icons.table_rows_outlined,
+                        label: 'Merge',
+                        onTap: onMergeCells,
+                      ),
+                      ToolButton(
+                        icon: Icons.info_outline,
+                        label: 'Properties',
+                        onTap: onDocumentProperties,
+                      ),
                     ],
                   ),
                 ),
@@ -331,6 +406,17 @@ class Ribbon extends StatelessWidget {
                         min: 10,
                         max: 34,
                         onChanged: onFontSize,
+                      ),
+                      const SizedBox(width: 8),
+                      ToolButton(
+                        icon: Icons.palette_outlined,
+                        label: 'Theme',
+                        onTap: onTheme,
+                      ),
+                      ToolButton(
+                        icon: Icons.text_snippet_outlined,
+                        label: 'Styles',
+                        onTap: onStyleOrganizer,
                       ),
                     ],
                   ),
@@ -500,6 +586,22 @@ class Ribbon extends StatelessWidget {
                         labelFor: (value) => value.label,
                         onChanged: onMarginPreset,
                       ),
+                      const SizedBox(width: 8),
+                      ToolButton(
+                        icon: Icons.view_column_outlined,
+                        label: 'Layout',
+                        onTap: onPageLayout,
+                      ),
+                      ToolButton(
+                        icon: Icons.format_line_spacing,
+                        label: 'Spacing',
+                        onTap: onParagraphSpacing,
+                      ),
+                      ToolButton(
+                        icon: Icons.tab_outlined,
+                        label: 'Tabs',
+                        onTap: onTabStops,
+                      ),
                     ],
                   ),
                 ),
@@ -546,6 +648,12 @@ class Ribbon extends StatelessWidget {
                         icon: Icons.replay_outlined,
                         label: 'Reject',
                         onTap: onRejectChanges,
+                      ),
+                      const SizedBox(width: 8),
+                      ToolButton(
+                        icon: Icons.compare_arrows_outlined,
+                        label: 'Compare',
+                        onTap: onCompareDocuments,
                       ),
                     ],
                   ),
