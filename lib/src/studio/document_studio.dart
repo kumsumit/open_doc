@@ -451,6 +451,16 @@ class _DocumentStudioState extends State<DocumentStudio> {
         if (selection.isValid && !selection.isCollapsed) {
           return controller.isActive(selection.start, selection.end, attr);
         }
+        // Scope the fallback check to the active block when using the flat
+        // controller so we don't report "bold" just because some other
+        // paragraph in the document is bold.
+        if (controller is DocumentFlatController) {
+          final blockIdx = _activeOpenXmlBlockIndex ?? 0;
+          final start = controller.blockStartOffset(blockIdx);
+          final end = controller.blockEndOffset(blockIdx);
+          return controller.text.isNotEmpty &&
+              controller.isActive(start, end, attr);
+        }
         return controller.text.isNotEmpty &&
             controller.isActive(0, controller.text.length, attr);
       }
@@ -1715,6 +1725,8 @@ class _DocumentStudioState extends State<DocumentStudio> {
         type: FileType.custom,
         allowedExtensions: const [
           'docx',
+          'odt',
+          'ott',
           'txt',
           'md',
           'markdown',
@@ -1793,7 +1805,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
               ),
               const SizedBox(height: 6),
               const Text(
-                'Supports DOCX, TXT, Markdown, RTF, HTML, and CSV.',
+                'Supports DOCX, ODT, TXT, Markdown, RTF, HTML, and CSV.',
                 style: TextStyle(color: Color(0xff64748b)),
               ),
               const SizedBox(height: 12),
@@ -2212,6 +2224,15 @@ class _DocumentStudioState extends State<DocumentStudio> {
       _fontSize = size;
     });
     if (_isNativeOpenXmlEditor) {
+      final flatCtrl = _activeRunController;
+      if (flatCtrl is DocumentFlatController) {
+        flatCtrl.setBlockStyle(
+          _activeOpenXmlBlockIndex ?? 0,
+          _openXmlStyleForRibbon(value),
+        );
+        _refocusActiveOpenXmlEditor();
+        return;
+      }
       _updateActiveOpenXmlParagraph(
         (block) => block.copyWith(style: _openXmlStyleForRibbon(value)),
       );
@@ -3166,12 +3187,21 @@ class _DocumentStudioState extends State<DocumentStudio> {
                             onAlignment: (value) {
                               setState(() => _alignment = value);
                               if (_isNativeOpenXmlEditor) {
-                                _updateActiveOpenXmlParagraph(
-                                  (block) => block.copyWith(
-                                    align: _openXmlAlignForRibbon(value),
-                                  ),
-                                );
-                                _refocusActiveOpenXmlEditor();
+                                final flatCtrl = _activeRunController;
+                                if (flatCtrl is DocumentFlatController) {
+                                  flatCtrl.setBlockAlign(
+                                    _activeOpenXmlBlockIndex ?? 0,
+                                    _openXmlAlignForRibbon(value),
+                                  );
+                                  _refocusActiveOpenXmlEditor();
+                                } else {
+                                  _updateActiveOpenXmlParagraph(
+                                    (block) => block.copyWith(
+                                      align: _openXmlAlignForRibbon(value),
+                                    ),
+                                  );
+                                  _refocusActiveOpenXmlEditor();
+                                }
                               }
                             },
                             onAudienceProfile: (value) =>

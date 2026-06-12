@@ -113,6 +113,7 @@ class DocumentImportService {
         formatLabel: 'CSV',
       ),
       'odoc' => _parseOpenDoc(bytes),
+      'odt' || 'ott' => _parseOdt(bytes),
       _ => throw FormatException('Unsupported file type: .$extension'),
     };
   }
@@ -274,20 +275,469 @@ class DocumentImportService {
   }
 
   OpenXmlTextStyle _openXmlStyleFor(String? styleId) {
-    return switch (styleId?.toLowerCase()) {
+    if (styleId == null) return OpenXmlTextStyle.normal;
+    // Normalize: lowercase, collapse spaces/underscores, strip unicode escapes.
+    // Handles "Heading 1", "Heading1", "heading_1", "Heading_20_1" (ODT), etc.
+    final normalized = styleId
+        .toLowerCase()
+        .replaceAll(RegExp(r'_[0-9a-f]{2}_'), ' ') // ODT hex escapes like _20_
+        .replaceAll(RegExp(r'[\s_\-]+'), '');
+    return switch (normalized) {
       'title' => OpenXmlTextStyle.title,
       'subtitle' => OpenXmlTextStyle.subtitle,
-      'heading1' => OpenXmlTextStyle.heading1,
-      'heading2' => OpenXmlTextStyle.heading2,
-      'heading3' => OpenXmlTextStyle.heading3,
-      'heading4' => OpenXmlTextStyle.heading4,
-      'heading5' => OpenXmlTextStyle.heading5,
-      'heading6' => OpenXmlTextStyle.heading6,
-      'quote' => OpenXmlTextStyle.quote,
-      'code' => OpenXmlTextStyle.code,
-      'caption' => OpenXmlTextStyle.caption,
+      'heading1' || 'h1' || '1' => OpenXmlTextStyle.heading1,
+      'heading2' || 'h2' || '2' => OpenXmlTextStyle.heading2,
+      'heading3' || 'h3' || '3' => OpenXmlTextStyle.heading3,
+      'heading4' || 'h4' || '4' => OpenXmlTextStyle.heading4,
+      'heading5' || 'h5' || '5' => OpenXmlTextStyle.heading5,
+      'heading6' || 'h6' || '6' => OpenXmlTextStyle.heading6,
+      'quote' || 'quotations' || 'blockquote' => OpenXmlTextStyle.quote,
+      'code' || 'codechar' || 'codeparagraph' || 'preformatted' =>
+        OpenXmlTextStyle.code,
+      'caption' || 'figurecaption' || 'tablecaption' => OpenXmlTextStyle.caption,
       _ => OpenXmlTextStyle.normal,
     };
+  }
+
+  // ── ODT / OpenDocument Text parser ────────────────────────────────────────
+
+  ImportedDocument _parseOdt(Uint8List bytes) {
+    Archive archive;
+    try {
+      archive = ZipDecoder().decodeBytes(bytes);
+    } on Object {
+      throw const FormatException('This file is not a readable ODT package.');
+    }
+
+    // Load and merge named styles + automatic styles.
+    final namedStyles = _odtNamedStyles(archive);
+    final autoStyles = _odtAutoStyles(archive);
+    final allStyles = {...namedStyles, ...autoStyles};
+
+    final contentFile = archive.files
+        .where((f) => f.name == 'content.xml')
+        .firstOrNull;
+    if (contentFile == null) {
+      throw const FormatException('This ODT file has no content.xml.');
+    }
+
+    final doc = XmlDocument.parse(utf8.decode(contentFile.content as List<int>));
+    // Also pick up automatic styles defined inside content.xml itself.
+    for (final entry in _odtAutoStylesFromDoc(doc).entries) {
+      allStyles[entry.key] = entry.value;
+    }
+
+    final textBody = doc.descendants.whereType<XmlElement>().firstWhere(
+      (e) => e.name.local == 'text' && e.name.prefix == 'office',
+      orElse: () => doc.rootElement,
+    );
+
+    final blocks = <OpenXmlBlock>[];
+    final plainLines = <String>[];
+
+    for (final child in textBody.childElements) {
+      final local = child.name.local;
+      final ns = child.name.prefix;
+
+      if (local == 'h' && ns == 'text') {
+        final level = int.tryParse(
+              child.getAttribute('text:outline-level') ?? '',
+            ) ??
+            int.tryParse(
+              child.getAttribute('outline-level') ?? '',
+            ) ??
+            1;
+        final text = _odtParagraphPlainText(child);
+        if (text.trim().isEmpty) continue;
+        final style = _odtHeadingStyle(level);
+        final runs = _odtRuns(child, allStyles);
+        blocks.add(OpenXmlParagraphBlock(runs: runs, style: style));
+        plainLines.add(text);
+      } else if (local == 'p' && ns == 'text') {
+        final styleName =
+            child.getAttribute('text:style-name') ??
+            child.getAttribute('style-name') ??
+            '';
+        final resolvedStyle = _odtResolveParaStyle(styleName, allStyles);
+        final text = _odtParagraphPlainText(child);
+        if (text.trim().isEmpty) {
+          blocks.add(const OpenXmlParagraphBlock(runs: [OpenXmlRun('')]));
+          continue;
+        }
+        final runs = _odtRuns(child, allStyles);
+        blocks.add(OpenXmlParagraphBlock(runs: runs, style: resolvedStyle));
+        plainLines.add(text);
+      } else if (local == 'list' && ns == 'text') {
+        final listBlocks = _odtList(child, allStyles);
+        blocks.addAll(listBlocks);
+        for (final b in listBlocks) {
+          if (b is OpenXmlParagraphBlock) plainLines.add(b.plainText);
+        }
+      } else if (local == 'table' && ns == 'table') {
+        final tableBlock = _odtTable(child, allStyles);
+        if (tableBlock != null) {
+          blocks.add(tableBlock);
+        }
+      }
+    }
+
+    final plainText = plainLines.join('\n\n');
+    final openXmlDoc = OpenXmlDocument(
+      blocks: blocks.isEmpty
+          ? [const OpenXmlParagraphBlock(runs: [OpenXmlRun('')])]
+          : blocks,
+    );
+
+    return ImportedDocument(
+      text: plainText.trim(),
+      formatLabel: 'ODT',
+      openXmlDocument: openXmlDoc,
+      wysiwygBlocks: WysiwygDocumentCodec.fromMarkdown(plainText),
+      quillDeltaJson: WysiwygDocumentCodec.toQuillDeltaJson(
+        WysiwygDocumentCodec.fromMarkdown(plainText),
+      ),
+    );
+  }
+
+  // ── ODT helpers ─────────────────────────────────────────────────────────────
+
+  /// Named styles from styles.xml (Heading 1, Title, etc.).
+  Map<String, _OdtStyle> _odtNamedStyles(Archive archive) {
+    final stylesFile = archive.files
+        .where((f) => f.name == 'styles.xml')
+        .firstOrNull;
+    if (stylesFile == null) return {};
+    try {
+      final doc = XmlDocument.parse(
+        utf8.decode(stylesFile.content as List<int>),
+      );
+      return _odtParseStyleElements(doc);
+    } on Object {
+      return {};
+    }
+  }
+
+  /// Automatic styles declared in content.xml's own automatic-styles section.
+  Map<String, _OdtStyle> _odtAutoStyles(Archive archive) {
+    // Nothing extra in the archive itself; content.xml is parsed separately.
+    return {};
+  }
+
+  Map<String, _OdtStyle> _odtAutoStylesFromDoc(XmlDocument doc) {
+    return _odtParseStyleElements(doc);
+  }
+
+  Map<String, _OdtStyle> _odtParseStyleElements(XmlDocument doc) {
+    final result = <String, _OdtStyle>{};
+    for (final style in doc.descendants.whereType<XmlElement>()) {
+      if (style.name.local != 'style') continue;
+      final name = style.getAttribute('style:name') ??
+          style.getAttribute('name');
+      if (name == null || name.isEmpty) continue;
+      final displayName = style.getAttribute('style:display-name') ??
+          style.getAttribute('display-name');
+      final parentName = style.getAttribute('style:parent-style-name') ??
+          style.getAttribute('parent-style-name');
+
+      // Text properties (inline formatting).
+      final textProps = style.childElements
+          .where((e) => e.name.local == 'text-properties')
+          .firstOrNull;
+      final paraProps = style.childElements
+          .where((e) => e.name.local == 'paragraph-properties')
+          .firstOrNull;
+
+      bool bold = false;
+      bool italic = false;
+      bool underline = false;
+      bool strike = false;
+      String? colorHex;
+
+      if (textProps != null) {
+        final fw = textProps.getAttribute('fo:font-weight') ??
+            textProps.getAttribute('font-weight') ?? '';
+        final fs = textProps.getAttribute('fo:font-style') ??
+            textProps.getAttribute('font-style') ?? '';
+        final ul = textProps.getAttribute('style:text-underline-style') ??
+            textProps.getAttribute('text-underline-style') ?? '';
+        final st = textProps.getAttribute('style:text-line-through-style') ??
+            textProps.getAttribute('text-line-through-style') ?? '';
+        final col = textProps.getAttribute('fo:color') ??
+            textProps.getAttribute('color') ?? '';
+        bold = fw == 'bold';
+        italic = fs == 'italic';
+        underline = ul.isNotEmpty && ul != 'none';
+        strike = st.isNotEmpty && st != 'none';
+        if (col.startsWith('#')) colorHex = col.substring(1).toUpperCase();
+      }
+
+      OoxmlTextAlign align = OoxmlTextAlign.left;
+      if (paraProps != null) {
+        final fo = paraProps.getAttribute('fo:text-align') ??
+            paraProps.getAttribute('text-align') ?? '';
+        align = switch (fo) {
+          'center' => OoxmlTextAlign.center,
+          'right' || 'end' => OoxmlTextAlign.right,
+          'justify' => OoxmlTextAlign.justify,
+          _ => OoxmlTextAlign.left,
+        };
+      }
+
+      result[name] = _OdtStyle(
+        name: name,
+        displayName: displayName,
+        parentName: parentName,
+        bold: bold,
+        italic: italic,
+        underline: underline,
+        strike: strike,
+        colorHex: colorHex,
+        align: align,
+      );
+    }
+    return result;
+  }
+
+  OpenXmlTextStyle _odtHeadingStyle(int level) {
+    return switch (level) {
+      1 => OpenXmlTextStyle.heading1,
+      2 => OpenXmlTextStyle.heading2,
+      3 => OpenXmlTextStyle.heading3,
+      4 => OpenXmlTextStyle.heading4,
+      5 => OpenXmlTextStyle.heading5,
+      _ => OpenXmlTextStyle.heading6,
+    };
+  }
+
+  OpenXmlTextStyle _odtResolveParaStyle(
+    String styleName,
+    Map<String, _OdtStyle> styles,
+  ) {
+    // Walk the parent chain looking for a heading/title match.
+    var current = styleName;
+    final seen = <String>{};
+    while (current.isNotEmpty && !seen.contains(current)) {
+      seen.add(current);
+      final mapped = _openXmlStyleFor(current);
+      if (mapped != OpenXmlTextStyle.normal) return mapped;
+      // Also check the display name.
+      final display = styles[current]?.displayName;
+      if (display != null) {
+        final dm = _openXmlStyleFor(display);
+        if (dm != OpenXmlTextStyle.normal) return dm;
+      }
+      current = styles[current]?.parentName ?? '';
+    }
+    return OpenXmlTextStyle.normal;
+  }
+
+  String _odtParagraphPlainText(XmlElement para) {
+    final buffer = StringBuffer();
+    for (final node in para.descendants) {
+      if (node is XmlText) {
+        buffer.write(node.value);
+      } else if (node is XmlElement) {
+        switch (node.name.local) {
+          case 's':
+            final count = int.tryParse(
+                  node.getAttribute('text:c') ??
+                      node.getAttribute('c') ??
+                      '1',
+                ) ??
+                1;
+            buffer.write(' ' * count);
+          case 'tab':
+            buffer.write('\t');
+          case 'line-break':
+            buffer.write('\n');
+        }
+      }
+    }
+    return buffer.toString();
+  }
+
+  List<OpenXmlRun> _odtRuns(
+    XmlElement para,
+    Map<String, _OdtStyle> styles,
+  ) {
+    final runs = <OpenXmlRun>[];
+
+    void addText(
+      String text, {
+      bool bold = false,
+      bool italic = false,
+      bool underline = false,
+      bool strike = false,
+      String? colorHex,
+    }) {
+      if (text.isEmpty) return;
+      runs.add(OpenXmlRun(
+        text,
+        bold: bold,
+        italic: italic,
+        underline: underline,
+        strike: strike,
+        colorHex: colorHex,
+      ));
+    }
+
+    _OdtStyle? resolveStyle(String? name) {
+      if (name == null) return null;
+      _OdtStyle? merged;
+      var current = name;
+      final seen = <String>{};
+      // Walk parent chain and merge (child overrides parent).
+      final chain = <_OdtStyle>[];
+      while (current.isNotEmpty && !seen.contains(current)) {
+        seen.add(current);
+        final s = styles[current];
+        if (s != null) chain.add(s);
+        current = s?.parentName ?? '';
+      }
+      // Apply parent-to-child order so child wins.
+      for (final s in chain.reversed) {
+        if (merged == null) {
+          merged = s;
+        } else {
+          merged = _OdtStyle(
+            name: s.name,
+            displayName: s.displayName,
+            parentName: s.parentName,
+            bold: s.bold || merged.bold,
+            italic: s.italic || merged.italic,
+            underline: s.underline || merged.underline,
+            strike: s.strike || merged.strike,
+            colorHex: s.colorHex ?? merged.colorHex,
+            align: s.align,
+          );
+        }
+      }
+      return merged;
+    }
+
+    void processNode(XmlNode node, _OdtStyle? parentStyle) {
+      if (node is XmlText) {
+        addText(
+          node.value,
+          bold: parentStyle?.bold ?? false,
+          italic: parentStyle?.italic ?? false,
+          underline: parentStyle?.underline ?? false,
+          strike: parentStyle?.strike ?? false,
+          colorHex: parentStyle?.colorHex,
+        );
+      } else if (node is XmlElement) {
+        switch (node.name.local) {
+          case 'span':
+            final styleName = node.getAttribute('text:style-name') ??
+                node.getAttribute('style-name');
+            final spanStyle = resolveStyle(styleName);
+            final merged = spanStyle == null
+                ? parentStyle
+                : _OdtStyle(
+                    name: spanStyle.name,
+                    displayName: spanStyle.displayName,
+                    parentName: spanStyle.parentName,
+                    bold: spanStyle.bold || (parentStyle?.bold ?? false),
+                    italic: spanStyle.italic || (parentStyle?.italic ?? false),
+                    underline: spanStyle.underline ||
+                        (parentStyle?.underline ?? false),
+                    strike:
+                        spanStyle.strike || (parentStyle?.strike ?? false),
+                    colorHex: spanStyle.colorHex ?? parentStyle?.colorHex,
+                    align: spanStyle.align,
+                  );
+            for (final child in node.children) {
+              processNode(child, merged);
+            }
+          case 's':
+            final count = int.tryParse(
+                  node.getAttribute('text:c') ??
+                      node.getAttribute('c') ??
+                      '1',
+                ) ??
+                1;
+            addText(
+              ' ' * count,
+              bold: parentStyle?.bold ?? false,
+              italic: parentStyle?.italic ?? false,
+              colorHex: parentStyle?.colorHex,
+            );
+          case 'tab':
+            addText(
+              '\t',
+              bold: parentStyle?.bold ?? false,
+              italic: parentStyle?.italic ?? false,
+            );
+          case 'line-break':
+            addText('\n');
+          case 'a':
+            final href = node.getAttribute('xlink:href') ??
+                node.getAttribute('href');
+            final text = _odtParagraphPlainText(node);
+            if (text.isNotEmpty) {
+              runs.add(OpenXmlRun(text, href: href));
+            }
+          default:
+            for (final child in node.children) {
+              processNode(child, parentStyle);
+            }
+        }
+      }
+    }
+
+    for (final child in para.children) {
+      processNode(child, null);
+    }
+
+    return runs.isEmpty ? const [OpenXmlRun('')] : runs;
+  }
+
+  List<OpenXmlBlock> _odtList(
+    XmlElement listEl,
+    Map<String, _OdtStyle> styles,
+  ) {
+    final blocks = <OpenXmlBlock>[];
+    for (final item in listEl.childElements) {
+      if (item.name.local != 'list-item') continue;
+      for (final child in item.childElements) {
+        if (child.name.local == 'p') {
+          final text = _odtParagraphPlainText(child);
+          if (text.trim().isEmpty) continue;
+          final runs = _odtRuns(child, styles);
+          blocks.add(OpenXmlParagraphBlock(runs: runs));
+        } else if (child.name.local == 'list') {
+          blocks.addAll(_odtList(child, styles));
+        }
+      }
+    }
+    return blocks;
+  }
+
+  OpenXmlTableBlock? _odtTable(
+    XmlElement tableEl,
+    Map<String, _OdtStyle> styles,
+  ) {
+    final rows = <List<String>>[];
+    for (final row in tableEl.descendants.whereType<XmlElement>()) {
+      if (row.name.local != 'table-row') continue;
+      final cells = row.childElements
+          .where((e) => e.name.local == 'table-cell' ||
+              e.name.local == 'covered-table-cell')
+          .map((cell) {
+            return cell.descendants
+                .whereType<XmlElement>()
+                .where((e) => e.name.local == 'p')
+                .map(_odtParagraphPlainText)
+                .where((t) => t.trim().isNotEmpty)
+                .join(' ');
+          })
+          .toList();
+      if (cells.any((c) => c.trim().isNotEmpty)) {
+        rows.add(cells);
+      }
+    }
+    if (rows.isEmpty) return null;
+    return OpenXmlTableBlock(rows: rows, hasHeader: rows.length > 1);
   }
 
   List<OoxmlVisualBlock> _visualBlocksFromDocx(
@@ -1145,4 +1595,28 @@ class _DocxListInfo {
 
   final int level;
   final bool isOrdered;
+}
+
+class _OdtStyle {
+  const _OdtStyle({
+    required this.name,
+    this.displayName,
+    this.parentName,
+    this.bold = false,
+    this.italic = false,
+    this.underline = false,
+    this.strike = false,
+    this.colorHex,
+    this.align = OoxmlTextAlign.left,
+  });
+
+  final String name;
+  final String? displayName;
+  final String? parentName;
+  final bool bold;
+  final bool italic;
+  final bool underline;
+  final bool strike;
+  final String? colorHex;
+  final OoxmlTextAlign align;
 }

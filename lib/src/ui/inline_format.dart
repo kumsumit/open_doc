@@ -314,6 +314,453 @@ class RichRunController extends TextEditingController {
   }
 }
 
+// ── Document-level flat controller ────────────────────────────────────────────
+
+/// Per-paragraph style data kept in parallel with the flat text.
+class _BlockStyleData {
+  const _BlockStyleData({
+    this.textStyle = OpenXmlTextStyle.normal,
+    this.align = OoxmlTextAlign.left,
+    this.pageBreakBefore = false,
+  });
+
+  final OpenXmlTextStyle textStyle;
+  final OoxmlTextAlign align;
+  final bool pageBreakBefore;
+
+  _BlockStyleData copyWith({
+    OpenXmlTextStyle? textStyle,
+    OoxmlTextAlign? align,
+    bool? pageBreakBefore,
+  }) => _BlockStyleData(
+    textStyle: textStyle ?? this.textStyle,
+    align: align ?? this.align,
+    pageBreakBefore: pageBreakBefore ?? this.pageBreakBefore,
+  );
+}
+
+/// Flattens all [OpenXmlParagraphBlock]s of a document into a single
+/// text stream (paragraphs separated by '\n') so a single [TextField] can
+/// provide Word-like cross-paragraph selection, copy/paste, and keyboard
+/// navigation.
+///
+/// Extends [RichRunController] so it is accepted wherever a
+/// [RichRunController] is expected (e.g. [DocumentStudio._activeRunController]).
+/// Non-paragraph blocks (tables, etc.) are preserved in [_otherBlocks] and
+/// reinserted at their original positions when [toDocument] is called.
+class DocumentFlatController extends RichRunController {
+  DocumentFlatController._({
+    required List<OpenXmlRun> flatRuns,
+    required this._blockStyles,
+    required this._otherBlocks,
+  }) : super(runs: flatRuns);
+
+  factory DocumentFlatController.fromDocument(OpenXmlDocument document) {
+    final r = _extractParagraphData(document);
+    return DocumentFlatController._(
+      flatRuns: r.$1,
+      blockStyles: r.$2,
+      otherBlocks: r.$3,
+    );
+  }
+
+  List<_BlockStyleData> _blockStyles;
+  List<({int paragraphsBefore, OpenXmlBlock block})> _otherBlocks;
+  bool _isUpdatingFromDoc = false;
+  String _lastGeneratedFormatSig = '';
+
+  // ── Static helpers ──────────────────────────────────────────────────────────
+
+  static (
+    List<OpenXmlRun>,
+    List<_BlockStyleData>,
+    List<({int paragraphsBefore, OpenXmlBlock block})>,
+  )
+  _extractParagraphData(OpenXmlDocument document) {
+    final blocks = document.blocks.isEmpty
+        ? const <OpenXmlBlock>[OpenXmlParagraphBlock(runs: [OpenXmlRun('')])]
+        : document.blocks;
+    final runs = <OpenXmlRun>[];
+    final styles = <_BlockStyleData>[];
+    final others = <({int paragraphsBefore, OpenXmlBlock block})>[];
+    var paraCount = 0;
+
+    for (final b in blocks) {
+      if (b is OpenXmlParagraphBlock) {
+        if (paraCount > 0) runs.add(const OpenXmlRun('\n'));
+        styles.add(_BlockStyleData(
+          textStyle: b.style,
+          align: b.align,
+          pageBreakBefore: b.pageBreakBefore,
+        ));
+        runs.addAll(b.runs.isEmpty ? const [OpenXmlRun('')] : b.runs);
+        paraCount++;
+      } else {
+        others.add((paragraphsBefore: paraCount, block: b));
+      }
+    }
+
+    if (styles.isEmpty) {
+      styles.add(const _BlockStyleData());
+      runs.add(const OpenXmlRun(''));
+    }
+    return (runs, styles, others);
+  }
+
+  static String _formatSigFromRuns(List<OpenXmlRun> runs) => runs
+      .map(
+        (r) =>
+            '${r.text.length}:'
+            '${r.bold ? 1 : 0}${r.italic ? 1 : 0}'
+            '${r.underline ? 1 : 0}${r.strike ? 1 : 0}'
+            ':${r.colorHex ?? ''}',
+      )
+      .join('|');
+
+  // ── External document update ────────────────────────────────────────────────
+
+  /// Rebuilds the controller from [document] (e.g. undo/redo, template load).
+  /// Preserves the cursor when only formatting changed; resets to 0 when text
+  /// differs.
+  void updateFromDocument(OpenXmlDocument document) {
+    final r = _extractParagraphData(document);
+    final newRuns = r.$1;
+    final newStyles = r.$2;
+    final newOthers = r.$3;
+    final newText = newRuns.map((run) => run.text).join();
+    final incomingSig = _formatSigFromRuns(newRuns);
+
+    _blockStyles = newStyles;
+    _otherBlocks = newOthers;
+
+    if (newText == text && incomingSig == _lastGeneratedFormatSig) {
+      // Our own doc echoed back — nothing to do.
+      return;
+    }
+
+    if (newText == text) {
+      // Only formatting changed — update formats without touching the cursor.
+      _formats = RichRunController._expand(newRuns);
+      notifyListeners();
+      return;
+    }
+
+    // Text changed — full reset.
+    _isUpdatingFromDoc = true;
+    try {
+      value = TextEditingValue(
+        text: newText,
+        selection: const TextSelection.collapsed(offset: 0),
+      );
+    } finally {
+      _isUpdatingFromDoc = false;
+    }
+    _formats = RichRunController._expand(newRuns);
+    notifyListeners();
+  }
+
+  // ── value setter (syncs _blockStyles when newlines change) ─────────────────
+
+  @override
+  set value(TextEditingValue newValue) {
+    final oldText = text;
+    if (oldText != newValue.text && !_isUpdatingFromDoc) {
+      _syncBlockStyles(oldText, newValue.text);
+    }
+    super.value = newValue;
+  }
+
+  void _syncBlockStyles(String oldText, String newText) {
+    final oldNl = '\n'.allMatches(oldText).length;
+    final newNl = '\n'.allMatches(newText).length;
+    if (oldNl == newNl) return;
+
+    var prefix = 0;
+    final maxScan = math.min(oldText.length, newText.length);
+    while (prefix < maxScan && oldText[prefix] == newText[prefix]) {
+      prefix++;
+    }
+    final blockAtEdit = '\n'
+        .allMatches(oldText.substring(0, math.min(prefix, oldText.length)))
+        .length;
+
+    if (newNl > oldNl) {
+      for (var i = 0; i < newNl - oldNl; i++) {
+        final parent = blockAtEdit < _blockStyles.length
+            ? _blockStyles[blockAtEdit]
+            : const _BlockStyleData();
+        final isHeading = switch (parent.textStyle) {
+          OpenXmlTextStyle.title ||
+          OpenXmlTextStyle.heading1 ||
+          OpenXmlTextStyle.heading2 ||
+          OpenXmlTextStyle.heading3 ||
+          OpenXmlTextStyle.heading4 ||
+          OpenXmlTextStyle.heading5 ||
+          OpenXmlTextStyle.heading6 => true,
+          _ => false,
+        };
+        _blockStyles.insert(
+          math.min(blockAtEdit + 1 + i, _blockStyles.length),
+          _BlockStyleData(
+            textStyle: isHeading ? OpenXmlTextStyle.normal : parent.textStyle,
+            align: parent.align,
+          ),
+        );
+      }
+    } else {
+      for (var i = 0; i < oldNl - newNl; i++) {
+        final removeIdx = blockAtEdit + 1;
+        if (_blockStyles.length > 1 && removeIdx < _blockStyles.length) {
+          _blockStyles.removeAt(removeIdx);
+        }
+      }
+    }
+  }
+
+  // ── Block queries ───────────────────────────────────────────────────────────
+
+  /// 0-based index of the paragraph block that [offset] falls in.
+  int activeBlockIndex(int offset) {
+    if (text.isEmpty || _blockStyles.isEmpty) return 0;
+    return '\n'
+        .allMatches(text.substring(0, offset.clamp(0, text.length)))
+        .length
+        .clamp(0, _blockStyles.length - 1);
+  }
+
+  _BlockStyleData _blockStyleAt(int blockIndex) {
+    if (_blockStyles.isEmpty) return const _BlockStyleData();
+    return _blockStyles[blockIndex.clamp(0, _blockStyles.length - 1)];
+  }
+
+  /// First character offset of paragraph [blockIndex].
+  int blockStartOffset(int blockIndex) {
+    var block = 0;
+    for (var i = 0; i < text.length; i++) {
+      if (block == blockIndex) return i;
+      if (text[i] == '\n') block++;
+    }
+    return text.length;
+  }
+
+  /// Exclusive end offset of paragraph [blockIndex].
+  int blockEndOffset(int blockIndex) {
+    var block = 0;
+    for (var i = 0; i < text.length; i++) {
+      if (text[i] == '\n') {
+        if (block == blockIndex) return i;
+        block++;
+      }
+    }
+    return text.length;
+  }
+
+  // ── Block style mutations ───────────────────────────────────────────────────
+
+  void setBlockStyle(int blockIndex, OpenXmlTextStyle style) {
+    if (blockIndex < 0 || blockIndex >= _blockStyles.length) return;
+    _blockStyles[blockIndex] =
+        _blockStyles[blockIndex].copyWith(textStyle: style);
+    notifyListeners();
+  }
+
+  void setBlockAlign(int blockIndex, OoxmlTextAlign align) {
+    if (blockIndex < 0 || blockIndex >= _blockStyles.length) return;
+    _blockStyles[blockIndex] =
+        _blockStyles[blockIndex].copyWith(align: align);
+    notifyListeners();
+  }
+
+  // ── Document conversion ─────────────────────────────────────────────────────
+
+  OpenXmlDocument toDocument() {
+    final paragraphs = text.split('\n');
+    final paraBlocks = <OpenXmlParagraphBlock>[];
+    var offset = 0;
+
+    for (var pi = 0; pi < paragraphs.length; pi++) {
+      final para = paragraphs[pi];
+      final bStyle = pi < _blockStyles.length
+          ? _blockStyles[pi]
+          : const _BlockStyleData();
+      final lo = offset.clamp(0, _formats.length);
+      final hi = (offset + para.length).clamp(0, _formats.length);
+      paraBlocks.add(OpenXmlParagraphBlock(
+        runs: _runsFromFormatSlice(para, _formats.sublist(lo, hi)),
+        style: bStyle.textStyle,
+        align: bStyle.align,
+        pageBreakBefore: bStyle.pageBreakBefore,
+      ));
+      offset += para.length + 1;
+    }
+
+    // Interleave paragraph blocks with preserved non-paragraph blocks.
+    final result = <OpenXmlBlock>[];
+    var pi = 0;
+    var oi = 0;
+    while (pi < paraBlocks.length) {
+      while (oi < _otherBlocks.length &&
+          _otherBlocks[oi].paragraphsBefore == pi) {
+        result.add(_otherBlocks[oi].block);
+        oi++;
+      }
+      result.add(paraBlocks[pi]);
+      pi++;
+    }
+    while (oi < _otherBlocks.length) {
+      result.add(_otherBlocks[oi].block);
+      oi++;
+    }
+
+    final doc = OpenXmlDocument(
+      blocks: result.isEmpty
+          ? [const OpenXmlParagraphBlock(runs: [OpenXmlRun('')])]
+          : result,
+    );
+    _lastGeneratedFormatSig = _formatSigFromRuns(
+      paraBlocks.expand((b) => b.runs).toList(),
+    );
+    return doc;
+  }
+
+  List<OpenXmlRun> _runsFromFormatSlice(
+    String text,
+    List<CharFormat> formats,
+  ) {
+    if (text.isEmpty) return const [OpenXmlRun('')];
+    final out = <OpenXmlRun>[];
+    final buffer = StringBuffer();
+    var current = formats.isNotEmpty ? formats[0] : const CharFormat();
+    for (var i = 0; i < text.length; i++) {
+      final fmt = i < formats.length ? formats[i] : const CharFormat();
+      if (i > 0 && !fmt.sameAs(current)) {
+        out.add(_runFrom(buffer.toString(), current));
+        buffer.clear();
+        current = fmt;
+      }
+      buffer.write(text[i]);
+    }
+    if (buffer.isNotEmpty) out.add(_runFrom(buffer.toString(), current));
+    return out;
+  }
+
+  // ── buildTextSpan (paragraph-level styles + inline formatting) ─────────────
+
+  @override
+  TextSpan buildTextSpan({
+    required BuildContext context,
+    TextStyle? style,
+    required bool withComposing,
+  }) {
+    final base = style ?? const TextStyle();
+    if (text.isEmpty) return TextSpan(text: '', style: base);
+
+    final children = <InlineSpan>[];
+    final paragraphs = text.split('\n');
+    var offset = 0;
+
+    for (var pi = 0; pi < paragraphs.length; pi++) {
+      final para = paragraphs[pi];
+      final paraBase = _paragraphBaseStyle(base, _blockStyleAt(pi).textStyle);
+
+      if (para.isEmpty) {
+        children.add(TextSpan(text: '', style: paraBase));
+      } else {
+        final paraChildren = <TextSpan>[];
+        var ci = 0;
+        while (ci < para.length) {
+          final fmt = (offset + ci) < _formats.length
+              ? _formats[offset + ci]
+              : const CharFormat();
+          var end = ci + 1;
+          while (end < para.length) {
+            final next = (offset + end) < _formats.length
+                ? _formats[offset + end]
+                : const CharFormat();
+            if (!next.sameAs(fmt)) break;
+            end++;
+          }
+          final inlineStyle = _styleFor(paraBase, fmt);
+          paraChildren.add(TextSpan(
+            text: para.substring(ci, end),
+            style: inlineStyle == paraBase ? null : inlineStyle,
+          ));
+          ci = end;
+        }
+        children.add(
+          paraChildren.length == 1 && paraChildren.first.style == null
+              ? TextSpan(text: paraChildren.first.text, style: paraBase)
+              : TextSpan(style: paraBase, children: paraChildren),
+        );
+      }
+
+      if (pi < paragraphs.length - 1) {
+        children.add(const TextSpan(text: '\n'));
+        offset += para.length + 1;
+      } else {
+        offset += para.length;
+      }
+    }
+
+    return TextSpan(style: base, children: children);
+  }
+
+  TextStyle _paragraphBaseStyle(TextStyle base, OpenXmlTextStyle textStyle) {
+    final fontFamily =
+        textStyle == OpenXmlTextStyle.code ? 'Courier New' : base.fontFamily;
+    final b = base.copyWith(fontFamily: fontFamily);
+    return switch (textStyle) {
+      OpenXmlTextStyle.title => b.copyWith(
+        fontSize: 30,
+        fontWeight: FontWeight.w700,
+        height: 1.2,
+      ),
+      OpenXmlTextStyle.subtitle => b.copyWith(
+        fontSize: 20,
+        color: const Color(0xff475569),
+        height: 1.32,
+      ),
+      OpenXmlTextStyle.heading1 => b.copyWith(
+        fontSize: 24,
+        fontWeight: FontWeight.w700,
+        height: 1.25,
+      ),
+      OpenXmlTextStyle.heading2 => b.copyWith(
+        fontSize: 21,
+        fontWeight: FontWeight.w700,
+        height: 1.28,
+      ),
+      OpenXmlTextStyle.heading3 => b.copyWith(
+        fontSize: 18,
+        fontWeight: FontWeight.w700,
+        height: 1.32,
+      ),
+      OpenXmlTextStyle.heading4 ||
+      OpenXmlTextStyle.heading5 ||
+      OpenXmlTextStyle.heading6 => b.copyWith(
+        fontSize: 16,
+        fontWeight: FontWeight.w700,
+      ),
+      OpenXmlTextStyle.quote => b.copyWith(
+        color: const Color(0xff475569),
+        fontStyle: FontStyle.italic,
+      ),
+      OpenXmlTextStyle.code => b.copyWith(
+        fontSize: 14,
+        backgroundColor: const Color(0xfff1f5f9),
+      ),
+      OpenXmlTextStyle.caption => b.copyWith(
+        fontSize: 13,
+        color: const Color(0xff64748b),
+        fontStyle: FontStyle.italic,
+      ),
+      OpenXmlTextStyle.normal => b,
+    };
+  }
+}
+
+// ── Shared colour helpers ──────────────────────────────────────────────────────
+
 String? _normalizeColorHex(String? value) {
   if (value == null) {
     return null;

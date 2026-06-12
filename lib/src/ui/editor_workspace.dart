@@ -1,11 +1,11 @@
 // ignore_for_file: use_key_in_widget_constructors
 
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 import '../viewer/docx_view.dart';
 import '../viewer/docx_view_config.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:smart_rich_text_quill/smart_rich_text_quill.dart';
 
@@ -540,7 +540,7 @@ class _OoxmlVisualEditor extends StatelessWidget {
   }
 }
 
-class _OpenXmlStructuredEditor extends StatelessWidget {
+class _OpenXmlStructuredEditor extends StatefulWidget {
   const _OpenXmlStructuredEditor({
     super.key,
     required this.document,
@@ -567,310 +567,123 @@ class _OpenXmlStructuredEditor extends StatelessWidget {
   final bool readOnly;
 
   @override
-  Widget build(BuildContext context) {
-    final blocks = document.blocks.isEmpty
-        ? const [
-            OpenXmlParagraphBlock(runs: [OpenXmlRun('')]),
-          ]
-        : document.blocks;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (var index = 0; index < blocks.length; index += 1) ...[
-          _buildBlock(context, index, blocks[index]),
-          const SizedBox(height: 12),
-        ],
-        if (!readOnly)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                OutlinedButton.icon(
-                  onPressed: () => _insertBlock(
-                    blocks.length - 1,
-                    const OpenXmlParagraphBlock(runs: [OpenXmlRun('')]),
-                  ),
-                  icon: const Icon(Icons.notes_outlined, size: 18),
-                  label: const Text('Paragraph'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () => _insertBlock(
-                    blocks.length - 1,
-                    const OpenXmlTableBlock(
-                      rows: [
-                        ['Header 1', 'Header 2'],
-                        ['', ''],
-                      ],
-                    ),
-                  ),
-                  icon: const Icon(Icons.table_chart_outlined, size: 18),
-                  label: const Text('Table'),
-                ),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildBlock(BuildContext context, int index, OpenXmlBlock block) {
-    return switch (block) {
-      OpenXmlParagraphBlock() => _OpenXmlParagraphEditor(
-        key: ValueKey('openxml-paragraph-$index'),
-        index: index,
-        block: block,
-        style: _styleForParagraph(block),
-        textAlign: _flutterAlignFor(block.align, textAlign),
-        onChanged: (updated) => _replaceBlock(index, updated),
-        onActivated: onParagraphActivated,
-        onSelectionChanged: onSelectionChanged,
-        readOnly: readOnly,
-      ),
-      OpenXmlTableBlock() => _OoxmlTableEditor(
-        index: index,
-        block: OoxmlTableBlock(
-          rows: block.rows,
-          hasHeader: block.hasHeader,
-          columnWidths: block.columnWidths,
-          rowHeights: block.rowHeights,
-        ),
-        style: style,
-        onChanged: (updated) => _replaceBlock(
-          index,
-          OpenXmlTableBlock(
-            rows: updated.rows,
-            hasHeader: updated.hasHeader,
-            columnWidths: updated.columnWidths,
-            rowHeights: updated.rowHeights,
-          ),
-        ),
-      ),
-      _ => const SizedBox.shrink(),
-    };
-  }
-
-  TextStyle _styleForParagraph(OpenXmlParagraphBlock block) {
-    // Run-level bold/italic/underline are rendered per character by
-    // RichRunController.buildTextSpan, so the base style only carries the
-    // paragraph-level (style) attributes here.
-    final base = style.copyWith(
-      fontFamily: block.style == OpenXmlTextStyle.code
-          ? 'Courier New'
-          : style.fontFamily,
-    );
-    return switch (block.style) {
-      OpenXmlTextStyle.title => base.copyWith(
-        fontSize: 30,
-        fontWeight: FontWeight.w700,
-        height: 1.2,
-      ),
-      OpenXmlTextStyle.subtitle => base.copyWith(
-        fontSize: 20,
-        color: const Color(0xff475569),
-        height: 1.32,
-      ),
-      OpenXmlTextStyle.heading1 => base.copyWith(
-        fontSize: 24,
-        fontWeight: FontWeight.w700,
-        height: 1.25,
-      ),
-      OpenXmlTextStyle.heading2 => base.copyWith(
-        fontSize: 21,
-        fontWeight: FontWeight.w700,
-        height: 1.28,
-      ),
-      OpenXmlTextStyle.heading3 => base.copyWith(
-        fontSize: 18,
-        fontWeight: FontWeight.w700,
-        height: 1.32,
-      ),
-      OpenXmlTextStyle.heading4 ||
-      OpenXmlTextStyle.heading5 ||
-      OpenXmlTextStyle.heading6 => base.copyWith(
-        fontSize: 16,
-        fontWeight: FontWeight.w700,
-      ),
-      OpenXmlTextStyle.quote => base.copyWith(
-        color: const Color(0xff475569),
-        fontStyle: FontStyle.italic,
-      ),
-      OpenXmlTextStyle.code => base.copyWith(
-        fontSize: 14,
-        backgroundColor: const Color(0xfff1f5f9),
-      ),
-      OpenXmlTextStyle.caption => base.copyWith(
-        fontSize: 13,
-        color: const Color(0xff64748b),
-        fontStyle: FontStyle.italic,
-      ),
-      OpenXmlTextStyle.normal => base,
-    };
-  }
-
-  void _replaceBlock(int index, OpenXmlBlock block) {
-    final blocks = List<OpenXmlBlock>.of(document.blocks);
-    if (index < 0 || index >= blocks.length) {
-      return;
-    }
-    blocks[index] = block;
-    onChanged(document.copyWith(blocks: blocks));
-  }
-
-  void _insertBlock(int index, OpenXmlBlock block) {
-    final blocks = List<OpenXmlBlock>.of(document.blocks);
-    blocks.insert((index + 1).clamp(0, blocks.length), block);
-    onChanged(document.copyWith(blocks: blocks));
-  }
-
-  TextAlign _flutterAlignFor(OoxmlTextAlign align, TextAlign fallback) {
-    return switch (align) {
-      OoxmlTextAlign.center => TextAlign.center,
-      OoxmlTextAlign.right => TextAlign.right,
-      OoxmlTextAlign.justify => TextAlign.justify,
-      OoxmlTextAlign.left => fallback,
-    };
-  }
+  State<_OpenXmlStructuredEditor> createState() =>
+      _OpenXmlStructuredEditorState();
 }
 
-class _OpenXmlParagraphEditor extends StatefulWidget {
-  const _OpenXmlParagraphEditor({
-    super.key,
-    required this.index,
-    required this.block,
-    required this.style,
-    required this.textAlign,
-    required this.onChanged,
-    required this.onActivated,
-    required this.onSelectionChanged,
-    this.readOnly = false,
-  });
-
-  final int index;
-  final OpenXmlParagraphBlock block;
-  final TextStyle style;
-  final TextAlign textAlign;
-  final ValueChanged<OpenXmlParagraphBlock> onChanged;
-  final void Function(
-    int index,
-    OpenXmlParagraphBlock block,
-    RichRunController controller,
-    FocusNode focusNode,
-  )
-  onActivated;
-  final VoidCallback onSelectionChanged;
-  final bool readOnly;
-
-  @override
-  State<_OpenXmlParagraphEditor> createState() =>
-      _OpenXmlParagraphEditorState();
-}
-
-class _OpenXmlParagraphEditorState extends State<_OpenXmlParagraphEditor> {
-  late RichRunController _controller;
+class _OpenXmlStructuredEditorState extends State<_OpenXmlStructuredEditor> {
+  late DocumentFlatController _controller;
   final FocusNode _focusNode = FocusNode();
-  TextSelection _lastSelection = const TextSelection.collapsed(offset: 0);
-  late String _lastText;
-  late String _lastSignature;
+  int _lastNotifiedBlockIndex = -1;
 
   @override
   void initState() {
     super.initState();
-    _controller = RichRunController(runs: widget.block.runs);
-    _lastText = _controller.text;
-    _lastSignature = _runSignature(_controller.runs);
+    _controller = DocumentFlatController.fromDocument(widget.document);
     _controller.addListener(_handleControllerChanged);
     _focusNode.addListener(_handleFocusChanged);
   }
 
   @override
-  void didUpdateWidget(covariant _OpenXmlParagraphEditor oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Only rebuild the controller when the text itself changed from the
-    // outside (template/import/version restore). Run-only changes that we
-    // originated keep the controller authoritative so the caret never jumps.
-    if (widget.block.plainText != _controller.text) {
+  void didUpdateWidget(covariant _OpenXmlStructuredEditor old) {
+    super.didUpdateWidget(old);
+    if (old.document != widget.document) {
       _controller.removeListener(_handleControllerChanged);
-      _controller.dispose();
-      _controller = RichRunController(runs: widget.block.runs);
-      _lastText = _controller.text;
-      _lastSignature = _runSignature(_controller.runs);
+      _controller.updateFromDocument(widget.document);
       _controller.addListener(_handleControllerChanged);
-    } else {
-      final blockSignature = _runSignature(widget.block.runs);
-      if (blockSignature != _lastSignature) {
-        _lastSignature = blockSignature;
-        _controller.resetRuns(widget.block.runs, notify: false);
-      }
     }
-  }
-
-  static String _runSignature(List<OpenXmlRun> runs) {
-    return runs
-        .map(
-          (run) =>
-              '${run.text.length}:${run.bold ? 1 : 0}${run.italic ? 1 : 0}'
-              '${run.underline ? 1 : 0}${run.strike ? 1 : 0}'
-              ':${run.colorHex ?? ''}',
-        )
-        .join('|');
   }
 
   @override
   void dispose() {
-    _controller.removeListener(_handleControllerChanged);
-    _controller.dispose();
-    _focusNode.dispose();
+    _controller
+      ..removeListener(_handleControllerChanged)
+      ..dispose();
+    _focusNode
+      ..removeListener(_handleFocusChanged)
+      ..dispose();
     super.dispose();
   }
 
   void _handleFocusChanged() {
-    if (_focusNode.hasFocus) {
-      widget.onActivated(widget.index, widget.block, _controller, _focusNode);
-    }
+    if (_focusNode.hasFocus) _notifyActivatedBlock();
   }
 
   void _handleControllerChanged() {
-    final runs = _controller.runs;
-    final signature = _runSignature(runs);
-    if (_controller.text != _lastText || signature != _lastSignature) {
-      _lastText = _controller.text;
-      _lastSignature = signature;
-      // Propagate content/formatting changes to the document model.
-      widget.onChanged(widget.block.copyWith(runs: runs));
-    }
-    if (_controller.selection != _lastSelection) {
-      _lastSelection = _controller.selection;
-      if (_focusNode.hasFocus) {
-        widget.onSelectionChanged();
+    widget.onChanged(_controller.toDocument());
+    widget.onSelectionChanged();
+
+    final cursor = _controller.selection.baseOffset;
+    if (cursor >= 0) {
+      final idx = _controller.activeBlockIndex(cursor);
+      if (idx != _lastNotifiedBlockIndex) {
+        _lastNotifiedBlockIndex = idx;
+        _notifyActivatedBlock();
       }
     }
   }
 
+  void _notifyActivatedBlock() {
+    final cursor = _controller.selection.baseOffset;
+    final flatIdx = cursor >= 0 ? _controller.activeBlockIndex(cursor) : 0;
+    _lastNotifiedBlockIndex = flatIdx;
+
+    // Map flat paragraph index → document block index (skip non-paragraph blocks).
+    final docBlocks = widget.document.blocks;
+    var paraCount = 0;
+    for (var i = 0; i < docBlocks.length; i++) {
+      if (docBlocks[i] is OpenXmlParagraphBlock) {
+        if (paraCount == flatIdx) {
+          widget.onParagraphActivated(
+            i,
+            docBlocks[i] as OpenXmlParagraphBlock,
+            _controller,
+            _focusNode,
+          );
+          return;
+        }
+        paraCount++;
+      }
+    }
+    // Fallback – activate the first paragraph.
+    for (var i = 0; i < docBlocks.length; i++) {
+      if (docBlocks[i] is OpenXmlParagraphBlock) {
+        widget.onParagraphActivated(
+          i,
+          docBlocks[i] as OpenXmlParagraphBlock,
+          _controller,
+          _focusNode,
+        );
+        return;
+      }
+    }
+  }
+
+  void _insertTable() {
+    final newDoc = widget.document.copyWith(
+      blocks: [
+        ...widget.document.blocks,
+        const OpenXmlTableBlock(rows: [
+          ['Header 1', 'Header 2'],
+          ['', ''],
+        ]),
+      ],
+    );
+    widget.onChanged(newDoc);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final hasPageBreak = widget.block.pageBreakBefore;
+    // Table blocks are rendered separately below the flat text editor.
+    final tableBlocks = <(int, OpenXmlTableBlock)>[];
+    for (var i = 0; i < widget.document.blocks.length; i++) {
+      final b = widget.document.blocks[i];
+      if (b is OpenXmlTableBlock) tableBlocks.add((i, b));
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (hasPageBreak)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Row(
-              children: const [
-                Expanded(child: Divider(color: Color(0xffcbd5e1))),
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 8),
-                  child: Text(
-                    'Page break',
-                    style: TextStyle(fontSize: 11, color: Color(0xff64748b)),
-                  ),
-                ),
-                Expanded(child: Divider(color: Color(0xffcbd5e1))),
-              ],
-            ),
-          ),
         TextField(
           controller: _controller,
           focusNode: _focusNode,
@@ -880,25 +693,73 @@ class _OpenXmlParagraphEditorState extends State<_OpenXmlParagraphEditor> {
           textAlign: widget.textAlign,
           style: widget.style,
           cursorColor: const Color(0xff2563eb),
-          decoration: InputDecoration(
+          decoration: const InputDecoration(
             border: InputBorder.none,
             isDense: true,
-            hintText: widget.block.style == OpenXmlTextStyle.title
-                ? 'Document title'
-                : 'Type here',
+            hintText: 'Start writing...',
             contentPadding: EdgeInsets.zero,
           ),
-          onTap: () => widget.onActivated(
-            widget.index,
-            widget.block,
-            _controller,
-            _focusNode,
-          ),
         ),
+        for (final (idx, block) in tableBlocks) ...[
+          const SizedBox(height: 12),
+          _OoxmlTableEditor(
+            index: idx,
+            block: OoxmlTableBlock(
+              rows: block.rows,
+              hasHeader: block.hasHeader,
+              columnWidths: block.columnWidths,
+              rowHeights: block.rowHeights,
+            ),
+            style: widget.style,
+            onChanged: (updated) {
+              final blocks = List<OpenXmlBlock>.of(widget.document.blocks);
+              blocks[idx] = OpenXmlTableBlock(
+                rows: updated.rows,
+                hasHeader: updated.hasHeader,
+                columnWidths: updated.columnWidths,
+                rowHeights: updated.rowHeights,
+              );
+              widget.onChanged(widget.document.copyWith(blocks: blocks));
+            },
+          ),
+        ],
+        if (!widget.readOnly) ...[
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () {
+                    final current = _controller.text;
+                    final newText = current.isEmpty ? '' : '$current\n';
+                    _controller.value = TextEditingValue(
+                      text: newText,
+                      selection: TextSelection.collapsed(
+                        offset: newText.length,
+                      ),
+                    );
+                    _focusNode.requestFocus();
+                  },
+                  icon: const Icon(Icons.notes_outlined, size: 18),
+                  label: const Text('Paragraph'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _insertTable,
+                  icon: const Icon(Icons.table_chart_outlined, size: 18),
+                  label: const Text('Table'),
+                ),
+              ],
+            ),
+          ),
+        ],
       ],
     );
   }
 }
+
 
 class _QuillWysiwygEditor extends StatefulWidget {
   const _QuillWysiwygEditor({
