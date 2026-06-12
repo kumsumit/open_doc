@@ -87,3 +87,11 @@ class ToggleInspectorPanelIntent extends Intent {
 class ShowKeyboardShortcutsIntent extends Intent {
   const ShowKeyboardShortcutsIntent();
 }
+
+class PasteSpecialIntent extends Intent {
+  const PasteSpecialIntent();
+}
+
+class InsertBookmarkIntent extends Intent {
+  const InsertBookmarkIntent();
+}

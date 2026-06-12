@@ -164,7 +164,16 @@ class OpenXmlRun {
     this.italic = false,
     this.underline = false,
     this.strike = false,
+    this.superscript = false,
+    this.subscript = false,
+    this.smallCaps = false,
+    this.allCaps = false,
+    this.doubleUnderline = false,
+    this.doubleStrike = false,
+    this.hidden = false,
     this.colorHex,
+    this.highlightHex,
+    this.letterSpacing,
     this.href,
   });
 
@@ -173,7 +182,16 @@ class OpenXmlRun {
   final bool italic;
   final bool underline;
   final bool strike;
+  final bool superscript;
+  final bool subscript;
+  final bool smallCaps;
+  final bool allCaps;
+  final bool doubleUnderline;
+  final bool doubleStrike;
+  final bool hidden;
   final String? colorHex;
+  final String? highlightHex;
+  final double? letterSpacing;
   final String? href;
 
   docx.DocxText toDocxText() {
@@ -182,10 +200,17 @@ class OpenXmlRun {
       fontWeight: bold ? docx.DocxFontWeight.bold : docx.DocxFontWeight.normal,
       fontStyle: italic ? docx.DocxFontStyle.italic : docx.DocxFontStyle.normal,
       decorations: [
-        if (underline) docx.DocxTextDecoration.underline,
-        if (strike) docx.DocxTextDecoration.strikethrough,
+        if (underline || doubleUnderline) docx.DocxTextDecoration.underline,
+        if (strike || doubleStrike) docx.DocxTextDecoration.strikethrough,
       ],
+      isSuperscript: superscript,
+      isSubscript: subscript,
+      isSmallCaps: smallCaps,
+      isAllCaps: allCaps,
+      isDoubleStrike: doubleStrike,
+      characterSpacing: letterSpacing,
       color: colorHex == null ? null : docx.DocxColor(colorHex!),
+      shadingFill: highlightHex,
       href: href,
     );
   }
@@ -197,7 +222,16 @@ class OpenXmlRun {
       if (italic) 'italic': true,
       if (underline) 'underline': true,
       if (strike) 'strike': true,
+      if (superscript) 'superscript': true,
+      if (subscript) 'subscript': true,
+      if (smallCaps) 'smallCaps': true,
+      if (allCaps) 'allCaps': true,
+      if (doubleUnderline) 'doubleUnderline': true,
+      if (doubleStrike) 'doubleStrike': true,
+      if (hidden) 'hidden': true,
       if (colorHex != null) 'colorHex': colorHex,
+      if (highlightHex != null) 'highlightHex': highlightHex,
+      if (letterSpacing != null) 'letterSpacing': letterSpacing,
       if (href != null) 'href': href,
     };
   }
@@ -209,24 +243,44 @@ class OpenXmlParagraphBlock extends OpenXmlBlock {
     this.style = OpenXmlTextStyle.normal,
     this.align = OoxmlTextAlign.left,
     this.pageBreakBefore = false,
+    this.indentLeft = 0,
+    this.hangingIndent = 0,
+    this.keepWithNext = false,
+    this.widowOrphanControl = true,
   }) : super(OpenXmlBlockType.paragraph);
 
   final List<OpenXmlRun> runs;
   final OpenXmlTextStyle style;
   final OoxmlTextAlign align;
   final bool pageBreakBefore;
+  /// Left indent in twips (720 = 0.5 inch, matching Word's Tab key increment).
+  final int indentLeft;
+  /// Hanging indent in twips (first line pulled left by this amount).
+  final int hangingIndent;
+  /// Keep this paragraph on the same page as the next.
+  final bool keepWithNext;
+  /// Prevent orphaned/widowed lines at page breaks.
+  final bool widowOrphanControl;
 
   OpenXmlParagraphBlock copyWith({
     List<OpenXmlRun>? runs,
     OpenXmlTextStyle? style,
     OoxmlTextAlign? align,
     bool? pageBreakBefore,
+    int? indentLeft,
+    int? hangingIndent,
+    bool? keepWithNext,
+    bool? widowOrphanControl,
   }) {
     return OpenXmlParagraphBlock(
       runs: runs ?? this.runs,
       style: style ?? this.style,
       align: align ?? this.align,
       pageBreakBefore: pageBreakBefore ?? this.pageBreakBefore,
+      indentLeft: indentLeft ?? this.indentLeft,
+      hangingIndent: hangingIndent ?? this.hangingIndent,
+      keepWithNext: keepWithNext ?? this.keepWithNext,
+      widowOrphanControl: widowOrphanControl ?? this.widowOrphanControl,
     );
   }
 
@@ -244,7 +298,10 @@ class OpenXmlParagraphBlock extends OpenXmlBlock {
         OoxmlTextAlign.left => docx.DocxAlign.left,
       },
       pageBreakBefore: pageBreakBefore,
-      indentLeft: style == OpenXmlTextStyle.quote ? 720 : null,
+      indentLeft: indentLeft > 0
+          ? indentLeft
+          : (style == OpenXmlTextStyle.quote ? 720 : null),
+      indentFirstLine: hangingIndent > 0 ? -hangingIndent : null,
       children: [for (final run in runs) run.toDocxText()],
     );
   }
@@ -256,6 +313,7 @@ class OpenXmlParagraphBlock extends OpenXmlBlock {
       'style': style.name,
       'align': align.name,
       'pageBreakBefore': pageBreakBefore,
+      if (indentLeft > 0) 'indentLeft': indentLeft,
       'runs': [for (final run in runs) run.toJson()],
     };
   }
@@ -1204,6 +1262,7 @@ class MediaBlock {
     required this.source,
     required this.caption,
     required this.bytes,
+    this.altText = '',
   });
 
   final String id;
@@ -1211,6 +1270,25 @@ class MediaBlock {
   final String source;
   final String caption;
   final Uint8List? bytes;
+  final String altText;
+
+  MediaBlock copyWith({
+    String? id,
+    MediaType? type,
+    String? source,
+    String? caption,
+    Uint8List? bytes,
+    String? altText,
+  }) {
+    return MediaBlock(
+      id: id ?? this.id,
+      type: type ?? this.type,
+      source: source ?? this.source,
+      caption: caption ?? this.caption,
+      bytes: bytes ?? this.bytes,
+      altText: altText ?? this.altText,
+    );
+  }
 }
 
 class CustomFontFile {
@@ -1231,4 +1309,58 @@ class Collaborator {
   final String name;
   final String status;
   final Color color;
+}
+
+class DocumentCommentReply {
+  const DocumentCommentReply({
+    required this.id,
+    required this.author,
+    required this.body,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String author;
+  final String body;
+  final DateTime createdAt;
+
+  DocumentCommentReply copyWith({String? body}) => DocumentCommentReply(
+    id: id,
+    author: author,
+    body: body ?? this.body,
+    createdAt: createdAt,
+  );
+}
+
+class DocumentComment {
+  DocumentComment({
+    required this.id,
+    required this.author,
+    required this.body,
+    required this.createdAt,
+    List<DocumentCommentReply>? replies,
+    this.resolved = false,
+  }) : replies = replies ?? [];
+
+  final String id;
+  final String author;
+  final String body;
+  final DateTime createdAt;
+  final List<DocumentCommentReply> replies;
+  bool resolved;
+
+  DocumentComment copyWith({
+    String? body,
+    List<DocumentCommentReply>? replies,
+    bool? resolved,
+  }) {
+    return DocumentComment(
+      id: id,
+      author: author,
+      body: body ?? this.body,
+      createdAt: createdAt,
+      replies: replies ?? List.from(this.replies),
+      resolved: resolved ?? this.resolved,
+    );
+  }
 }

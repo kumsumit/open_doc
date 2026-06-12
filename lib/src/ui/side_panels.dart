@@ -212,6 +212,7 @@ class InspectorPanel extends StatelessWidget {
     required this.sourceCount,
     required this.citationNudgeCount,
     required this.actionItems,
+    required this.comments,
     required this.onSave,
     required this.onShare,
     required this.onHistory,
@@ -222,6 +223,9 @@ class InspectorPanel extends StatelessWidget {
     required this.onPermissionChange,
     required this.onAudienceProfileChange,
     required this.onToneModeChange,
+    required this.onResolveComment,
+    required this.onReplyComment,
+    required this.onAddComment,
     required this.onClose,
   });
 
@@ -247,6 +251,7 @@ class InspectorPanel extends StatelessWidget {
   final int sourceCount;
   final int citationNudgeCount;
   final List<String> actionItems;
+  final List<DocumentComment> comments;
   final VoidCallback onSave;
   final VoidCallback onShare;
   final VoidCallback onHistory;
@@ -257,6 +262,9 @@ class InspectorPanel extends StatelessWidget {
   final ValueChanged<String> onPermissionChange;
   final ValueChanged<String> onAudienceProfileChange;
   final ValueChanged<String> onToneModeChange;
+  final ValueChanged<String> onResolveComment;
+  final void Function(String commentId, String reply) onReplyComment;
+  final ValueChanged<String> onAddComment;
   final VoidCallback onClose;
 
   @override
@@ -507,21 +515,38 @@ class InspectorPanel extends StatelessWidget {
             title: Text('$activeVersion saved ${_formatTime(savedAt)}'),
             subtitle: Text('${versions.length} saved versions'),
           ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 18, 16, 8),
-            child: Text(
-              'Comments',
-              style: TextStyle(fontWeight: FontWeight.w700),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 18, 8, 8),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Comments',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add_comment_outlined, size: 18),
+                  tooltip: 'Add comment',
+                  onPressed: () => onAddComment('New comment'),
+                ),
+              ],
             ),
           ),
-          const CommentCard(
-            author: 'Asha',
-            body: 'Strengthen the objective with one measurable outcome.',
-          ),
-          const CommentCard(
-            author: 'Legal',
-            body: 'Check whether this proposal needs a confidentiality note.',
-          ),
+          for (final c in comments.where((c) => !c.resolved))
+            CommentCard(
+              comment: c,
+              onResolve: () => onResolveComment(c.id),
+              onReply: (text) => onReplyComment(c.id, text),
+            ),
+          if (comments.where((c) => !c.resolved).isEmpty)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: Text(
+                'No open comments.',
+                style: TextStyle(fontSize: 13, color: Color(0xff6b7280)),
+              ),
+            ),
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 18, 16, 8),
             child: Text(

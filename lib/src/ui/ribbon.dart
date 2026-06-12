@@ -12,6 +12,15 @@ class Ribbon extends StatelessWidget {
     required this.italic,
     required this.underline,
     required this.strikethrough,
+    required this.superscript,
+    required this.subscript,
+    required this.smallCaps,
+    required this.allCaps,
+    required this.doubleUnderline,
+    required this.doubleStrike,
+    required this.hidden,
+    required this.formatPainterActive,
+    required this.highlightColor,
     required this.showRuler,
     required this.trackChanges,
     required this.commentsMode,
@@ -32,6 +41,18 @@ class Ribbon extends StatelessWidget {
     required this.onItalic,
     required this.onUnderline,
     required this.onStrikethrough,
+    required this.onSuperscript,
+    required this.onSubscript,
+    required this.onSmallCaps,
+    required this.onAllCaps,
+    required this.onDoubleUnderline,
+    required this.onDoubleStrike,
+    required this.onHidden,
+    required this.onFormatPainter,
+    required this.onClearFormatting,
+    required this.onHighlight,
+    required this.onIndentIncrease,
+    required this.onIndentDecrease,
     required this.onRuler,
     required this.onTrackChanges,
     required this.onCommentsMode,
@@ -71,12 +92,25 @@ class Ribbon extends StatelessWidget {
     required this.onSocialSummary,
     required this.onCitationNudge,
     required this.onActionDigest,
+    required this.onKeyboardShortcuts,
+    required this.highContrast,
+    required this.onHighContrast,
+    required this.onPrintPreview,
   });
 
   final bool bold;
   final bool italic;
   final bool underline;
   final bool strikethrough;
+  final bool superscript;
+  final bool subscript;
+  final bool smallCaps;
+  final bool allCaps;
+  final bool doubleUnderline;
+  final bool doubleStrike;
+  final bool hidden;
+  final bool formatPainterActive;
+  final Color? highlightColor;
   final bool showRuler;
   final bool trackChanges;
   final bool commentsMode;
@@ -97,6 +131,18 @@ class Ribbon extends StatelessWidget {
   final VoidCallback onItalic;
   final VoidCallback onUnderline;
   final VoidCallback onStrikethrough;
+  final VoidCallback onSuperscript;
+  final VoidCallback onSubscript;
+  final VoidCallback onSmallCaps;
+  final VoidCallback onAllCaps;
+  final VoidCallback onDoubleUnderline;
+  final VoidCallback onDoubleStrike;
+  final VoidCallback onHidden;
+  final VoidCallback onFormatPainter;
+  final VoidCallback onClearFormatting;
+  final ValueChanged<Color?> onHighlight;
+  final VoidCallback onIndentIncrease;
+  final VoidCallback onIndentDecrease;
   final VoidCallback onRuler;
   final VoidCallback onTrackChanges;
   final VoidCallback onCommentsMode;
@@ -136,6 +182,10 @@ class Ribbon extends StatelessWidget {
   final VoidCallback onSocialSummary;
   final VoidCallback onCitationNudge;
   final VoidCallback onActionDigest;
+  final VoidCallback onKeyboardShortcuts;
+  final bool highContrast;
+  final VoidCallback onHighContrast;
+  final VoidCallback onPrintPreview;
 
   @override
   Widget build(BuildContext context) {
@@ -313,12 +363,82 @@ class Ribbon extends StatelessWidget {
                         selected: strikethrough,
                         onTap: onStrikethrough,
                       ),
+                      ToggleTool(
+                        icon: Icons.superscript,
+                        label: 'Super',
+                        selected: superscript,
+                        onTap: onSuperscript,
+                      ),
+                      ToggleTool(
+                        icon: Icons.subscript,
+                        label: 'Sub',
+                        selected: subscript,
+                        onTap: onSubscript,
+                      ),
+                      ToggleTool(
+                        icon: Icons.text_fields_outlined,
+                        label: 'Small Caps',
+                        selected: smallCaps,
+                        onTap: onSmallCaps,
+                      ),
+                      ToggleTool(
+                        icon: Icons.text_fields,
+                        label: 'All Caps',
+                        selected: allCaps,
+                        onTap: onAllCaps,
+                      ),
+                      ToggleTool(
+                        icon: Icons.format_underlined_outlined,
+                        label: 'Double Underline',
+                        selected: doubleUnderline,
+                        onTap: onDoubleUnderline,
+                      ),
+                      ToggleTool(
+                        icon: Icons.strikethrough_s_outlined,
+                        label: 'Double Strikethrough',
+                        selected: doubleStrike,
+                        onTap: onDoubleStrike,
+                      ),
+                      ToggleTool(
+                        icon: Icons.visibility_off_outlined,
+                        label: 'Hidden Text',
+                        selected: hidden,
+                        onTap: onHidden,
+                      ),
+                      const SizedBox(width: 4),
+                      ToggleTool(
+                        icon: Icons.format_paint_outlined,
+                        label: 'Format Painter',
+                        selected: formatPainterActive,
+                        onTap: onFormatPainter,
+                      ),
+                      const SizedBox(width: 4),
+                      _HighlightButton(
+                        color: highlightColor,
+                        onChanged: onHighlight,
+                      ),
+                      ToolButton(
+                        icon: Icons.format_clear,
+                        label: 'Clear',
+                        onTap: onClearFormatting,
+                      ),
                       const SizedBox(width: 8),
                       DropdownChip(
                         value: alignment,
                         width: 112,
                         values: const ['Left', 'Center', 'Right', 'Justify'],
                         onChanged: onAlignment,
+                      ),
+                      const SizedBox(width: 4),
+                      ToolButton(
+                        icon: Icons.format_indent_increase,
+                        label: 'Indent',
+                        onTap: onIndentIncrease,
+                      ),
+                      ToolButton(
+                        icon: Icons.format_indent_decrease,
+                        label: 'Outdent',
+                        onTap: onIndentDecrease,
                       ),
                     ],
                   ),
@@ -473,29 +593,124 @@ class Ribbon extends StatelessWidget {
                 ),
                 RibbonGroup(
                   label: 'View',
-                  child: SizedBox(
-                    width: 180,
-                    child: Row(
-                      children: [
-                        const Icon(Icons.zoom_in_outlined, size: 20),
-                        Expanded(
-                          child: Slider(
-                            value: zoom,
-                            min: .75,
-                            max: 1.4,
-                            divisions: 13,
-                            onChanged: onZoom,
-                          ),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 180,
+                        child: Row(
+                          children: [
+                            const Icon(Icons.zoom_in_outlined, size: 20),
+                            Expanded(
+                              child: Slider(
+                                value: zoom,
+                                min: .75,
+                                max: 1.4,
+                                divisions: 13,
+                                onChanged: onZoom,
+                              ),
+                            ),
+                            Text('${(zoom * 100).round()}%'),
+                          ],
                         ),
-                        Text('${(zoom * 100).round()}%'),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: 4),
+                      ToggleTool(
+                        icon: Icons.contrast_outlined,
+                        label: 'High Contrast',
+                        selected: highContrast,
+                        onTap: onHighContrast,
+                      ),
+                      ToolButton(
+                        icon: Icons.print_outlined,
+                        label: 'Preview',
+                        onTap: onPrintPreview,
+                      ),
+                      ToolButton(
+                        icon: Icons.keyboard_outlined,
+                        label: 'Keys',
+                        onTap: onKeyboardShortcuts,
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+// ── Highlight colour picker button ───────────────────────────────────────────
+
+class _HighlightButton extends StatelessWidget {
+  const _HighlightButton({required this.color, required this.onChanged});
+
+  final Color? color;
+  final ValueChanged<Color?> onChanged;
+
+  static const _colors = <Color>[
+    Color(0xfffffb00), // yellow
+    Color(0xff00ff00), // green
+    Color(0xff00ffff), // cyan
+    Color(0xffff69b4), // pink
+    Color(0xffff8c00), // orange
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<Color?>(
+      tooltip: 'Highlight',
+      offset: const Offset(0, 44),
+      itemBuilder: (_) => [
+        for (final c in _colors)
+          PopupMenuItem<Color?>(
+            value: c,
+            child: Row(
+              children: [
+                Container(
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    color: c,
+                    border: Border.all(color: const Color(0xffcccccc)),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        const PopupMenuItem<Color?>(
+          value: null,
+          child: Row(
+            children: [
+              Icon(Icons.format_color_reset, size: 18),
+              SizedBox(width: 6),
+              Text('Remove'),
+            ],
+          ),
+        ),
+      ],
+      onSelected: onChanged,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.format_color_fill, size: 18),
+            Container(
+              width: 18,
+              height: 3,
+              color: color ?? const Color(0xfffffb00),
+            ),
+            const SizedBox(height: 2),
+            const Text(
+              'Highlight',
+              style: TextStyle(fontSize: 9),
+            ),
+          ],
+        ),
       ),
     );
   }

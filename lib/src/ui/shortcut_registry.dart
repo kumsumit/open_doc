@@ -229,6 +229,23 @@ class ShortcutRegistry extends ChangeNotifier {
       shift: true,
       makeIntent: ShowKeyboardShortcutsIntent.new,
     ),
+    ShortcutDef(
+      id: 'paste_special',
+      label: 'Paste Special',
+      category: ShortcutCategory.document,
+      key: LogicalKeyboardKey.keyV,
+      shift: true,
+      makeIntent: PasteSpecialIntent.new,
+    ),
+    ShortcutDef(
+      id: 'insert_bookmark',
+      label: 'Insert Bookmark',
+      category: ShortcutCategory.document,
+      key: LogicalKeyboardKey.keyD,
+      shift: true,
+      alt: true,
+      makeIntent: InsertBookmarkIntent.new,
+    ),
   ];
 
   /// Effective activators for a definition (user override, or ctrl+meta pair).

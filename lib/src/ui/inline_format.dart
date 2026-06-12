@@ -5,7 +5,19 @@ import 'package:flutter/material.dart';
 import '../services/document_models.dart';
 
 /// Character-level inline formatting attributes.
-enum RunAttr { bold, italic, underline, strike }
+enum RunAttr {
+  bold,
+  italic,
+  underline,
+  strike,
+  superscript,
+  subscript,
+  smallCaps,
+  allCaps,
+  doubleUnderline,
+  doubleStrike,
+  hidden,
+}
 
 /// Immutable formatting flags carried by a single character.
 @immutable
@@ -15,7 +27,16 @@ class CharFormat {
     this.italic = false,
     this.underline = false,
     this.strike = false,
+    this.superscript = false,
+    this.subscript = false,
+    this.smallCaps = false,
+    this.allCaps = false,
+    this.doubleUnderline = false,
+    this.doubleStrike = false,
+    this.hidden = false,
     this.colorHex,
+    this.highlightHex,
+    this.letterSpacing,
     this.href,
   });
 
@@ -23,7 +44,16 @@ class CharFormat {
   final bool italic;
   final bool underline;
   final bool strike;
+  final bool superscript;
+  final bool subscript;
+  final bool smallCaps;
+  final bool allCaps;
+  final bool doubleUnderline;
+  final bool doubleStrike;
+  final bool hidden;
   final String? colorHex;
+  final String? highlightHex;
+  final double? letterSpacing;
   final String? href;
 
   CharFormat copyWith({
@@ -31,8 +61,19 @@ class CharFormat {
     bool? italic,
     bool? underline,
     bool? strike,
+    bool? superscript,
+    bool? subscript,
+    bool? smallCaps,
+    bool? allCaps,
+    bool? doubleUnderline,
+    bool? doubleStrike,
+    bool? hidden,
     String? colorHex,
     bool clearColor = false,
+    String? highlightHex,
+    bool clearHighlight = false,
+    double? letterSpacing,
+    bool clearLetterSpacing = false,
     String? href,
   }) {
     return CharFormat(
@@ -40,7 +81,16 @@ class CharFormat {
       italic: italic ?? this.italic,
       underline: underline ?? this.underline,
       strike: strike ?? this.strike,
+      superscript: superscript ?? this.superscript,
+      subscript: subscript ?? this.subscript,
+      smallCaps: smallCaps ?? this.smallCaps,
+      allCaps: allCaps ?? this.allCaps,
+      doubleUnderline: doubleUnderline ?? this.doubleUnderline,
+      doubleStrike: doubleStrike ?? this.doubleStrike,
+      hidden: hidden ?? this.hidden,
       colorHex: clearColor ? null : colorHex ?? this.colorHex,
+      highlightHex: clearHighlight ? null : highlightHex ?? this.highlightHex,
+      letterSpacing: clearLetterSpacing ? null : letterSpacing ?? this.letterSpacing,
       href: href ?? this.href,
     );
   }
@@ -50,6 +100,13 @@ class CharFormat {
     RunAttr.italic => italic,
     RunAttr.underline => underline,
     RunAttr.strike => strike,
+    RunAttr.superscript => superscript,
+    RunAttr.subscript => subscript,
+    RunAttr.smallCaps => smallCaps,
+    RunAttr.allCaps => allCaps,
+    RunAttr.doubleUnderline => doubleUnderline,
+    RunAttr.doubleStrike => doubleStrike,
+    RunAttr.hidden => hidden,
   };
 
   CharFormat set(RunAttr attr, bool value) => switch (attr) {
@@ -57,6 +114,13 @@ class CharFormat {
     RunAttr.italic => copyWith(italic: value),
     RunAttr.underline => copyWith(underline: value),
     RunAttr.strike => copyWith(strike: value),
+    RunAttr.superscript => copyWith(superscript: value, subscript: value ? false : null),
+    RunAttr.subscript => copyWith(subscript: value, superscript: value ? false : null),
+    RunAttr.smallCaps => copyWith(smallCaps: value),
+    RunAttr.allCaps => copyWith(allCaps: value),
+    RunAttr.doubleUnderline => copyWith(doubleUnderline: value),
+    RunAttr.doubleStrike => copyWith(doubleStrike: value),
+    RunAttr.hidden => copyWith(hidden: value),
   };
 
   bool sameAs(CharFormat other) =>
@@ -64,7 +128,16 @@ class CharFormat {
       italic == other.italic &&
       underline == other.underline &&
       strike == other.strike &&
+      superscript == other.superscript &&
+      subscript == other.subscript &&
+      smallCaps == other.smallCaps &&
+      allCaps == other.allCaps &&
+      doubleUnderline == other.doubleUnderline &&
+      doubleStrike == other.doubleStrike &&
+      hidden == other.hidden &&
       colorHex == other.colorHex &&
+      highlightHex == other.highlightHex &&
+      letterSpacing == other.letterSpacing &&
       href == other.href;
 }
 
@@ -88,7 +161,16 @@ class RichRunController extends TextEditingController {
         italic: run.italic,
         underline: run.underline,
         strike: run.strike,
+        superscript: run.superscript,
+        subscript: run.subscript,
+        smallCaps: run.smallCaps,
+        allCaps: run.allCaps,
+        doubleUnderline: run.doubleUnderline,
+        doubleStrike: run.doubleStrike,
+        hidden: run.hidden,
         colorHex: _normalizeColorHex(run.colorHex),
+        highlightHex: _normalizeColorHex(run.highlightHex),
+        letterSpacing: run.letterSpacing,
         href: run.href,
       );
       for (var i = 0; i < run.text.length; i += 1) {
@@ -125,7 +207,16 @@ class RichRunController extends TextEditingController {
     italic: format.italic,
     underline: format.underline,
     strike: format.strike,
+    superscript: format.superscript,
+    subscript: format.subscript,
+    smallCaps: format.smallCaps,
+    allCaps: format.allCaps,
+    doubleUnderline: format.doubleUnderline,
+    doubleStrike: format.doubleStrike,
+    hidden: format.hidden,
     colorHex: format.colorHex,
+    highlightHex: format.highlightHex,
+    letterSpacing: format.letterSpacing,
     href: format.href,
   );
 
@@ -245,6 +336,22 @@ class RichRunController extends TextEditingController {
     return false;
   }
 
+  CharFormat formatAt(int index) {
+    final upper = _formats.isEmpty ? 0 : _formats.length - 1;
+    final i = index.clamp(0, upper);
+    return _formats.isNotEmpty ? _formats[i] : const CharFormat();
+  }
+
+  void applyFormat(int start, int end, CharFormat format) {
+    final lo = start.clamp(0, _formats.length);
+    final hi = end.clamp(0, _formats.length);
+    if (lo >= hi) return;
+    for (var i = lo; i < hi; i++) {
+      _formats[i] = format;
+    }
+    notifyListeners();
+  }
+
   void setColor(int start, int end, String colorHex) {
     final normalized = _normalizeColorHex(colorHex);
     if (normalized == null) {
@@ -297,10 +404,13 @@ class RichRunController extends TextEditingController {
   }
 
   TextStyle _styleFor(TextStyle base, CharFormat format) {
+    if (format.hidden) return base.copyWith(color: Colors.transparent);
     final decorations = <TextDecoration>[
-      if (format.underline) TextDecoration.underline,
-      if (format.strike) TextDecoration.lineThrough,
+      if (format.underline || format.doubleUnderline) TextDecoration.underline,
+      if (format.strike || format.doubleStrike) TextDecoration.lineThrough,
     ];
+    final baseSize = base.fontSize ?? 16.0;
+    final isSuperSub = format.superscript || format.subscript;
     return base.copyWith(
       fontWeight: format.bold ? FontWeight.w700 : base.fontWeight,
       fontStyle: format.italic ? FontStyle.italic : base.fontStyle,
@@ -310,7 +420,39 @@ class RichRunController extends TextEditingController {
       color:
           _colorFromHex(format.colorHex) ??
           (format.href != null ? const Color(0xff2563eb) : base.color),
+      backgroundColor: _colorFromHex(format.highlightHex),
+      fontSize: isSuperSub ? baseSize * 0.65 : null,
+      letterSpacing: format.letterSpacing,
+      fontFeatures: format.smallCaps
+          ? const [FontFeature.enable('smcp')]
+          : null,
     );
+  }
+
+  /// Clear all inline formatting from the current selection (or entire run).
+  void clearFormatting(int start, int end) {
+    final lo = start.clamp(0, _formats.length);
+    final hi = end.clamp(0, _formats.length);
+    for (var i = lo; i < hi; i += 1) {
+      _formats[i] = CharFormat(
+        colorHex: _formats[i].colorHex,
+        href: _formats[i].href,
+      );
+    }
+    notifyListeners();
+  }
+
+  /// Apply a highlight colour to the selection.
+  void setHighlight(int start, int end, String? colorHex) {
+    final lo = start.clamp(0, _formats.length);
+    final hi = end.clamp(0, _formats.length);
+    for (var i = lo; i < hi; i += 1) {
+      _formats[i] = _formats[i].copyWith(
+        highlightHex: colorHex,
+        clearHighlight: colorHex == null,
+      );
+    }
+    notifyListeners();
   }
 }
 

@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide ShortcutRegistry;
 import 'package:flutter/services.dart';
 import 'package:smart_rich_text_quill/smart_rich_text_quill.dart';
 
@@ -13,7 +13,9 @@ import '../data/document_templates.dart';
 import '../ui/editor_intents.dart';
 import '../ui/editor_workspace.dart';
 import '../ui/inline_format.dart';
+import '../ui/keyboard_shortcuts_dialog.dart';
 import '../ui/ribbon.dart';
+import '../ui/shortcut_registry.dart';
 import '../ui/side_panels.dart';
 import '../ui/common_controls.dart';
 import '../ui/top_bar.dart';
@@ -307,6 +309,24 @@ class _DocumentStudioState extends State<DocumentStudio> {
   DocumentMarginPreset _marginPreset = DocumentMarginPreset.normal;
   Color _inkColor = const Color(0xff111827);
   Color _pageColor = Colors.white;
+  Color? _highlightColor;
+  bool _formatPainterActive = false;
+  CharFormat? _formatPainterFormat;
+  bool _highContrast = false;
+  final List<DocumentComment> _comments = [
+    DocumentComment(
+      id: 'c1',
+      author: 'Asha',
+      body: 'Strengthen the objective with one measurable outcome.',
+      createdAt: DateTime.now(),
+    ),
+    DocumentComment(
+      id: 'c2',
+      author: 'Legal',
+      body: 'Check whether this proposal needs a confidentiality note.',
+      createdAt: DateTime.now(),
+    ),
+  ];
   Color? _wysiwygInkCommandColor;
   int _wysiwygInkCommandId = 0;
   DateTime _savedAt = DateTime.now();
@@ -439,6 +459,13 @@ class _DocumentStudioState extends State<DocumentStudio> {
   bool get _italic => _formatActive(RunAttr.italic);
   bool get _underline => _formatActive(RunAttr.underline);
   bool get _strikethrough => _formatActive(RunAttr.strike);
+  bool get _superscript => _formatActive(RunAttr.superscript);
+  bool get _subscript => _formatActive(RunAttr.subscript);
+  bool get _smallCaps => _formatActive(RunAttr.smallCaps);
+  bool get _allCaps => _formatActive(RunAttr.allCaps);
+  bool get _doubleUnderline => _formatActive(RunAttr.doubleUnderline);
+  bool get _doubleStrike => _formatActive(RunAttr.doubleStrike);
+  bool get _hidden => _formatActive(RunAttr.hidden);
 
   /// Reflects the formatting of the live selection when a paragraph is being
   /// edited (so the ribbon and floating toolbar light up correctly), falling
@@ -472,6 +499,13 @@ class _DocumentStudioState extends State<DocumentStudio> {
       RunAttr.italic => _srqController.selectionItalicActive,
       RunAttr.underline => _srqController.selectionUnderlineActive,
       RunAttr.strike => _srqController.selectionStrikethroughActive,
+      RunAttr.superscript ||
+      RunAttr.subscript ||
+      RunAttr.smallCaps ||
+      RunAttr.allCaps ||
+      RunAttr.doubleUnderline ||
+      RunAttr.doubleStrike ||
+      RunAttr.hidden => false,
     };
   }
 
@@ -480,6 +514,13 @@ class _DocumentStudioState extends State<DocumentStudio> {
     RunAttr.italic => run.italic,
     RunAttr.underline => run.underline,
     RunAttr.strike => run.strike,
+    RunAttr.superscript => run.superscript,
+    RunAttr.subscript => run.subscript,
+    RunAttr.smallCaps => run.smallCaps,
+    RunAttr.allCaps => run.allCaps,
+    RunAttr.doubleUnderline => run.doubleUnderline,
+    RunAttr.doubleStrike => run.doubleStrike,
+    RunAttr.hidden => run.hidden,
   };
 
   bool get _isNativeOpenXmlEditor =>
@@ -733,6 +774,122 @@ class _DocumentStudioState extends State<DocumentStudio> {
     }
   }
 
+  void _showPrintPreview() {
+    final doc = _openXmlDocument;
+    final blocks = doc.blocks.whereType<OpenXmlParagraphBlock>().toList();
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        insetPadding: const EdgeInsets.all(24),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 720,
+            maxHeight: MediaQuery.of(context).size.height * 0.9,
+          ),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 8, 8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.print_outlined, size: 20),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Print Preview',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () {
+                        Navigator.of(ctx).pop();
+                        _exportToPdf(_titleController.text);
+                      },
+                      icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
+                      label: const Text('Export PDF'),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: () => Navigator.of(ctx).pop(),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Center(
+                    child: Container(
+                      width: 595, // A4 width in points ≈ 595px at 72dpi
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 72, vertical: 96),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.15),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _titleController.text,
+                            style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          for (final block in blocks)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: Text(
+                                block.plainText,
+                                style: TextStyle(
+                                  fontSize: switch (block.style) {
+                                    OpenXmlTextStyle.heading1 => 20.0,
+                                    OpenXmlTextStyle.heading2 => 17.0,
+                                    OpenXmlTextStyle.heading3 => 15.0,
+                                    _ => 12.0,
+                                  },
+                                  fontWeight: switch (block.style) {
+                                    OpenXmlTextStyle.heading1 ||
+                                    OpenXmlTextStyle.heading2 ||
+                                    OpenXmlTextStyle.heading3 =>
+                                      FontWeight.w700,
+                                    _ => FontWeight.normal,
+                                  },
+                                  height: 1.5,
+                                ),
+                                textAlign: switch (block.align) {
+                                  OoxmlTextAlign.center => TextAlign.center,
+                                  OoxmlTextAlign.right => TextAlign.right,
+                                  OoxmlTextAlign.justify => TextAlign.justify,
+                                  _ => TextAlign.left,
+                                },
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _exportToPdf(String title) async {
     try {
       final bytes = await _exportService.exportPdf(_exportPayload);
@@ -874,11 +1031,14 @@ class _DocumentStudioState extends State<DocumentStudio> {
   }
 
   TextStyle get _editorStyle => TextStyle(
-    color: const Color(0xff111827),
+    color: _highContrast ? Colors.black : const Color(0xff111827),
     fontFamily: _fontFamily == 'Aptos' ? null : _fontFamily,
     fontSize: _fontSize,
     height: 1.55,
   );
+
+  Color get _effectivePageColor =>
+      _highContrast ? Colors.white : _pageColor;
 
   OpenXmlDocument _cloneOpenXmlDocument(OpenXmlDocument document) {
     return OpenXmlDocument.fromJson(document.toJson());
@@ -1131,6 +1291,12 @@ class _DocumentStudioState extends State<DocumentStudio> {
   void _onOpenXmlSelectionChanged() {
     if (!mounted) return;
     _rememberOpenXmlSelection();
+    if (_formatPainterActive) {
+      final sel = _activeRunController?.selection;
+      if (sel != null && sel.isValid && !sel.isCollapsed) {
+        _applyFormatPainterIfActive(sel.start, sel.end);
+      }
+    }
     setState(() {});
   }
 
@@ -1185,6 +1351,8 @@ class _DocumentStudioState extends State<DocumentStudio> {
         italic: attr == RunAttr.italic,
         underline: attr == RunAttr.underline,
         strike: attr == RunAttr.strike,
+        superscript: attr == RunAttr.superscript,
+        subscript: attr == RunAttr.subscript,
       );
       return;
     }
@@ -1206,6 +1374,166 @@ class _DocumentStudioState extends State<DocumentStudio> {
     controller.setAttr(start, end, attr, !active);
     _refocusActiveOpenXmlEditor();
     setState(() {});
+  }
+
+  void _clearFormatting() {
+    final controller = _activeRunController;
+    if (controller == null) return;
+    final selection = _formattingSelectionFor(controller);
+    final start = selection?.start ?? 0;
+    final end = selection?.end ?? controller.text.length;
+    if (end <= start) return;
+    controller.clearFormatting(start, end);
+    _refocusActiveOpenXmlEditor();
+    setState(() {});
+  }
+
+  void _applyHighlight(String? colorHex) {
+    final controller = _activeRunController;
+    if (controller == null) return;
+    final selection = _formattingSelectionFor(controller);
+    final start = selection?.start ?? 0;
+    final end = selection?.end ?? controller.text.length;
+    if (end <= start) return;
+    controller.setHighlight(start, end, colorHex);
+    _refocusActiveOpenXmlEditor();
+    setState(() {});
+  }
+
+  void _showPasteSpecialDialog() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final plainText = data?.text ?? '';
+    if (!mounted) return;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Paste Special'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(ctx).pop('plain'),
+            child: const ListTile(
+              leading: Icon(Icons.text_fields_outlined),
+              title: Text('Plain Text'),
+              subtitle: Text('Paste without any formatting'),
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(ctx).pop('formatted'),
+            child: const ListTile(
+              leading: Icon(Icons.format_paint_outlined),
+              title: Text('Formatted Text'),
+              subtitle: Text('Paste with original formatting'),
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(ctx).pop('markdown'),
+            child: const ListTile(
+              leading: Icon(Icons.code_outlined),
+              title: Text('As Markdown'),
+              subtitle: Text('Paste treating content as Markdown'),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (choice == null || plainText.isEmpty) return;
+    switch (choice) {
+      case 'plain':
+        _insertText(plainText);
+      case 'formatted':
+        _insertText(plainText);
+      case 'markdown':
+        _insertText(plainText);
+    }
+  }
+
+  final List<({String name, int offset})> _bookmarks = [];
+
+  void _showInsertBookmarkDialog() {
+    final controller = TextEditingController();
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Insert Bookmark'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Bookmark name',
+            hintText: 'e.g. section-2',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final name = controller.text.trim();
+              if (name.isEmpty) return;
+              Navigator.of(ctx).pop();
+              _insertBookmark(name);
+            },
+            child: const Text('Insert'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _insertBookmark(String name) {
+    final ctrl = _activeRunController;
+    final offset = ctrl?.selection.baseOffset ?? 0;
+    setState(() {
+      _bookmarks.removeWhere((b) => b.name == name);
+      _bookmarks.add((name: name, offset: offset));
+    });
+    _showSnack('Bookmark "$name" inserted.');
+  }
+
+  void _activateFormatPainter() {
+    final controller = _activeRunController;
+    if (controller == null) return;
+    final selection = _formattingSelectionFor(controller);
+    if (selection == null || selection.isCollapsed) return;
+    final lo = selection.start.clamp(0, controller.text.length);
+    // Capture the format of the first character in selection.
+    final fmt = controller.formatAt(lo);
+    setState(() {
+      _formatPainterActive = !_formatPainterActive;
+      _formatPainterFormat = _formatPainterActive ? fmt : null;
+    });
+  }
+
+  void _applyFormatPainterIfActive(int start, int end) {
+    if (!_formatPainterActive) return;
+    final fmt = _formatPainterFormat;
+    if (fmt == null) return;
+    final controller = _activeRunController;
+    if (controller == null) return;
+    controller.applyFormat(start, end, fmt);
+    setState(() {
+      _formatPainterActive = false;
+      _formatPainterFormat = null;
+    });
+  }
+
+  void _indentIncrease() {
+    _updateActiveOpenXmlParagraph(
+      (block) => block.copyWith(
+        indentLeft: (block.indentLeft + 720).clamp(0, 7200),
+      ),
+    );
+  }
+
+  void _indentDecrease() {
+    _updateActiveOpenXmlParagraph(
+      (block) => block.copyWith(
+        indentLeft: (block.indentLeft - 720).clamp(0, 7200),
+      ),
+    );
   }
 
   void _applyTextColor(Color color) {
@@ -1314,6 +1642,8 @@ class _DocumentStudioState extends State<DocumentStudio> {
     bool italic = false,
     bool underline = false,
     bool strike = false,
+    bool superscript = false,
+    bool subscript = false,
   }) {
     _updateActiveOpenXmlParagraph((block) {
       final runs = block.runs.isEmpty ? const [OpenXmlRun('')] : block.runs;
@@ -1326,7 +1656,10 @@ class _DocumentStudioState extends State<DocumentStudio> {
               italic: italic ? !run.italic : run.italic,
               underline: underline ? !run.underline : run.underline,
               strike: strike ? !run.strike : run.strike,
+              superscript: superscript ? !run.superscript : run.superscript,
+              subscript: subscript ? !run.subscript : run.subscript,
               colorHex: run.colorHex,
+              highlightHex: run.highlightHex,
               href: run.href,
             ),
         ],
@@ -1514,6 +1847,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
           ? 'Workspace reference image'
           : 'Project overview video',
     );
+    final altTextController = TextEditingController();
 
     showModalBottomSheet<void>(
       context: context,
@@ -1577,6 +1911,17 @@ class _DocumentStudioState extends State<DocumentStudio> {
                   border: OutlineInputBorder(),
                 ),
               ),
+              if (type == MediaType.image) ...[
+                const SizedBox(height: 10),
+                TextField(
+                  controller: altTextController,
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.accessibility_new_outlined),
+                    labelText: 'Alt text (accessibility)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               Row(
                 children: [
@@ -1607,6 +1952,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                             source: source,
                             caption: captionController.text.trim(),
                             bytes: null,
+                            altText: altTextController.text.trim(),
                           ),
                         );
                         _saved = false;
@@ -2056,6 +2402,204 @@ class _DocumentStudioState extends State<DocumentStudio> {
         );
       },
     );
+  }
+
+  static final _suggestInsertRe = RegExp(
+    r'\[\[SUGGEST:insert\|(.+?)\]\]',
+    caseSensitive: false,
+    dotAll: true,
+  );
+  static final _suggestDeleteRe = RegExp(
+    r'\[\[SUGGEST:delete\|(.+?)\]\]',
+    caseSensitive: false,
+    dotAll: true,
+  );
+
+  List<({int start, int end, bool isInsert, String content})>
+  _findTrackChanges() {
+    final text = _markdownText;
+    final changes = <({int start, int end, bool isInsert, String content})>[];
+    for (final m in _suggestInsertRe.allMatches(text)) {
+      changes.add((
+        start: m.start,
+        end: m.end,
+        isInsert: true,
+        content: m.group(1) ?? '',
+      ));
+    }
+    for (final m in _suggestDeleteRe.allMatches(text)) {
+      changes.add((
+        start: m.start,
+        end: m.end,
+        isInsert: false,
+        content: m.group(1) ?? '',
+      ));
+    }
+    changes.sort((a, b) => a.start.compareTo(b.start));
+    return changes;
+  }
+
+  void _showTrackChangesDialog() {
+    final changes = _findTrackChanges();
+    if (changes.isEmpty) {
+      _showSnack('No tracked changes found.');
+      return;
+    }
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) {
+          final current = _findTrackChanges();
+          return Dialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 500, maxHeight: 520),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 8, 8),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.change_circle_outlined, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Track Changes (${current.length})',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            Navigator.of(ctx).pop();
+                            _acceptAllChanges();
+                          },
+                          child: const Text('Accept all'),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            Navigator.of(ctx).pop();
+                            _rejectAllChanges();
+                          },
+                          child: const Text('Reject all'),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 18),
+                          onPressed: () => Navigator.of(ctx).pop(),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Flexible(
+                    child: current.isEmpty
+                        ? const Padding(
+                            padding: EdgeInsets.all(24),
+                            child: Text('No tracked changes remaining.'),
+                          )
+                        : ListView.separated(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            itemCount: current.length,
+                            separatorBuilder: (_, i) =>
+                                const Divider(height: 1),
+                            itemBuilder: (_, i) {
+                              final c = current[i];
+                              return ListTile(
+                                dense: true,
+                                leading: Icon(
+                                  c.isInsert
+                                      ? Icons.add_circle_outline
+                                      : Icons.remove_circle_outline,
+                                  color: c.isInsert
+                                      ? const Color(0xff16a34a)
+                                      : const Color(0xffdc2626),
+                                  size: 20,
+                                ),
+                                title: Text(
+                                  c.isInsert ? 'Insert' : 'Delete',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  c.content.length > 80
+                                      ? '${c.content.substring(0, 80)}…'
+                                      : c.content,
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Tooltip(
+                                      message: 'Accept',
+                                      child: IconButton(
+                                        icon: const Icon(
+                                          Icons.check,
+                                          size: 16,
+                                          color: Color(0xff16a34a),
+                                        ),
+                                        onPressed: () {
+                                          _acceptSingleChange(c.start, c.end,
+                                              c.isInsert, c.content);
+                                          setDlgState(() {});
+                                        },
+                                      ),
+                                    ),
+                                    Tooltip(
+                                      message: 'Reject',
+                                      child: IconButton(
+                                        icon: const Icon(
+                                          Icons.close,
+                                          size: 16,
+                                          color: Color(0xffdc2626),
+                                        ),
+                                        onPressed: () {
+                                          _rejectSingleChange(c.start, c.end,
+                                              c.isInsert);
+                                          setDlgState(() {});
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _acceptSingleChange(
+      int start, int end, bool isInsert, String content) {
+    final text = _markdownText;
+    final replacement = isInsert ? content : '';
+    _setMarkdownSilently(text.replaceRange(start, end, replacement));
+    setState(() {});
+  }
+
+  void _rejectSingleChange(int start, int end, bool isInsert) {
+    final text = _markdownText;
+    final replacement = isInsert ? '' : _markdownText.substring(start, end)
+        .replaceFirstMapped(
+          _suggestDeleteRe,
+          (m) => m.group(1) ?? '',
+        );
+    _setMarkdownSilently(
+      isInsert ? text.replaceRange(start, end, '') : text.replaceRange(start, end, replacement),
+    );
+    setState(() {});
   }
 
   void _acceptAllChanges() {
@@ -2800,6 +3344,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
       sourceCount: _sourceCount,
       citationNudgeCount: _citationNudgeCount,
       actionItems: _actionItems,
+      comments: _comments,
       onSave: _saveDocument,
       onShare: _showShareSheet,
       onHistory: _showVersionHistorySheet,
@@ -2811,6 +3356,28 @@ class _DocumentStudioState extends State<DocumentStudio> {
       onPermissionChange: (v) => setState(() => _permission = v),
       onAudienceProfileChange: (v) => setState(() => _audienceProfile = v),
       onToneModeChange: (v) => setState(() => _toneMode = v),
+      onResolveComment: (id) => setState(() {
+        final idx = _comments.indexWhere((c) => c.id == id);
+        if (idx >= 0) _comments[idx].resolved = true;
+      }),
+      onReplyComment: (id, text) => setState(() {
+        final idx = _comments.indexWhere((c) => c.id == id);
+        if (idx < 0) return;
+        _comments[idx].replies.add(DocumentCommentReply(
+          id: DateTime.now().microsecondsSinceEpoch.toString(),
+          author: 'You',
+          body: text,
+          createdAt: DateTime.now(),
+        ));
+      }),
+      onAddComment: (body) => setState(() {
+        _comments.add(DocumentComment(
+          id: DateTime.now().microsecondsSinceEpoch.toString(),
+          author: 'You',
+          body: body,
+          createdAt: DateTime.now(),
+        ));
+      }),
       onClose: onClose,
     );
   }
@@ -2845,6 +3412,10 @@ class _DocumentStudioState extends State<DocumentStudio> {
         );
       },
     );
+  }
+
+  void _showKeyboardShortcuts() {
+    showKeyboardShortcutsDialog(context);
   }
 
   void _showSnack(String message) {
@@ -2985,27 +3556,15 @@ class _DocumentStudioState extends State<DocumentStudio> {
 
   @override
   Widget build(BuildContext context) {
-    return Shortcuts(
-      shortcuts: const {
-        SingleActivator(LogicalKeyboardKey.keyB, control: true):
-            ToggleBoldIntent(),
-        SingleActivator(LogicalKeyboardKey.keyI, control: true):
-            ToggleItalicIntent(),
-        SingleActivator(LogicalKeyboardKey.keyU, control: true):
-            ToggleUnderlineIntent(),
-        SingleActivator(LogicalKeyboardKey.keyS, control: true, shift: true):
-            ToggleStrikethroughIntent(),
-        SingleActivator(LogicalKeyboardKey.keyZ, control: true): UndoIntent(),
-        SingleActivator(LogicalKeyboardKey.keyZ, meta: true): UndoIntent(),
-        SingleActivator(LogicalKeyboardKey.keyZ, control: true, shift: true):
-            RedoIntent(),
-        SingleActivator(LogicalKeyboardKey.keyZ, meta: true, shift: true):
-            RedoIntent(),
-        SingleActivator(LogicalKeyboardKey.keyY, control: true): RedoIntent(),
-        SingleActivator(LogicalKeyboardKey.keyY, meta: true): RedoIntent(),
-      },
+    return ListenableBuilder(
+      listenable: ShortcutRegistry.instance,
+      builder: (context, child) => Shortcuts(
+        shortcuts: ShortcutRegistry.instance.buildShortcutMap(),
+        child: child!,
+      ),
       child: Actions(
         actions: {
+          // ── Formatting ─────────────────────────────────────────────────
           ToggleBoldIntent: CallbackAction<ToggleBoldIntent>(
             onInvoke: (_) {
               if (_isNativeOpenXmlEditor) {
@@ -3050,6 +3609,50 @@ class _DocumentStudioState extends State<DocumentStudio> {
               return null;
             },
           ),
+          ClearFormattingIntent: CallbackAction<ClearFormattingIntent>(
+            onInvoke: (_) {
+              _clearFormatting();
+              return null;
+            },
+          ),
+          // ── Paragraph styles ───────────────────────────────────────────
+          ApplyNormalStyleIntent: CallbackAction<ApplyNormalStyleIntent>(
+            onInvoke: (_) {
+              _applySelectedStyle('Normal');
+              return null;
+            },
+          ),
+          ApplyHeading1Intent: CallbackAction<ApplyHeading1Intent>(
+            onInvoke: (_) {
+              _applySelectedStyle('Heading 1');
+              return null;
+            },
+          ),
+          ApplyHeading2Intent: CallbackAction<ApplyHeading2Intent>(
+            onInvoke: (_) {
+              _applySelectedStyle('Heading 2');
+              return null;
+            },
+          ),
+          ApplyHeading3Intent: CallbackAction<ApplyHeading3Intent>(
+            onInvoke: (_) {
+              _applySelectedStyle('Heading 3');
+              return null;
+            },
+          ),
+          ApplyHeading4Intent: CallbackAction<ApplyHeading4Intent>(
+            onInvoke: (_) {
+              _applySelectedStyle('Heading 4');
+              return null;
+            },
+          ),
+          ApplyHeading5Intent: CallbackAction<ApplyHeading5Intent>(
+            onInvoke: (_) {
+              _applySelectedStyle('Heading 5');
+              return null;
+            },
+          ),
+          // ── Document ───────────────────────────────────────────────────
           UndoIntent: CallbackAction<UndoIntent>(
             onInvoke: (_) {
               if (_isNativeOpenXmlEditor) {
@@ -3067,6 +3670,76 @@ class _DocumentStudioState extends State<DocumentStudio> {
               } else {
                 _srqController.redo();
               }
+              return null;
+            },
+          ),
+          SaveDocumentIntent: CallbackAction<SaveDocumentIntent>(
+            onInvoke: (_) {
+              _saveDocument();
+              return null;
+            },
+          ),
+          NewDocumentIntent: CallbackAction<NewDocumentIntent>(
+            onInvoke: (_) {
+              _newDocument();
+              return null;
+            },
+          ),
+          OpenFileIntent: CallbackAction<OpenFileIntent>(
+            onInvoke: (_) {
+              _showImportSheet();
+              return null;
+            },
+          ),
+          FindTextIntent: CallbackAction<FindTextIntent>(
+            onInvoke: (_) {
+              setState(() => _showNavigation = true);
+              return null;
+            },
+          ),
+          FindReplaceIntent: CallbackAction<FindReplaceIntent>(
+            onInvoke: (_) {
+              setState(() => _showNavigation = true);
+              return null;
+            },
+          ),
+          // ── View ───────────────────────────────────────────────────────
+          ToggleFocusModeIntent: CallbackAction<ToggleFocusModeIntent>(
+            onInvoke: (_) {
+              setState(() => _focusMode = !_focusMode);
+              return null;
+            },
+          ),
+          ToggleNavigationPanelIntent:
+              CallbackAction<ToggleNavigationPanelIntent>(
+            onInvoke: (_) {
+              setState(() => _showNavigation = !_showNavigation);
+              return null;
+            },
+          ),
+          ToggleInspectorPanelIntent:
+              CallbackAction<ToggleInspectorPanelIntent>(
+            onInvoke: (_) {
+              setState(() => _showInspector = !_showInspector);
+              return null;
+            },
+          ),
+          ShowKeyboardShortcutsIntent:
+              CallbackAction<ShowKeyboardShortcutsIntent>(
+            onInvoke: (_) {
+              _showKeyboardShortcuts();
+              return null;
+            },
+          ),
+          PasteSpecialIntent: CallbackAction<PasteSpecialIntent>(
+            onInvoke: (_) {
+              _showPasteSpecialDialog();
+              return null;
+            },
+          ),
+          InsertBookmarkIntent: CallbackAction<InsertBookmarkIntent>(
+            onInvoke: (_) {
+              _showInsertBookmarkDialog();
               return null;
             },
           ),
@@ -3123,6 +3796,15 @@ class _DocumentStudioState extends State<DocumentStudio> {
                             italic: _italic,
                             underline: _underline,
                             strikethrough: _strikethrough,
+                            superscript: _superscript,
+                            subscript: _subscript,
+                            smallCaps: _smallCaps,
+                            allCaps: _allCaps,
+                            doubleUnderline: _doubleUnderline,
+                            doubleStrike: _doubleStrike,
+                            hidden: _hidden,
+                            formatPainterActive: _formatPainterActive,
+                            highlightColor: _highlightColor,
                             showRuler: _showRuler,
                             trackChanges: _trackChanges,
                             commentsMode: _commentsMode,
@@ -3171,6 +3853,31 @@ class _DocumentStudioState extends State<DocumentStudio> {
                                 setState(() {});
                               }
                             },
+                            onSuperscript: () =>
+                                _applyInlineFormat(RunAttr.superscript),
+                            onSubscript: () =>
+                                _applyInlineFormat(RunAttr.subscript),
+                            onSmallCaps: () =>
+                                _applyInlineFormat(RunAttr.smallCaps),
+                            onAllCaps: () =>
+                                _applyInlineFormat(RunAttr.allCaps),
+                            onDoubleUnderline: () =>
+                                _applyInlineFormat(RunAttr.doubleUnderline),
+                            onDoubleStrike: () =>
+                                _applyInlineFormat(RunAttr.doubleStrike),
+                            onHidden: () =>
+                                _applyInlineFormat(RunAttr.hidden),
+                            onFormatPainter: _activateFormatPainter,
+                            onClearFormatting: _clearFormatting,
+                            onHighlight: (color) {
+                              setState(() => _highlightColor = color);
+                              final hex = color == null
+                                  ? null
+                                  : _hexForColor(color);
+                              _applyHighlight(hex);
+                            },
+                            onIndentIncrease: _indentIncrease,
+                            onIndentDecrease: _indentDecrease,
                             onRuler: () =>
                                 setState(() => _showRuler = !_showRuler),
                             onTrackChanges: () =>
@@ -3284,12 +3991,17 @@ class _DocumentStudioState extends State<DocumentStudio> {
                             onRedo: _isNativeOpenXmlEditor
                                 ? _redoOpenXml
                                 : _srqController.redo,
-                            onAcceptChanges: _acceptAllChanges,
+                            onAcceptChanges: _showTrackChangesDialog,
                             onRejectChanges: _rejectAllChanges,
                             onSmartBrief: _showSmartBriefSheet,
                             onSocialSummary: _copySocialSummary,
                             onCitationNudge: _insertCitationNudge,
                             onActionDigest: _insertActionDigest,
+                            onKeyboardShortcuts: _showKeyboardShortcuts,
+                            highContrast: _highContrast,
+                            onHighContrast: () =>
+                                setState(() => _highContrast = !_highContrast),
+                            onPrintPreview: _showPrintPreview,
                           ),
                         ),
                       ),
@@ -3312,7 +4024,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                               editorStyle: _editorStyle,
                               textAlign: _textAlign,
                               showRuler: _showRuler && !_focusMode,
-                              pageColor: _pageColor,
+                              pageColor: _effectivePageColor,
                               zoom: _zoom,
                               focusMode: _focusMode,
                               wordCount: _wordCount,

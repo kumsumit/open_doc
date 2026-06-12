@@ -2,6 +2,8 @@
 
 import 'package:flutter/material.dart';
 
+import '../services/document_models.dart';
+
 class Ruler extends StatelessWidget {
   const Ruler();
 
@@ -561,14 +563,35 @@ class InspectorSelectTile extends StatelessWidget {
   }
 }
 
-class CommentCard extends StatelessWidget {
-  const CommentCard({required this.author, required this.body});
+class CommentCard extends StatefulWidget {
+  const CommentCard({
+    required this.comment,
+    required this.onResolve,
+    required this.onReply,
+  });
 
-  final String author;
-  final String body;
+  final DocumentComment comment;
+  final VoidCallback onResolve;
+  final ValueChanged<String> onReply;
+
+  @override
+  State<CommentCard> createState() => _CommentCardState();
+}
+
+class _CommentCardState extends State<CommentCard> {
+  bool _showReplyField = false;
+  final _replyController = TextEditingController();
+
+  @override
+  void dispose() {
+    _replyController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final comment = widget.comment;
+    if (comment.resolved) return const SizedBox.shrink();
     return Container(
       margin: const EdgeInsets.fromLTRB(14, 0, 14, 10),
       padding: const EdgeInsets.all(12),
@@ -580,9 +603,105 @@ class CommentCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(author, style: const TextStyle(fontWeight: FontWeight.w800)),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  comment.author,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              Tooltip(
+                message: 'Resolve',
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(4),
+                  onTap: widget.onResolve,
+                  child: const Padding(
+                    padding: EdgeInsets.all(2),
+                    child: Icon(
+                      Icons.check_circle_outline,
+                      size: 16,
+                      color: Color(0xff16a34a),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 4),
-          Text(body),
+          Text(comment.body),
+          if (comment.replies.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            for (final reply in comment.replies)
+              Padding(
+                padding: const EdgeInsets.only(left: 12, bottom: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.subdirectory_arrow_right,
+                        size: 14, color: Color(0xff9ca3af)),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: RichText(
+                        text: TextSpan(
+                          style: const TextStyle(
+                              fontSize: 12, color: Color(0xff374151)),
+                          children: [
+                            TextSpan(
+                              text: '${reply.author}: ',
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w700),
+                            ),
+                            TextSpan(text: reply.body),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+          const SizedBox(height: 6),
+          if (_showReplyField) ...[
+            TextField(
+              controller: _replyController,
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: 'Reply…',
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 6),
+                border: const OutlineInputBorder(),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.send, size: 16),
+                  onPressed: () {
+                    final text = _replyController.text.trim();
+                    if (text.isEmpty) return;
+                    widget.onReply(text);
+                    _replyController.clear();
+                    setState(() => _showReplyField = false);
+                  },
+                ),
+              ),
+              onSubmitted: (text) {
+                if (text.isEmpty) return;
+                widget.onReply(text);
+                _replyController.clear();
+                setState(() => _showReplyField = false);
+              },
+            ),
+          ] else
+            GestureDetector(
+              onTap: () => setState(() => _showReplyField = true),
+              child: const Text(
+                'Reply',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Color(0xff2563eb),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
         ],
       ),
     );
