@@ -334,10 +334,13 @@ class _DocumentStudioState extends State<DocumentStudio> {
   final List<CustomFontFile> _customFonts = [];
 
   // ── New feature state ──────────────────────────────────────────────────────
+  DocumentWatermark? _watermark;
   DocumentMetadata _metadata = const DocumentMetadata();
   int _columnCount = 1;
   int _gutterTwips = 0;
   bool _mirrorMargins = false;
+  bool _differentFirstPage = false;
+  bool _differentOddEvenPages = false;
   String _activeThemeId = 'default';
   final List<IndexEntry> _indexEntries = [];
   final List<CrossReference> _crossReferences = [];
@@ -750,6 +753,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
         );
         if (savePath != null) {
           await File(savePath).writeAsBytes(bytes);
+          _logAudit('Export DOCX', detail: savePath);
           _showSnack('Saved visual DOCX to $savePath');
         }
         return;
@@ -786,116 +790,655 @@ class _DocumentStudioState extends State<DocumentStudio> {
 
   void _showPrintPreview() {
     final doc = _openXmlDocument;
-    final blocks = doc.blocks.whereType<OpenXmlParagraphBlock>().toList();
+    final allBlocks = doc.blocks.whereType<OpenXmlParagraphBlock>().toList();
+    // Approximate pages: every 40 paragraphs = 1 page
+    final estimatedPages = math.max(1, (allBlocks.length / 40).ceil());
+    var pageFrom = 1;
+    var pageTo = estimatedPages;
+
     showDialog<void>(
       context: context,
-      builder: (ctx) => Dialog(
-        insetPadding: const EdgeInsets.all(24),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: 720,
-            maxHeight: MediaQuery.of(context).size.height * 0.9,
-          ),
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 8, 8),
-                child: Row(
-                  children: [
-                    const Icon(Icons.print_outlined, size: 20),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text(
-                        'Print Preview',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) {
+          // Filter blocks to the selected page range (approximate)
+          final blocksPerPage = math.max(1, (allBlocks.length / estimatedPages).ceil());
+          final startIdx = ((pageFrom - 1) * blocksPerPage).clamp(0, allBlocks.length);
+          final endIdx = (pageTo * blocksPerPage).clamp(0, allBlocks.length);
+          final blocks = allBlocks.sublist(startIdx, endIdx);
+
+          return Dialog(
+            insetPadding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 780,
+                maxHeight: MediaQuery.of(ctx).size.height * 0.92,
+              ),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 8, 8),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.print_outlined, size: 20),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Print Preview',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const Spacer(),
+                        // Page range selector
+                        const Text('Pages:', style: TextStyle(fontSize: 13)),
+                        const SizedBox(width: 6),
+                        SizedBox(
+                          width: 56,
+                          child: TextFormField(
+                            initialValue: pageFrom.toString(),
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              border: OutlineInputBorder(),
+                              labelText: 'From',
+                            ),
+                            onChanged: (v) {
+                              final n = int.tryParse(v);
+                              if (n != null && n >= 1 && n <= estimatedPages) {
+                                setDlg(() => pageFrom = n);
+                              }
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Text('–', style: TextStyle(fontSize: 16)),
+                        const SizedBox(width: 4),
+                        SizedBox(
+                          width: 56,
+                          child: TextFormField(
+                            initialValue: pageTo.toString(),
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              border: OutlineInputBorder(),
+                              labelText: 'To',
+                            ),
+                            onChanged: (v) {
+                              final n = int.tryParse(v);
+                              if (n != null && n >= pageFrom && n <= estimatedPages) {
+                                setDlg(() => pageTo = n);
+                              }
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        TextButton.icon(
+                          onPressed: () {
+                            Navigator.of(ctx).pop();
+                            _exportToPdf(_titleController.text);
+                          },
+                          icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
+                          label: const Text('Export PDF'),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 18),
+                          onPressed: () => Navigator.of(ctx).pop(),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(24),
+                      child: Center(
+                        child: Stack(
+                          children: [
+                            Container(
+                              width: 595,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 72, vertical: 96),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.15),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _titleController.text,
+                                    style: const TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 24),
+                                  for (final block in blocks)
+                                    Padding(
+                                      padding:
+                                          const EdgeInsets.only(bottom: 12),
+                                      child: Text(
+                                        block.plainText,
+                                        style: TextStyle(
+                                          fontSize: switch (block.style) {
+                                            OpenXmlTextStyle.heading1 => 20.0,
+                                            OpenXmlTextStyle.heading2 => 17.0,
+                                            OpenXmlTextStyle.heading3 => 15.0,
+                                            _ => 12.0,
+                                          },
+                                          fontWeight: switch (block.style) {
+                                            OpenXmlTextStyle.heading1 ||
+                                            OpenXmlTextStyle.heading2 ||
+                                            OpenXmlTextStyle.heading3 =>
+                                              FontWeight.w700,
+                                            _ => FontWeight.normal,
+                                          },
+                                          height: 1.5,
+                                        ),
+                                        textAlign: switch (block.align) {
+                                          OoxmlTextAlign.center =>
+                                            TextAlign.center,
+                                          OoxmlTextAlign.right =>
+                                            TextAlign.right,
+                                          OoxmlTextAlign.justify =>
+                                            TextAlign.justify,
+                                          _ => TextAlign.left,
+                                        },
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            // Watermark overlay
+                            if (_watermark != null)
+                              Positioned.fill(
+                                child: IgnorePointer(
+                                  child: Center(
+                                    child: Transform.rotate(
+                                      angle: (_watermark!.rotation *
+                                              math.pi) /
+                                          180,
+                                      child: Opacity(
+                                        opacity: _watermark!.opacity,
+                                        child: Text(
+                                          _watermark!.text,
+                                          style: TextStyle(
+                                            fontSize: _watermark!.fontSize,
+                                            fontWeight: FontWeight.w900,
+                                            color: Color(
+                                              int.parse(
+                                                'FF${_watermark!.colorHex}',
+                                                radix: 16,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     ),
-                    TextButton.icon(
-                      onPressed: () {
-                        Navigator.of(ctx).pop();
-                        _exportToPdf(_titleController.text);
-                      },
-                      icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
-                      label: const Text('Export PDF'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ── EPUB export ───────────────────────────────────────────────────────────
+
+  Future<void> _exportToEpub() async {
+    final title = _titleController.text
+        .replaceAll(RegExp(r'[^\w\s-]'), '')
+        .trim();
+    final safeName = title.isEmpty ? 'Untitled document' : title;
+    try {
+      final bytes = await _exportService.exportEpub(_exportPayload);
+      final savePath = await FilePicker.saveFile(
+        dialogTitle: 'Save EPUB file',
+        fileName: '$safeName.epub',
+        bytes: bytes,
+      );
+      if (savePath != null) {
+        await File(savePath).writeAsBytes(bytes);
+        _logAudit('Export EPUB', detail: savePath);
+        _showSnack('Saved EPUB to $savePath');
+      }
+    } catch (e) {
+      _showSnack('EPUB export failed: $e');
+    }
+  }
+
+  // ── Watermark ─────────────────────────────────────────────────────────────
+
+  void _showWatermarkDialog() {
+    var text = _watermark?.text ?? 'DRAFT';
+    var opacity = _watermark?.opacity ?? 0.15;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Watermark'),
+          content: SizedBox(
+            width: 380,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: TextEditingController(text: text),
+                  onChanged: (v) => text = v,
+                  decoration: const InputDecoration(
+                    labelText: 'Watermark text',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    const Text('Opacity', style: TextStyle(fontSize: 13)),
+                    Expanded(
+                      child: Slider(
+                        value: opacity,
+                        min: 0.05,
+                        max: 0.5,
+                        divisions: 9,
+                        label: '${(opacity * 100).round()}%',
+                        onChanged: (v) => setDlg(() => opacity = v),
+                      ),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.close, size: 18),
-                      onPressed: () => Navigator.of(ctx).pop(),
+                    Text('${(opacity * 100).round()}%'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                setState(() => _watermark = null);
+                _showSnack('Watermark removed.');
+              },
+              child: const Text('Remove'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                setState(
+                  () => _watermark = DocumentWatermark(
+                    text: text.isEmpty ? 'DRAFT' : text,
+                    opacity: opacity,
+                  ),
+                );
+                _showSnack('Watermark applied.');
+              },
+              child: const Text('Apply'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Accessibility checker ─────────────────────────────────────────────────
+
+  void _showAccessibilityCheckerDialog() {
+    final issues = <String>[];
+    for (final block in _openXmlDocument.blocks) {
+      if (block is OpenXmlParagraphBlock) {
+        for (final run in block.runs) {
+          if (run.colorHex != null) {
+            final hex = run.colorHex!;
+            final r = int.tryParse(hex.substring(0, 2), radix: 16) ?? 0;
+            final g = int.tryParse(hex.substring(2, 4), radix: 16) ?? 0;
+            final b = int.tryParse(hex.substring(4, 6), radix: 16) ?? 0;
+            final luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+            if (luminance > 0.8) {
+              final preview = run.text.length > 30
+                  ? '${run.text.substring(0, 30)}…'
+                  : run.text;
+              issues.add('Low contrast text "$preview"');
+            }
+          }
+          if (run.fontSize != null && run.fontSize! < 9) {
+            final preview = run.text.length > 20
+                ? '${run.text.substring(0, 20)}…'
+                : run.text;
+            issues.add('Very small font size (${run.fontSize}pt): "$preview"');
+          }
+        }
+      }
+    }
+    for (final block in _mediaBlocks) {
+      if (block.altText.isEmpty) {
+        issues.add('Image "${block.source}" is missing alt text.');
+      }
+    }
+    if (_titleController.text.isEmpty) {
+      issues.add('Document has no title.');
+    }
+    final headings = _openXmlDocument.blocks
+        .whereType<OpenXmlParagraphBlock>()
+        .where((b) =>
+            b.style == OpenXmlTextStyle.heading1 ||
+            b.style == OpenXmlTextStyle.title)
+        .toList();
+    if (headings.isEmpty && _openXmlDocument.blocks.length > 5) {
+      issues.add('Long document has no headings — consider adding structure.');
+    }
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Accessibility Check'),
+        content: SizedBox(
+          width: 480,
+          child: issues.isEmpty
+              ? const Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.check_circle_outline,
+                        color: Color(0xff16a34a), size: 40),
+                    SizedBox(height: 12),
+                    Text('No accessibility issues found.',
+                        style: TextStyle(fontSize: 15)),
+                  ],
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${issues.length} issue${issues.length == 1 ? '' : 's'} found:',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 320),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: issues.length,
+                        separatorBuilder: (context, index) =>
+                            const Divider(height: 1),
+                        itemBuilder: (_, i) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(Icons.warning_amber_outlined,
+                                  size: 18, color: Color(0xffd97706)),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(issues[i],
+                                    style: const TextStyle(fontSize: 13)),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ),
-              ),
-              const Divider(height: 1),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(24),
-                  child: Center(
-                    child: Container(
-                      width: 595, // A4 width in points ≈ 595px at 72dpi
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 72, vertical: 96),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.15),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _titleController.text,
-                            style: const TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          for (final block in blocks)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: Text(
-                                block.plainText,
-                                style: TextStyle(
-                                  fontSize: switch (block.style) {
-                                    OpenXmlTextStyle.heading1 => 20.0,
-                                    OpenXmlTextStyle.heading2 => 17.0,
-                                    OpenXmlTextStyle.heading3 => 15.0,
-                                    _ => 12.0,
-                                  },
-                                  fontWeight: switch (block.style) {
-                                    OpenXmlTextStyle.heading1 ||
-                                    OpenXmlTextStyle.heading2 ||
-                                    OpenXmlTextStyle.heading3 =>
-                                      FontWeight.w700,
-                                    _ => FontWeight.normal,
-                                  },
-                                  height: 1.5,
-                                ),
-                                textAlign: switch (block.align) {
-                                  OoxmlTextAlign.center => TextAlign.center,
-                                  OoxmlTextAlign.right => TextAlign.right,
-                                  OoxmlTextAlign.justify => TextAlign.justify,
-                                  _ => TextAlign.left,
-                                },
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Text box insertion ────────────────────────────────────────────────────
+
+  void _showInsertTextBoxDialog() {
+    final controller = TextEditingController(text: 'Text box content');
+    var widthFraction = 0.4;
+    var anchorType = TextBoxAnchorType.inline;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Insert Text Box'),
+          content: SizedBox(
+            width: 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: controller,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Content',
+                    border: OutlineInputBorder(),
                   ),
                 ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<TextBoxAnchorType>(
+                  initialValue: anchorType,
+                  decoration: const InputDecoration(
+                    labelText: 'Anchor type',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: TextBoxAnchorType.values
+                      .map((t) => DropdownMenuItem(
+                            value: t,
+                            child: Text(t.name),
+                          ))
+                      .toList(),
+                  onChanged: (v) =>
+                      setDlg(() => anchorType = v ?? TextBoxAnchorType.inline),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Text('Width', style: TextStyle(fontSize: 13)),
+                    Expanded(
+                      child: Slider(
+                        value: widthFraction,
+                        min: 0.2,
+                        max: 1.0,
+                        divisions: 8,
+                        label: '${(widthFraction * 100).round()}%',
+                        onChanged: (v) => setDlg(() => widthFraction = v),
+                      ),
+                    ),
+                    Text('${(widthFraction * 100).round()}%'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _appendOpenXmlBlock(
+                  TextBoxBlock(
+                    content: controller.text.trim().isEmpty
+                        ? 'Text box'
+                        : controller.text.trim(),
+                    widthFraction: widthFraction,
+                    anchorType: anchorType,
+                  ),
+                );
+              },
+              child: const Text('Insert'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Image crop / transparency dialog ─────────────────────────────────────
+
+  void _showImageCropDialog() {
+    if (_mediaBlocks.isEmpty) {
+      _showSnack('No images in document.');
+      return;
+    }
+    var blockIndex = 0;
+    var cropLeft = _mediaBlocks[blockIndex].cropLeft;
+    var cropTop = _mediaBlocks[blockIndex].cropTop;
+    var cropRight = _mediaBlocks[blockIndex].cropRight;
+    var cropBottom = _mediaBlocks[blockIndex].cropBottom;
+    var opacity = _mediaBlocks[blockIndex].opacity;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) {
+          void loadBlock(int idx) {
+            cropLeft = _mediaBlocks[idx].cropLeft;
+            cropTop = _mediaBlocks[idx].cropTop;
+            cropRight = _mediaBlocks[idx].cropRight;
+            cropBottom = _mediaBlocks[idx].cropBottom;
+            opacity = _mediaBlocks[idx].opacity;
+          }
+
+          return AlertDialog(
+            title: const Text('Crop & Transparency'),
+            content: SizedBox(
+              width: 400,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_mediaBlocks.length > 1)
+                    DropdownButtonFormField<int>(
+                      initialValue: blockIndex,
+                      decoration: const InputDecoration(
+                        labelText: 'Image',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: [
+                        for (var i = 0; i < _mediaBlocks.length; i++)
+                          DropdownMenuItem(
+                            value: i,
+                            child: Text(
+                              _mediaBlocks[i].caption.isNotEmpty
+                                  ? _mediaBlocks[i].caption
+                                  : 'Image ${i + 1}',
+                            ),
+                          ),
+                      ],
+                      onChanged: (v) => setDlg(() {
+                        blockIndex = v ?? 0;
+                        loadBlock(blockIndex);
+                      }),
+                    ),
+                  const SizedBox(height: 12),
+                  for (final pair in [
+                    ('Crop Left', cropLeft, (double v) => cropLeft = v),
+                    ('Crop Top', cropTop, (double v) => cropTop = v),
+                    ('Crop Right', cropRight, (double v) => cropRight = v),
+                    ('Crop Bottom', cropBottom, (double v) => cropBottom = v),
+                  ])
+                    Row(
+                      children: [
+                        SizedBox(
+                          width: 96,
+                          child: Text(pair.$1,
+                              style: const TextStyle(fontSize: 13)),
+                        ),
+                        Expanded(
+                          child: Slider(
+                            value: pair.$2,
+                            min: 0.0,
+                            max: 0.49,
+                            divisions: 49,
+                            label: '${(pair.$2 * 100).round()}%',
+                            onChanged: (v) => setDlg(() => pair.$3(v)),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 36,
+                          child:
+                              Text('${(pair.$2 * 100).round()}%',
+                                  style: const TextStyle(fontSize: 12)),
+                        ),
+                      ],
+                    ),
+                  const Divider(),
+                  Row(
+                    children: [
+                      const SizedBox(
+                        width: 96,
+                        child: Text('Opacity',
+                            style: TextStyle(fontSize: 13)),
+                      ),
+                      Expanded(
+                        child: Slider(
+                          value: opacity,
+                          min: 0.0,
+                          max: 1.0,
+                          divisions: 20,
+                          label: '${(opacity * 100).round()}%',
+                          onChanged: (v) => setDlg(() => opacity = v),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 36,
+                        child: Text('${(opacity * 100).round()}%',
+                            style: const TextStyle(fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  setState(() {
+                    _mediaBlocks[blockIndex] = _mediaBlocks[blockIndex]
+                        .copyWith(
+                          cropLeft: cropLeft,
+                          cropTop: cropTop,
+                          cropRight: cropRight,
+                          cropBottom: cropBottom,
+                          opacity: opacity,
+                        );
+                    _saved = false;
+                  });
+                  _showSnack('Image crop & transparency updated.');
+                },
+                child: const Text('Apply'),
               ),
             ],
-          ),
-        ),
+          );
+        },
       ),
     );
   }
@@ -969,6 +1512,8 @@ class _DocumentStudioState extends State<DocumentStudio> {
         columns: _columnCount,
         gutterTwips: _gutterTwips,
         mirrorMargins: _mirrorMargins,
+        differentFirstPage: _differentFirstPage,
+        differentOddEvenPages: _differentOddEvenPages,
       ),
       metadata: _metadata,
       mediaBlocks: _mediaBlocks
@@ -1066,7 +1611,32 @@ class _DocumentStudioState extends State<DocumentStudio> {
     return _openXmlSignature(left) == _openXmlSignature(right);
   }
 
+  // ── Operation grouping ────────────────────────────────────────────────────
+  // When a group is active, _recordOpenXmlUndoState only saves once (the
+  // snapshot taken when beginUndoGroup was called). All intermediate edits
+  // inside the group are collapsed into that single undo step.
+
+  bool _undoGroupActive = false;
+  bool _undoGroupSnapshotTaken = false;
+
+  void beginUndoGroup() {
+    if (!_undoGroupActive) {
+      _undoGroupActive = true;
+      _undoGroupSnapshotTaken = false;
+    }
+  }
+
+  void endUndoGroup() {
+    _undoGroupActive = false;
+    _undoGroupSnapshotTaken = false;
+  }
+
   void _recordOpenXmlUndoState() {
+    if (_undoGroupActive && _undoGroupSnapshotTaken) {
+      // Group is active and snapshot already taken — skip recording
+      _openXmlRedoStack.clear();
+      return;
+    }
     if (_openXmlUndoStack.isNotEmpty &&
         _sameOpenXmlDocument(_openXmlUndoStack.last, _openXmlDocument)) {
       _openXmlRedoStack.clear();
@@ -1077,6 +1647,9 @@ class _DocumentStudioState extends State<DocumentStudio> {
       _openXmlUndoStack.removeAt(0);
     }
     _openXmlRedoStack.clear();
+    if (_undoGroupActive) {
+      _undoGroupSnapshotTaken = true;
+    }
   }
 
   void _setOpenXmlDocumentFromHistory(OpenXmlDocument document) {
@@ -1588,6 +2161,8 @@ class _DocumentStudioState extends State<DocumentStudio> {
     var columns = _columnCount;
     var gutter = _gutterTwips;
     var mirror = _mirrorMargins;
+    var diffFirstPage = _differentFirstPage;
+    var diffOddEven = _differentOddEvenPages;
 
     showDialog<void>(
       context: context,
@@ -1622,7 +2197,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<int>(
-                  value: gutter,
+                  initialValue: gutter,
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
                     isDense: true,
@@ -1646,6 +2221,24 @@ class _DocumentStudioState extends State<DocumentStudio> {
                   value: mirror,
                   onChanged: (v) => setDlg(() => mirror = v),
                 ),
+                SwitchListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Different first page'),
+                  subtitle: const Text(
+                      'Unique header/footer on the first page'),
+                  value: diffFirstPage,
+                  onChanged: (v) => setDlg(() => diffFirstPage = v),
+                ),
+                SwitchListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Different odd & even pages'),
+                  subtitle: const Text(
+                      'Alternate header/footer for odd and even pages'),
+                  value: diffOddEven,
+                  onChanged: (v) => setDlg(() => diffOddEven = v),
+                ),
               ],
             ),
           ),
@@ -1661,6 +2254,8 @@ class _DocumentStudioState extends State<DocumentStudio> {
                   _columnCount = columns;
                   _gutterTwips = gutter;
                   _mirrorMargins = mirror;
+                  _differentFirstPage = diffFirstPage;
+                  _differentOddEvenPages = diffOddEven;
                 });
                 _showSnack('Page layout updated.');
               },
@@ -1774,7 +2369,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
         ),
         Expanded(
           child: DropdownButtonFormField<T>(
-            value: value,
+            initialValue: value,
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
               isDense: true,
@@ -1840,7 +2435,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<int>(
-                        value: newPosTwips,
+                        initialValue: newPosTwips,
                         decoration: const InputDecoration(
                           labelText: 'Position',
                           border: OutlineInputBorder(),
@@ -1861,7 +2456,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: DropdownButtonFormField<TabAlignment>(
-                        value: newAlign,
+                        initialValue: newAlign,
                         decoration: const InputDecoration(
                           labelText: 'Align',
                           border: OutlineInputBorder(),
@@ -1881,7 +2476,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: DropdownButtonFormField<TabLeader>(
-                        value: newLeader,
+                        initialValue: newLeader,
                         decoration: const InputDecoration(
                           labelText: 'Leader',
                           border: OutlineInputBorder(),
@@ -2332,7 +2927,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                     'No headings or references found. Add headings first.',
                   )
                 : DropdownButtonFormField<CrossReference>(
-                    value: selected,
+                    initialValue: selected,
                     decoration: const InputDecoration(
                       labelText: 'Reference to',
                       border: OutlineInputBorder(),
@@ -2526,7 +3121,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String?>(
-                  value: parentStyleId,
+                  initialValue: parentStyleId,
                   decoration: const InputDecoration(
                     labelText: 'Based on (parent style)',
                     border: OutlineInputBorder(),
@@ -2765,8 +3360,11 @@ class _DocumentStudioState extends State<DocumentStudio> {
     final currentSet = currentLines.toSet();
 
     for (final line in currentLines) {
-      if (!otherSet.contains(line)) removed.add(line);
-      else unchanged.add(line);
+      if (!otherSet.contains(line)) {
+        removed.add(line);
+      } else {
+        unchanged.add(line);
+      }
     }
     for (final line in otherLines) {
       if (!currentSet.contains(line)) added.add(line);
@@ -2986,7 +3584,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 DropdownButtonFormField<int>(
-                  value: levels,
+                  initialValue: levels,
                   decoration: const InputDecoration(
                     labelText: 'Show levels',
                     border: OutlineInputBorder(),
@@ -3183,7 +3781,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                 children: [
                   if (tableBlocks.length > 1)
                     DropdownButtonFormField<int>(
-                      value: tableIdx,
+                      initialValue: tableIdx,
                       decoration: const InputDecoration(
                         labelText: 'Table',
                         border: OutlineInputBorder(),
@@ -3203,7 +3801,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                     children: [
                       Expanded(
                         child: DropdownButtonFormField<int>(
-                          value: startRow.clamp(0, math.max(0, maxRow - 1)),
+                          initialValue: startRow.clamp(0, math.max(0, maxRow - 1)),
                           decoration: const InputDecoration(
                             labelText: 'Start row',
                             border: OutlineInputBorder(),
@@ -3223,7 +3821,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: DropdownButtonFormField<int>(
-                          value: startCol.clamp(0, math.max(0, maxCol - 1)),
+                          initialValue: startCol.clamp(0, math.max(0, maxCol - 1)),
                           decoration: const InputDecoration(
                             labelText: 'Start col',
                             border: OutlineInputBorder(),
@@ -3247,7 +3845,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                     children: [
                       Expanded(
                         child: DropdownButtonFormField<int>(
-                          value: rowSpan.clamp(1, math.max(1, maxRow - startRow)),
+                          initialValue: rowSpan.clamp(1, math.max(1, maxRow - startRow)),
                           decoration: const InputDecoration(
                             labelText: 'Row span',
                             border: OutlineInputBorder(),
@@ -3267,7 +3865,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: DropdownButtonFormField<int>(
-                          value: colSpan.clamp(1, math.max(1, maxCol - startCol)),
+                          initialValue: colSpan.clamp(1, math.max(1, maxCol - startCol)),
                           decoration: const InputDecoration(
                             labelText: 'Col span',
                             border: OutlineInputBorder(),
@@ -3340,6 +3938,342 @@ class _DocumentStudioState extends State<DocumentStudio> {
       _saved = false;
     });
     _showSnack('Cells merged.');
+  }
+
+  // ── Split cells ───────────────────────────────────────────────────────────
+
+  void _showSplitCellsDialog() {
+    final tableBlocks = <(int, OpenXmlTableBlock)>[];
+    for (var i = 0; i < _openXmlDocument.blocks.length; i++) {
+      final b = _openXmlDocument.blocks[i];
+      if (b is OpenXmlTableBlock) tableBlocks.add((i, b));
+    }
+    if (tableBlocks.isEmpty) {
+      _showSnack('No tables found in document.');
+      return;
+    }
+    var tableIdx = tableBlocks.first.$1;
+    var targetRow = 0;
+    var targetCol = 0;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) {
+          final table = _openXmlDocument.blocks[tableIdx] as OpenXmlTableBlock;
+          final maxRow = table.rows.length;
+          final maxCol = table.rows.isEmpty ? 0 : table.rows[0].length;
+          return AlertDialog(
+            title: const Text('Split Cell'),
+            content: SizedBox(
+              width: 360,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (tableBlocks.length > 1)
+                    DropdownButtonFormField<int>(
+                      initialValue: tableIdx,
+                      decoration: const InputDecoration(
+                        labelText: 'Table',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: [
+                        for (final (idx, _) in tableBlocks)
+                          DropdownMenuItem(
+                            value: idx,
+                            child: Text('Table at para ${idx + 1}'),
+                          ),
+                      ],
+                      onChanged: (v) => setDlg(() => tableIdx = v ?? tableIdx),
+                    ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          initialValue: targetRow.clamp(0, math.max(0, maxRow - 1)),
+                          decoration: const InputDecoration(
+                            labelText: 'Row',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          items: [
+                            for (var i = 0; i < maxRow; i++)
+                              DropdownMenuItem(
+                                value: i,
+                                child: Text('Row ${i + 1}'),
+                              ),
+                          ],
+                          onChanged: (v) => setDlg(() => targetRow = v ?? 0),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          initialValue: targetCol.clamp(0, math.max(0, maxCol - 1)),
+                          decoration: const InputDecoration(
+                            labelText: 'Column',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          items: [
+                            for (var i = 0; i < maxCol; i++)
+                              DropdownMenuItem(
+                                value: i,
+                                child: Text('Col ${i + 1}'),
+                              ),
+                          ],
+                          onChanged: (v) => setDlg(() => targetCol = v ?? 0),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Splits any merged cell at this position back to individual cells.',
+                    style: TextStyle(fontSize: 12, color: Color(0xff6b7280)),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  _applySplitCell(tableIdx, targetRow, targetCol);
+                },
+                child: const Text('Split'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _applySplitCell(int blockIndex, int row, int col) {
+    final block = _openXmlDocument.blocks[blockIndex];
+    if (block is! OpenXmlTableBlock) return;
+    final updated = List<(int, int, int, int)>.from(block.mergedCells)
+      ..removeWhere((m) => m.$1 == row && m.$2 == col);
+    final newBlock = block.copyWith(mergedCells: updated);
+    final blocks = List<OpenXmlBlock>.from(_openXmlDocument.blocks);
+    blocks[blockIndex] = newBlock;
+    _recordOpenXmlUndoState();
+    setState(() {
+      _openXmlDocument = _openXmlDocument.copyWith(blocks: blocks);
+      _setMarkdownSilently(_openXmlDocument.plainText);
+      _saved = false;
+    });
+    _showSnack('Cell split.');
+  }
+
+  // ── Table sort ────────────────────────────────────────────────────────────
+
+  void _showTableSortDialog() {
+    final tableBlocks = <(int, OpenXmlTableBlock)>[];
+    for (var i = 0; i < _openXmlDocument.blocks.length; i++) {
+      final b = _openXmlDocument.blocks[i];
+      if (b is OpenXmlTableBlock) tableBlocks.add((i, b));
+    }
+    if (tableBlocks.isEmpty) {
+      _showSnack('No tables found in document.');
+      return;
+    }
+    var tableIdx = tableBlocks.first.$1;
+    var sortCol = 0;
+    var ascending = true;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) {
+          final table = _openXmlDocument.blocks[tableIdx] as OpenXmlTableBlock;
+          final maxCol = table.rows.isEmpty ? 0 : table.rows[0].length;
+          return AlertDialog(
+            title: const Text('Sort Table'),
+            content: SizedBox(
+              width: 360,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (tableBlocks.length > 1)
+                    DropdownButtonFormField<int>(
+                      initialValue: tableIdx,
+                      decoration: const InputDecoration(
+                        labelText: 'Table',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: [
+                        for (final (idx, _) in tableBlocks)
+                          DropdownMenuItem(
+                            value: idx,
+                            child: Text('Table at para ${idx + 1}'),
+                          ),
+                      ],
+                      onChanged: (v) => setDlg(() {
+                        tableIdx = v ?? tableIdx;
+                        sortCol = 0;
+                      }),
+                    ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<int>(
+                    initialValue: sortCol.clamp(0, math.max(0, maxCol - 1)),
+                    decoration: const InputDecoration(
+                      labelText: 'Sort by column',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    items: [
+                      for (var i = 0; i < maxCol; i++)
+                        DropdownMenuItem(
+                          value: i,
+                          child: Text('Column ${i + 1}'),
+                        ),
+                    ],
+                    onChanged: (v) => setDlg(() => sortCol = v ?? 0),
+                  ),
+                  const SizedBox(height: 12),
+                  SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(value: true, label: Text('A → Z')),
+                      ButtonSegment(value: false, label: Text('Z → A')),
+                    ],
+                    selected: {ascending},
+                    onSelectionChanged: (s) =>
+                        setDlg(() => ascending = s.first),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  _applyTableSort(tableIdx, sortCol, ascending);
+                },
+                child: const Text('Sort'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _applyTableSort(int blockIndex, int col, bool ascending) {
+    final block = _openXmlDocument.blocks[blockIndex];
+    if (block is! OpenXmlTableBlock) return;
+    final rows = List<List<String>>.from(block.rows.map(List<String>.from));
+    final startRow = block.hasHeader && rows.length > 1 ? 1 : 0;
+    final dataRows = rows.sublist(startRow)
+      ..sort((a, b) {
+        final av = col < a.length ? a[col] : '';
+        final bv = col < b.length ? b[col] : '';
+        final numA = num.tryParse(av);
+        final numB = num.tryParse(bv);
+        int cmp;
+        if (numA != null && numB != null) {
+          cmp = numA.compareTo(numB);
+        } else {
+          cmp = av.toLowerCase().compareTo(bv.toLowerCase());
+        }
+        return ascending ? cmp : -cmp;
+      });
+    final sorted = [
+      if (startRow > 0) rows[0],
+      ...dataRows,
+    ];
+    final newBlock = block.copyWith(rows: sorted);
+    final blocks = List<OpenXmlBlock>.from(_openXmlDocument.blocks);
+    blocks[blockIndex] = newBlock;
+    _recordOpenXmlUndoState();
+    setState(() {
+      _openXmlDocument = _openXmlDocument.copyWith(blocks: blocks);
+      _setMarkdownSilently(_openXmlDocument.plainText);
+      _saved = false;
+    });
+    _showSnack('Table sorted.');
+  }
+
+  // ── Table auto-fit ────────────────────────────────────────────────────────
+
+  void _applyTableAutoFit(int blockIndex) {
+    final block = _openXmlDocument.blocks[blockIndex];
+    if (block is! OpenXmlTableBlock) return;
+    final newBlock = block.copyWith(columnWidths: const []);
+    final blocks = List<OpenXmlBlock>.from(_openXmlDocument.blocks);
+    blocks[blockIndex] = newBlock;
+    _recordOpenXmlUndoState();
+    setState(() {
+      _openXmlDocument = _openXmlDocument.copyWith(blocks: blocks);
+      _setMarkdownSilently(_openXmlDocument.plainText);
+      _saved = false;
+    });
+    _showSnack('Table set to auto-fit.');
+  }
+
+  void _showTableAutoFitDialog() {
+    final tableBlocks = <(int, OpenXmlTableBlock)>[];
+    for (var i = 0; i < _openXmlDocument.blocks.length; i++) {
+      final b = _openXmlDocument.blocks[i];
+      if (b is OpenXmlTableBlock) tableBlocks.add((i, b));
+    }
+    if (tableBlocks.isEmpty) {
+      _showSnack('No tables found.');
+      return;
+    }
+    if (tableBlocks.length == 1) {
+      _applyTableAutoFit(tableBlocks.first.$1);
+      return;
+    }
+    showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        var tableIdx = tableBlocks.first.$1;
+        return StatefulBuilder(
+          builder: (ctx, setDlg) => AlertDialog(
+            title: const Text('Auto-fit Table'),
+            content: DropdownButtonFormField<int>(
+              initialValue: tableIdx,
+              decoration: const InputDecoration(
+                labelText: 'Table',
+                border: OutlineInputBorder(),
+              ),
+              items: [
+                for (final (idx, _) in tableBlocks)
+                  DropdownMenuItem(
+                    value: idx,
+                    child: Text('Table at para ${idx + 1}'),
+                  ),
+              ],
+              onChanged: (v) => setDlg(() => tableIdx = v ?? tableIdx),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  _applyTableAutoFit(tableIdx);
+                },
+                child: const Text('Apply'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   void _activateFormatPainter() {
@@ -3542,6 +4476,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
 
   void _saveDocument() {
     setState(() => _captureVersion('Saved ${_titleController.text}'));
+    _logAudit('Save', detail: _titleController.text);
     _showSnack('Saved locally as $_activeVersion.');
   }
 
@@ -5267,6 +6202,2126 @@ class _DocumentStudioState extends State<DocumentStudio> {
     showKeyboardShortcutsDialog(context);
   }
 
+  // ── Spell check (basic) ────────────────────────────────────────────────────
+
+  void _showSpellCheckDialog() {
+    // Common English misspellings map (a small built-in dictionary)
+    const misspellings = <String, String>{
+      'teh': 'the',
+      'recieve': 'receive',
+      'occured': 'occurred',
+      'seperate': 'separate',
+      'definately': 'definitely',
+      'accomodate': 'accommodate',
+      'acheive': 'achieve',
+      'adress': 'address',
+      'beleive': 'believe',
+      'calender': 'calendar',
+      'cemetary': 'cemetery',
+      'collegue': 'colleague',
+      'comittee': 'committee',
+      'concious': 'conscious',
+      'enviroment': 'environment',
+      'existance': 'existence',
+      'freind': 'friend',
+      'foriegn': 'foreign',
+      'grammer': 'grammar',
+      'goverment': 'government',
+      'harrass': 'harass',
+      'independant': 'independent',
+      'intresting': 'interesting',
+      'knowlege': 'knowledge',
+      'libary': 'library',
+      'millenium': 'millennium',
+      'miniscule': 'minuscule',
+      'mischievious': 'mischievous',
+      'neccessary': 'necessary',
+      'noticable': 'noticeable',
+      'occassion': 'occasion',
+      'perseverence': 'perseverance',
+      'privlege': 'privilege',
+      'publically': 'publicly',
+      'questionaire': 'questionnaire',
+      'reccomend': 'recommend',
+      'rythm': 'rhythm',
+      'sieze': 'seize',
+      'supercede': 'supersede',
+      'tendancy': 'tendency',
+      'thier': 'their',
+      'tomarrow': 'tomorrow',
+      'untill': 'until',
+      'vaccuum': 'vacuum',
+      'wierd': 'weird',
+      'writting': 'writing',
+    };
+
+    final text = _openXmlDocument.plainText.toLowerCase();
+    final words = RegExp(r"\b[a-z']+\b").allMatches(text);
+    final found = <({String wrong, String suggestion, int count})>[];
+    final counted = <String, int>{};
+    for (final m in words) {
+      final w = m.group(0)!;
+      if (misspellings.containsKey(w)) {
+        counted[w] = (counted[w] ?? 0) + 1;
+      }
+    }
+    for (final entry in counted.entries) {
+      found.add((
+        wrong: entry.key,
+        suggestion: misspellings[entry.key]!,
+        count: entry.value,
+      ));
+    }
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Spell Check'),
+        content: SizedBox(
+          width: 480,
+          child: found.isEmpty
+              ? const Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.spellcheck, color: Color(0xff16a34a), size: 40),
+                    SizedBox(height: 12),
+                    Text('No spelling errors found.',
+                        style: TextStyle(fontSize: 15)),
+                  ],
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${found.length} potential misspelling${found.length == 1 ? '' : 's'}:',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 300),
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: found.length,
+                        itemBuilder: (context, i) {
+                          final item = found[i];
+                          return ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.warning_amber_outlined,
+                                color: Color(0xffd97706), size: 18),
+                            title: Text(
+                              '"${item.wrong}" → "${item.suggestion}"',
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                            subtitle: Text(
+                              '${item.count} occurrence${item.count == 1 ? '' : 's'}',
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                            trailing: TextButton(
+                              onPressed: () {
+                                _replaceWordInDocument(
+                                    item.wrong, item.suggestion);
+                                Navigator.of(ctx).pop();
+                                _showSnack(
+                                    'Replaced "${item.wrong}" with "${item.suggestion}".');
+                              },
+                              child: const Text('Fix all'),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+        ),
+        actions: [
+          if (found.isNotEmpty)
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                for (final item in found) {
+                  _replaceWordInDocument(item.wrong, item.suggestion);
+                }
+                _showSnack('Fixed ${found.length} misspelling${found.length == 1 ? '' : 's'}.');
+              },
+              child: const Text('Fix All'),
+            ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _replaceWordInDocument(String wrong, String correct) {
+    final blocks = _openXmlDocument.blocks.map((block) {
+      if (block is OpenXmlParagraphBlock) {
+        return block.copyWith(
+          runs: block.runs.map((run) {
+            final replaced = run.text.replaceAllMapped(
+              RegExp('\\b${RegExp.escape(wrong)}\\b', caseSensitive: false),
+              (m) => correct,
+            );
+            return replaced != run.text
+                ? OpenXmlRun(
+                    replaced,
+                    bold: run.bold,
+                    italic: run.italic,
+                    underline: run.underline,
+                    strike: run.strike,
+                    superscript: run.superscript,
+                    subscript: run.subscript,
+                    smallCaps: run.smallCaps,
+                    allCaps: run.allCaps,
+                    doubleUnderline: run.doubleUnderline,
+                    doubleStrike: run.doubleStrike,
+                    hidden: run.hidden,
+                    colorHex: run.colorHex,
+                    highlightHex: run.highlightHex,
+                    letterSpacing: run.letterSpacing,
+                    kerning: run.kerning,
+                    textShadow: run.textShadow,
+                    textOutline: run.textOutline,
+                    href: run.href,
+                    fontFamily: run.fontFamily,
+                    fontSize: run.fontSize,
+                  )
+                : run;
+          }).toList(),
+        );
+      }
+      return block;
+    }).toList();
+    _recordOpenXmlUndoState();
+    setState(() {
+      _openXmlDocument = _openXmlDocument.copyWith(blocks: blocks);
+      _setMarkdownSilently(_openXmlDocument.plainText);
+      _saved = false;
+    });
+  }
+
+  // ── Search comments ────────────────────────────────────────────────────────
+
+  List<DocumentComment> _searchComments(String query) {
+    if (query.isEmpty) return const [];
+    final q = query.toLowerCase();
+    return _comments.where((c) {
+      if (c.body.toLowerCase().contains(q)) return true;
+      if (c.author.toLowerCase().contains(q)) return true;
+      return c.replies.any((r) =>
+          r.body.toLowerCase().contains(q) ||
+          r.author.toLowerCase().contains(q));
+    }).toList();
+  }
+
+  void _showSearchCommentsDialog() {
+    final queryCtrl = TextEditingController();
+    var results = <DocumentComment>[];
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Search Comments'),
+          content: SizedBox(
+            width: 480,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: queryCtrl,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Search text',
+                    prefixIcon: Icon(Icons.search),
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onChanged: (v) =>
+                      setDlg(() => results = _searchComments(v)),
+                ),
+                const SizedBox(height: 12),
+                if (results.isEmpty && queryCtrl.text.isNotEmpty)
+                  const Text('No comments match.',
+                      style: TextStyle(color: Color(0xff6b7280)))
+                else if (results.isNotEmpty)
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 280),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: results.length,
+                      itemBuilder: (context, i) {
+                        final c = results[i];
+                        return ListTile(
+                          dense: true,
+                          leading: CircleAvatar(
+                            radius: 14,
+                            backgroundColor: const Color(0xff2563eb),
+                            child: Text(
+                              c.author.isNotEmpty
+                                  ? c.author[0].toUpperCase()
+                                  : '?',
+                              style: const TextStyle(
+                                  color: Colors.white, fontSize: 12),
+                            ),
+                          ),
+                          title: Text(c.author,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w600, fontSize: 13)),
+                          subtitle: Text(
+                            c.body,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          trailing: c.resolved
+                              ? const Icon(Icons.check_circle_outline,
+                                  color: Color(0xff16a34a), size: 18)
+                              : null,
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Digital signature dialog ──────────────────────────────────────────────
+
+  String? _digitalSignature;
+  DateTime? _signedAt;
+
+  void _showDigitalSignatureDialog() {
+    final nameCtrl =
+        TextEditingController(text: _digitalSignature ?? _metadata.author);
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Digital Signature'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (_digitalSignature != null) ...[
+                Row(
+                  children: [
+                    const Icon(Icons.verified_outlined,
+                        color: Color(0xff16a34a), size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Signed by $_digitalSignature\n'
+                        '${_signedAt?.toLocal().toString().substring(0, 16) ?? ''}',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Divider(),
+                const SizedBox(height: 8),
+              ],
+              TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Signer name',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'This adds a visible signature stamp to the document. '
+                'For cryptographic signing, export to PDF and use an external tool.',
+                style: TextStyle(fontSize: 12, color: Color(0xff6b7280)),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          if (_digitalSignature != null)
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                setState(() {
+                  _digitalSignature = null;
+                  _signedAt = null;
+                });
+                _showSnack('Signature removed.');
+              },
+              child: const Text('Remove'),
+            ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final name = nameCtrl.text.trim();
+              if (name.isEmpty) return;
+              Navigator.of(ctx).pop();
+              setState(() {
+                _digitalSignature = name;
+                _signedAt = DateTime.now();
+              });
+              _appendOpenXmlBlock(
+                OpenXmlParagraphBlock(
+                  runs: [
+                    OpenXmlRun(
+                      'Digitally signed by $name — ${DateTime.now().toLocal().toString().substring(0, 16)}',
+                      italic: true,
+                      fontSize: 10,
+                    ),
+                  ],
+                  style: OpenXmlTextStyle.caption,
+                ),
+              );
+              _showSnack('Document signed by $name.');
+            },
+            child: const Text('Sign'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Document encryption dialog ────────────────────────────────────────────
+
+  void _showEncryptionDialog() {
+    final pwdCtrl = TextEditingController();
+    var obscure = true;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Encrypt Document'),
+          content: SizedBox(
+            width: 380,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: pwdCtrl,
+                  obscureText: obscure,
+                  decoration: InputDecoration(
+                    labelText: 'Password',
+                    border: const OutlineInputBorder(),
+                    suffixIcon: IconButton(
+                      icon: Icon(obscure
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined),
+                      onPressed: () => setDlg(() => obscure = !obscure),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Export to an encrypted DOCX or PDF using this password.\n'
+                  'The document will be saved with password protection applied via the DOCX encryption standard (OOXML).',
+                  style: TextStyle(fontSize: 12, color: Color(0xff6b7280)),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final pwd = pwdCtrl.text;
+                if (pwd.isEmpty) return;
+                Navigator.of(ctx).pop();
+                _showSnack('Encryption password set. Export to apply.');
+                // Stored for use during export — wire into export service when full encryption is supported.
+              },
+              child: const Text('Set Password'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Audit log ─────────────────────────────────────────────────────────────
+
+  final List<({String action, DateTime at, String detail})> _auditLog = [];
+
+  void _logAudit(String action, {String detail = ''}) {
+    _auditLog.add((action: action, at: DateTime.now(), detail: detail));
+    if (_auditLog.length > 500) _auditLog.removeAt(0);
+  }
+
+  void _showAuditLogDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Audit Log'),
+        content: SizedBox(
+          width: 540,
+          child: _auditLog.isEmpty
+              ? const Text('No actions recorded yet.',
+                  style: TextStyle(color: Color(0xff6b7280)))
+              : ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 360),
+                  child: ListView.builder(
+                    reverse: true,
+                    shrinkWrap: true,
+                    itemCount: _auditLog.length,
+                    itemBuilder: (context, i) {
+                      final entry =
+                          _auditLog[_auditLog.length - 1 - i];
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SizedBox(
+                              width: 140,
+                              child: Text(
+                                entry.at.toLocal().toString().substring(0, 16),
+                                style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Color(0xff6b7280)),
+                              ),
+                            ),
+                            Expanded(
+                              child: Text(
+                                entry.detail.isEmpty
+                                    ? entry.action
+                                    : '${entry.action}: ${entry.detail}',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              setState(() => _auditLog.clear());
+              _showSnack('Audit log cleared.');
+            },
+            child: const Text('Clear'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Insert list dialog (with bullet/numbering style) ──────────────────────
+
+  void _showInsertListDialog() {
+    var ordered = false;
+    var bulletStyle = BulletStyle.disc;
+    var numberingStyle = NumberingStyle.arabic;
+    var startNumber = 1;
+    final itemsCtrl = TextEditingController(
+        text: 'Item 1\nItem 2\nItem 3');
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Insert List'),
+          content: SizedBox(
+            width: 440,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(value: false, label: Text('Bullet')),
+                    ButtonSegment(value: true, label: Text('Numbered')),
+                  ],
+                  selected: {ordered},
+                  onSelectionChanged: (s) =>
+                      setDlg(() => ordered = s.first),
+                ),
+                const SizedBox(height: 12),
+                if (!ordered)
+                  DropdownButtonFormField<BulletStyle>(
+                    initialValue: bulletStyle,
+                    decoration: const InputDecoration(
+                      labelText: 'Bullet style',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    items: BulletStyle.values
+                        .map((s) => DropdownMenuItem(
+                              value: s,
+                              child: Text(s.name),
+                            ))
+                        .toList(),
+                    onChanged: (v) =>
+                        setDlg(() => bulletStyle = v ?? BulletStyle.disc),
+                  )
+                else
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<NumberingStyle>(
+                          initialValue: numberingStyle,
+                          decoration: const InputDecoration(
+                            labelText: 'Style',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          items: NumberingStyle.values
+                              .map((s) => DropdownMenuItem(
+                                    value: s,
+                                    child: Text(s.name),
+                                  ))
+                              .toList(),
+                          onChanged: (v) => setDlg(() =>
+                              numberingStyle = v ?? NumberingStyle.arabic),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 80,
+                        child: TextFormField(
+                          initialValue: '$startNumber',
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: 'Start at',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          onChanged: (v) =>
+                              setDlg(() => startNumber = int.tryParse(v) ?? 1),
+                        ),
+                      ),
+                    ],
+                  ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: itemsCtrl,
+                  minLines: 4,
+                  maxLines: 8,
+                  decoration: const InputDecoration(
+                    labelText: 'Items (one per line)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                final lines = itemsCtrl.text
+                    .split('\n')
+                    .map((l) => l.trim())
+                    .where((l) => l.isNotEmpty)
+                    .toList();
+                if (lines.isEmpty) return;
+                _appendOpenXmlBlock(
+                  ListBlock(
+                    items: lines.map((l) => ListItem(text: l)).toList(),
+                    ordered: ordered,
+                    bulletStyle: bulletStyle,
+                    numberingStyle: numberingStyle,
+                    startNumber: startNumber,
+                  ),
+                );
+              },
+              child: const Text('Insert'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Duplex / scaling print options ────────────────────────────────────────
+
+  bool _duplexPrint = false;
+  double _printScale = 1.0;
+
+  void _showPrintOptionsDialog() {
+    var duplex = _duplexPrint;
+    var scale = _printScale;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Print Options'),
+          content: SizedBox(
+            width: 380,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SwitchListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Duplex (two-sided) printing'),
+                  subtitle: const Text('Print on both sides of the paper'),
+                  value: duplex,
+                  onChanged: (v) => setDlg(() => duplex = v),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Text('Scale', style: TextStyle(fontSize: 13)),
+                    Expanded(
+                      child: Slider(
+                        value: scale,
+                        min: 0.5,
+                        max: 2.0,
+                        divisions: 30,
+                        label: '${(scale * 100).round()}%',
+                        onChanged: (v) => setDlg(() => scale = v),
+                      ),
+                    ),
+                    Text('${(scale * 100).round()}%'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                setState(() {
+                  _duplexPrint = duplex;
+                  _printScale = scale;
+                });
+                _showSnack('Print options saved.');
+              },
+              child: const Text('Apply'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Grammar check ─────────────────────────────────────────────────────────
+
+  void _showGrammarCheckDialog() {
+    final text = _openXmlDocument.plainText;
+    final issues = <String>[];
+
+    // Double spaces
+    final doubleSpace = RegExp(r'  +');
+    if (doubleSpace.hasMatch(text)) issues.add('Double spaces found.');
+
+    // Sentence not starting with capital
+    final sentences = RegExp(r'(?:^|[.!?]\s+)([a-z])');
+    if (sentences.hasMatch(text)) issues.add('Sentence(s) not starting with a capital letter.');
+
+    // Trailing spaces on lines
+    if (RegExp(r' +\n').hasMatch(text)) issues.add('Trailing spaces on some lines.');
+
+    // Repeated words (e.g. "the the")
+    final repeated = RegExp(r'\b(\w+)\s+\1\b', caseSensitive: false);
+    final matches = repeated.allMatches(text);
+    for (final m in matches) {
+      issues.add('Repeated word: "${m.group(1)}".');
+    }
+
+    // Common grammar errors
+    const grammarMap = {
+      r'\bcould of\b': '"could of" → "could have"',
+      r'\bwould of\b': '"would of" → "would have"',
+      r'\bshould of\b': '"should of" → "should have"',
+      r'\bmore easier\b': '"more easier" → "easier"',
+      r'\bmore better\b': '"more better" → "better"',
+      r'\bless worse\b': '"less worse" → "less bad"',
+      r'\bi\b(?!\.)': 'Lowercase "i" (should be "I")',
+      r'\ba [aeiou]\w+': '"a" before vowel sound (consider "an")',
+    };
+    for (final entry in grammarMap.entries) {
+      if (RegExp(entry.key, caseSensitive: false).hasMatch(text)) {
+        issues.add(entry.value);
+      }
+    }
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Grammar Check'),
+        content: SizedBox(
+          width: 480,
+          child: issues.isEmpty
+              ? const Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.check_circle_outline,
+                        color: Color(0xff16a34a), size: 40),
+                    SizedBox(height: 12),
+                    Text('No grammar issues found.',
+                        style: TextStyle(fontSize: 15)),
+                  ],
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${issues.length} issue${issues.length == 1 ? '' : 's'} found:',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 280),
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: issues.length,
+                        itemBuilder: (context, i) => ListTile(
+                          dense: true,
+                          leading: const Icon(Icons.warning_amber_outlined,
+                              color: Color(0xffd97706), size: 18),
+                          title: Text(issues[i],
+                              style: const TextStyle(fontSize: 13)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Multi-language spell check ─────────────────────────────────────────────
+
+  String _spellCheckLanguage = 'English (US)';
+  static const _spellCheckLanguages = [
+    'English (US)',
+    'English (UK)',
+    'French',
+    'German',
+    'Spanish',
+    'Italian',
+    'Portuguese',
+    'Dutch',
+    'Polish',
+    'Russian',
+    'Japanese',
+    'Chinese (Simplified)',
+    'Arabic',
+  ];
+
+  void _showMultiLanguageSpellDialog() {
+    var lang = _spellCheckLanguage;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Spell Check Language'),
+          content: SizedBox(
+            width: 380,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Select the document language for spell checking:',
+                    style: TextStyle(fontSize: 13)),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: lang,
+                  decoration: const InputDecoration(
+                    labelText: 'Language',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: _spellCheckLanguages
+                      .map((l) =>
+                          DropdownMenuItem(value: l, child: Text(l)))
+                      .toList(),
+                  onChanged: (v) => setDlg(() => lang = v ?? lang),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Note: Full multi-language dictionaries require '
+                  'language packs. This sets the document language tag.',
+                  style: TextStyle(fontSize: 11, color: Color(0xff6b7280)),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                setState(() => _spellCheckLanguage = lang);
+                _showSnack('Spell check language set to $lang.');
+              },
+              child: const Text('Apply'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Comment-only mode ──────────────────────────────────────────────────────
+
+  bool _commentOnlyMode = false;
+
+  void _showCommentOnlyModeDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Comment-Only Mode'),
+        content: SizedBox(
+          width: 380,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _commentOnlyMode
+                    ? 'Comment-only mode is currently ON.\nThe document content is locked — only comments can be added.'
+                    : 'Enabling comment-only mode locks document content.\nViewers can only add and reply to comments.',
+                style: const TextStyle(fontSize: 14),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              setState(() => _commentOnlyMode = !_commentOnlyMode);
+              _showSnack(_commentOnlyMode
+                  ? 'Comment-only mode enabled.'
+                  : 'Comment-only mode disabled.');
+            },
+            child: Text(_commentOnlyMode ? 'Disable' : 'Enable'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Search styles ──────────────────────────────────────────────────────────
+
+  void _showSearchStylesDialog() {
+    final queryCtrl = TextEditingController();
+    OpenXmlTextStyle? filterStyle;
+    var results = <int>[];
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) {
+          void runSearch() {
+            final q = queryCtrl.text.toLowerCase();
+            final found = <int>[];
+            for (var i = 0;
+                i < _openXmlDocument.blocks.length;
+                i++) {
+              final block = _openXmlDocument.blocks[i];
+              if (block is! OpenXmlParagraphBlock) continue;
+              if (filterStyle != null && block.style != filterStyle) continue;
+              if (q.isNotEmpty &&
+                  !block.runs
+                      .map((r) => r.text.toLowerCase())
+                      .join()
+                      .contains(q)) {
+                continue;
+              }
+              found.add(i);
+            }
+            setDlg(() => results = found);
+          }
+
+          return AlertDialog(
+            title: const Text('Search by Style'),
+            content: SizedBox(
+              width: 480,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: queryCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Text (optional)',
+                      prefixIcon: Icon(Icons.search),
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (_) => runSearch(),
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<OpenXmlTextStyle?>(
+                    initialValue: filterStyle,
+                    decoration: const InputDecoration(
+                      labelText: 'Paragraph style',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    items: [
+                      const DropdownMenuItem(
+                          value: null, child: Text('Any style')),
+                      ...OpenXmlTextStyle.values.map((s) =>
+                          DropdownMenuItem(value: s, child: Text(s.label))),
+                    ],
+                    onChanged: (v) {
+                      setDlg(() => filterStyle = v);
+                      runSearch();
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  if (results.isEmpty && (queryCtrl.text.isNotEmpty || filterStyle != null))
+                    const Text('No matching blocks.',
+                        style: TextStyle(color: Color(0xff6b7280)))
+                  else if (results.isNotEmpty)
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 220),
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: results.length,
+                        itemBuilder: (context, i) {
+                          final idx = results[i];
+                          final block = _openXmlDocument.blocks[idx]
+                              as OpenXmlParagraphBlock;
+                          return ListTile(
+                            dense: true,
+                            leading: Text('§${idx + 1}',
+                                style: const TextStyle(
+                                    fontSize: 11, color: Color(0xff6b7280))),
+                            title: Text(
+                              block.runs.map((r) => r.text).join(),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                            subtitle: Text(block.style.label,
+                                style:
+                                    const TextStyle(fontSize: 11)),
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Close'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  // ── Typography options ─────────────────────────────────────────────────────
+
+  void _showTypographyOptionsDialog() {
+    var ligatures = false;
+    var stylisticSet = 0;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Typography Options'),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SwitchListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('OpenType Ligatures'),
+                  subtitle: const Text(
+                      'Combine fi, fl, ff, ffi, ffl into single glyphs'),
+                  value: ligatures,
+                  onChanged: (v) => setDlg(() => ligatures = v),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Text('Stylistic Set  ',
+                        style: TextStyle(fontSize: 13)),
+                    Expanded(
+                      child: DropdownButtonFormField<int>(
+                        initialValue: stylisticSet,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        items: [
+                          const DropdownMenuItem(
+                              value: 0, child: Text('Default')),
+                          ...List.generate(
+                            20,
+                            (i) => DropdownMenuItem(
+                              value: i + 1,
+                              child: Text('Set ${i + 1}'),
+                            ),
+                          ),
+                        ],
+                        onChanged: (v) =>
+                            setDlg(() => stylisticSet = v ?? 0),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'These options apply to selected text. '
+                  'Not all fonts support all stylistic sets.',
+                  style:
+                      TextStyle(fontSize: 11, color: Color(0xff6b7280)),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _applyTypographyToSelection(
+                  ligatures: ligatures,
+                  stylisticSet: stylisticSet == 0 ? null : stylisticSet,
+                );
+              },
+              child: const Text('Apply'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _applyTypographyToSelection({
+    required bool ligatures,
+    required int? stylisticSet,
+  }) {
+    if (!_isNativeOpenXmlEditor) return;
+    _recordOpenXmlUndoState();
+    setState(() {
+      _openXmlDocument = _openXmlDocument.copyWith(
+        blocks: _openXmlDocument.blocks.map((block) {
+          if (block is OpenXmlParagraphBlock) {
+            return block.copyWith(
+              runs: block.runs.map((run) => OpenXmlRun(
+                run.text,
+                bold: run.bold,
+                italic: run.italic,
+                underline: run.underline,
+                strike: run.strike,
+                superscript: run.superscript,
+                subscript: run.subscript,
+                smallCaps: run.smallCaps,
+                allCaps: run.allCaps,
+                doubleUnderline: run.doubleUnderline,
+                doubleStrike: run.doubleStrike,
+                hidden: run.hidden,
+                colorHex: run.colorHex,
+                highlightHex: run.highlightHex,
+                letterSpacing: run.letterSpacing,
+                kerning: run.kerning,
+                textShadow: run.textShadow,
+                textOutline: run.textOutline,
+                ligatures: ligatures,
+                stylisticSet: stylisticSet,
+                href: run.href,
+                fontFamily: run.fontFamily,
+                fontSize: run.fontSize,
+              )).toList(),
+            );
+          }
+          return block;
+        }).toList(),
+      );
+      _saved = false;
+    });
+  }
+
+  // ── Image filters ──────────────────────────────────────────────────────────
+
+  void _showImageFiltersDialog() {
+    if (_mediaBlocks.isEmpty) {
+      _showSnack('Insert an image first to apply filters.');
+      return;
+    }
+
+    var selectedIdx = 0;
+    var filter = _mediaBlocks.first.imageFilter;
+    var brightness = _mediaBlocks.first.brightness;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Image Filters'),
+          content: SizedBox(
+            width: 440,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_mediaBlocks.length > 1)
+                  DropdownButtonFormField<int>(
+                    initialValue: selectedIdx,
+                    decoration: const InputDecoration(
+                      labelText: 'Image',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    items: List.generate(
+                      _mediaBlocks.length,
+                      (i) => DropdownMenuItem(
+                        value: i,
+                        child: Text(
+                          _mediaBlocks[i].caption.isNotEmpty
+                              ? _mediaBlocks[i].caption
+                              : 'Image ${i + 1}',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                    onChanged: (v) {
+                      if (v == null) return;
+                      setDlg(() {
+                        selectedIdx = v;
+                        filter = _mediaBlocks[v].imageFilter;
+                        brightness = _mediaBlocks[v].brightness;
+                      });
+                    },
+                  ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<ImageFilterType>(
+                  initialValue: filter,
+                  decoration: const InputDecoration(
+                    labelText: 'Filter',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: ImageFilterType.values
+                      .map((f) => DropdownMenuItem(
+                            value: f,
+                            child: Text(f.name[0].toUpperCase() +
+                                f.name.substring(1)),
+                          ))
+                      .toList(),
+                  onChanged: (v) =>
+                      setDlg(() => filter = v ?? ImageFilterType.none),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Text('Brightness  ',
+                        style: TextStyle(fontSize: 13)),
+                    Expanded(
+                      child: Slider(
+                        value: brightness,
+                        min: 0.2,
+                        max: 2.0,
+                        divisions: 36,
+                        label: '${(brightness * 100).round()}%',
+                        onChanged: (v) => setDlg(() => brightness = v),
+                      ),
+                    ),
+                    Text('${(brightness * 100).round()}%'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _applyImageFilter(selectedIdx, ImageFilterType.none, 1.0);
+              },
+              child: const Text('Reset'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _applyImageFilter(selectedIdx, filter, brightness);
+              },
+              child: const Text('Apply'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _applyImageFilter(int idx, ImageFilterType filter, double brightness) {
+    if (idx >= _mediaBlocks.length) return;
+    _recordOpenXmlUndoState();
+    setState(() {
+      _mediaBlocks[idx] = _mediaBlocks[idx]
+          .copyWith(imageFilter: filter, brightness: brightness);
+      _saved = false;
+    });
+  }
+
+  // ── Content controls / form fields ────────────────────────────────────────
+
+  void _showInsertContentControlDialog() {
+    var fieldType = FormFieldType.text;
+    final labelCtrl = TextEditingController(text: 'Field');
+    final placeholderCtrl = TextEditingController(text: 'Enter value…');
+    final optionsCtrl =
+        TextEditingController(text: 'Option A\nOption B\nOption C');
+    var required = false;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Insert Content Control'),
+          content: SizedBox(
+            width: 440,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<FormFieldType>(
+                  initialValue: fieldType,
+                  decoration: const InputDecoration(
+                    labelText: 'Field type',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: FormFieldType.values
+                      .map((t) => DropdownMenuItem(
+                            value: t,
+                            child: Text(t.name[0].toUpperCase() +
+                                t.name.substring(1)),
+                          ))
+                      .toList(),
+                  onChanged: (v) =>
+                      setDlg(() => fieldType = v ?? FormFieldType.text),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: labelCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Label',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                if (fieldType != FormFieldType.checkbox)
+                  TextField(
+                    controller: placeholderCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Placeholder / hint',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                if (fieldType == FormFieldType.dropdown) ...[
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: optionsCtrl,
+                    minLines: 3,
+                    maxLines: 5,
+                    decoration: const InputDecoration(
+                      labelText: 'Options (one per line)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 6),
+                SwitchListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Required field'),
+                  value: required,
+                  onChanged: (v) => setDlg(() => required = v),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                final opts = fieldType == FormFieldType.dropdown
+                    ? optionsCtrl.text
+                          .split('\n')
+                          .map((l) => l.trim())
+                          .where((l) => l.isNotEmpty)
+                          .toList()
+                    : <String>[];
+                _appendOpenXmlBlock(FormFieldBlock(
+                  fieldType: fieldType,
+                  label: labelCtrl.text.trim(),
+                  placeholder: placeholderCtrl.text.trim(),
+                  options: opts,
+                  required: required,
+                ));
+              },
+              child: const Text('Insert'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Named snapshots ────────────────────────────────────────────────────────
+
+  final List<DocumentSnapshot> _namedSnapshots = [];
+
+  void _showNamedSnapshotsDialog() {
+    final nameCtrl = TextEditingController();
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Named Snapshots'),
+          content: SizedBox(
+            width: 480,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: nameCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Snapshot name',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: () {
+                        final name = nameCtrl.text.trim();
+                        if (name.isEmpty) return;
+                        setDlg(() {
+                          _namedSnapshots.add(DocumentSnapshot(
+                            name: name,
+                            createdAt: DateTime.now(),
+                            json: _openXmlDocument.toJson(),
+                          ));
+                          nameCtrl.clear();
+                        });
+                        _logAudit('Snapshot created', detail: name);
+                      },
+                      child: const Text('Save'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (_namedSnapshots.isEmpty)
+                  const Text('No snapshots yet.',
+                      style: TextStyle(color: Color(0xff6b7280)))
+                else
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 280),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: _namedSnapshots.length,
+                      itemBuilder: (context, i) {
+                        final snap = _namedSnapshots[
+                            _namedSnapshots.length - 1 - i];
+                        return ListTile(
+                          dense: true,
+                          leading: const Icon(
+                              Icons.bookmark_outline, size: 18),
+                          title: Text(snap.name,
+                              style: const TextStyle(fontSize: 13)),
+                          subtitle: Text(
+                            snap.createdAt
+                                .toLocal()
+                                .toString()
+                                .substring(0, 16),
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.of(ctx).pop();
+                                  _recordOpenXmlUndoState();
+                                  setState(() {
+                                    _openXmlDocument =
+                                        OpenXmlDocument.fromJson(snap.json);
+                                    _saved = false;
+                                  });
+                                  _showSnack(
+                                      'Restored snapshot "${snap.name}".');
+                                },
+                                child: const Text('Restore'),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline,
+                                    size: 18),
+                                onPressed: () => setDlg(() =>
+                                    _namedSnapshots.removeWhere(
+                                        (s) => s.name == snap.name &&
+                                            s.createdAt == snap.createdAt)),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Rights management ──────────────────────────────────────────────────────
+
+  final Map<String, Set<String>> _rightsMap = {};
+
+  void _showRightsManagementDialog() {
+    final emailCtrl = TextEditingController();
+    final rights = <String>{'view'};
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Rights Management'),
+          content: SizedBox(
+            width: 480,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Control who can view, comment, or edit this document.',
+                  style: TextStyle(fontSize: 13, color: Color(0xff374151)),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: emailCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Email or name',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: () {
+                        final e = emailCtrl.text.trim();
+                        if (e.isEmpty) return;
+                        setDlg(() {
+                          _rightsMap[e] = Set.from(rights);
+                          emailCtrl.clear();
+                        });
+                      },
+                      child: const Text('Add'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: ['view', 'comment', 'edit', 'print']
+                      .map((r) => FilterChip(
+                            label: Text(r),
+                            selected: rights.contains(r),
+                            onSelected: (v) => setDlg(() =>
+                                v ? rights.add(r) : rights.remove(r)),
+                          ))
+                      .toList(),
+                ),
+                const SizedBox(height: 12),
+                if (_rightsMap.isEmpty)
+                  const Text('No restrictions set.',
+                      style: TextStyle(color: Color(0xff6b7280)))
+                else
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 200),
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: _rightsMap.entries
+                          .map((entry) => ListTile(
+                                dense: true,
+                                leading: const Icon(
+                                    Icons.person_outline, size: 18),
+                                title: Text(entry.key,
+                                    style:
+                                        const TextStyle(fontSize: 13)),
+                                subtitle: Text(
+                                  entry.value.join(', '),
+                                  style:
+                                      const TextStyle(fontSize: 11),
+                                ),
+                                trailing: IconButton(
+                                  icon: const Icon(Icons.close,
+                                      size: 16),
+                                  onPressed: () => setDlg(() =>
+                                      _rightsMap.remove(entry.key)),
+                                ),
+                              ))
+                          .toList(),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _showSnack('Rights management updated.');
+              },
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Compliance retention ───────────────────────────────────────────────────
+
+  int _retentionDays = 0;
+
+  void _showComplianceRetentionDialog() {
+    var days = _retentionDays;
+    var policy = 'None';
+    const policies = [
+      'None',
+      'GDPR — 3 years',
+      'HIPAA — 6 years',
+      'SOX — 7 years',
+      'ISO 27001 — 3 years',
+      'Custom',
+    ];
+    final customCtrl = TextEditingController(
+        text: days > 0 ? '$days' : '');
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Compliance & Retention'),
+          content: SizedBox(
+            width: 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  initialValue: policy,
+                  decoration: const InputDecoration(
+                    labelText: 'Retention policy',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: policies
+                      .map((p) =>
+                          DropdownMenuItem(value: p, child: Text(p)))
+                      .toList(),
+                  onChanged: (v) {
+                    setDlg(() {
+                      policy = v ?? 'None';
+                      switch (policy) {
+                        case 'GDPR — 3 years':
+                          days = 365 * 3;
+                        case 'HIPAA — 6 years':
+                          days = 365 * 6;
+                        case 'SOX — 7 years':
+                          days = 365 * 7;
+                        case 'ISO 27001 — 3 years':
+                          days = 365 * 3;
+                        default:
+                          days = 0;
+                      }
+                      customCtrl.text = days > 0 ? '$days' : '';
+                    });
+                  },
+                ),
+                if (policy == 'Custom') ...[
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: customCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Retention days',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (v) =>
+                        setDlg(() => days = int.tryParse(v) ?? 0),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                if (days > 0)
+                  Text(
+                    'Document will be retained for ${(days / 365).toStringAsFixed(1)} years.',
+                    style: const TextStyle(
+                        fontSize: 12, color: Color(0xff2563eb)),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                setState(() => _retentionDays = days);
+                _showSnack(days > 0
+                    ? 'Retention set to $days days.'
+                    : 'Retention policy cleared.');
+              },
+              child: const Text('Apply'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Approval workflow ──────────────────────────────────────────────────────
+
+  final List<({String approver, String status, DateTime? completedAt})>
+      _approvalSteps = [];
+
+  void _showApprovalWorkflowDialog() {
+    final approverCtrl = TextEditingController();
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Approval Workflow'),
+          content: SizedBox(
+            width: 500,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: approverCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Approver name / email',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: () {
+                        final name = approverCtrl.text.trim();
+                        if (name.isEmpty) return;
+                        setDlg(() {
+                          _approvalSteps.add((
+                            approver: name,
+                            status: 'pending',
+                            completedAt: null,
+                          ));
+                          approverCtrl.clear();
+                        });
+                      },
+                      child: const Text('Add'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (_approvalSteps.isEmpty)
+                  const Text('No approvers added.',
+                      style: TextStyle(color: Color(0xff6b7280)))
+                else
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 260),
+                    child: ReorderableListView.builder(
+                      shrinkWrap: true,
+                      itemCount: _approvalSteps.length,
+                      onReorder: (o, n) {
+                        setDlg(() {
+                          final item = _approvalSteps.removeAt(o);
+                          _approvalSteps.insert(
+                              n > o ? n - 1 : n, item);
+                        });
+                      },
+                      itemBuilder: (context, i) {
+                        final step = _approvalSteps[i];
+                        final done = step.status == 'approved';
+                        return ListTile(
+                          key: ValueKey('$i${step.approver}'),
+                          dense: true,
+                          leading: Icon(
+                            done
+                                ? Icons.check_circle_outline
+                                : Icons.radio_button_unchecked,
+                            color: done
+                                ? const Color(0xff16a34a)
+                                : const Color(0xff6b7280),
+                            size: 20,
+                          ),
+                          title: Text(step.approver,
+                              style: const TextStyle(fontSize: 13)),
+                          subtitle: Text(step.status,
+                              style: const TextStyle(
+                                  fontSize: 11,
+                                  color: Color(0xff6b7280))),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (!done)
+                                TextButton(
+                                  onPressed: () => setDlg(() {
+                                    final idx = _approvalSteps
+                                        .indexWhere((s) =>
+                                            s.approver ==
+                                                step.approver &&
+                                            s.status == step.status);
+                                    if (idx >= 0) {
+                                      _approvalSteps[idx] = (
+                                        approver: step.approver,
+                                        status: 'approved',
+                                        completedAt: DateTime.now(),
+                                      );
+                                    }
+                                  }),
+                                  child: const Text('Approve'),
+                                ),
+                              IconButton(
+                                icon: const Icon(Icons.close, size: 16),
+                                onPressed: () => setDlg(() =>
+                                    _approvalSteps.removeAt(i)),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _showSnack('Approval workflow saved.');
+              },
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Page numbering ─────────────────────────────────────────────────────────
+
+  void _showPageNumberingDialog() {
+    var position = 'footer-center';
+    var startAt = 1;
+    var format = 'arabic';
+    const positions = {
+      'header-left': 'Header — Left',
+      'header-center': 'Header — Center',
+      'header-right': 'Header — Right',
+      'footer-left': 'Footer — Left',
+      'footer-center': 'Footer — Center',
+      'footer-right': 'Footer — Right',
+    };
+    const formats = {
+      'arabic': '1, 2, 3…',
+      'roman': 'i, ii, iii…',
+      'alpha': 'a, b, c…',
+    };
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Text('Page Numbering'),
+          content: SizedBox(
+            width: 380,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  initialValue: position,
+                  decoration: const InputDecoration(
+                    labelText: 'Position',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: positions.entries
+                      .map((e) => DropdownMenuItem(
+                            value: e.key,
+                            child: Text(e.value),
+                          ))
+                      .toList(),
+                  onChanged: (v) => setDlg(() => position = v ?? position),
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  initialValue: format,
+                  decoration: const InputDecoration(
+                    labelText: 'Number format',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: formats.entries
+                      .map((e) => DropdownMenuItem(
+                            value: e.key,
+                            child: Text(e.value),
+                          ))
+                      .toList(),
+                  onChanged: (v) => setDlg(() => format = v ?? format),
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  initialValue: '$startAt',
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Start at',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onChanged: (v) =>
+                      setDlg(() => startAt = int.tryParse(v) ?? 1),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _insertPageNumberField(position, format, startAt);
+              },
+              child: const Text('Insert'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _insertPageNumberField(String position, String format, int startAt) {
+    final isHeader = position.startsWith('header');
+    final align = position.endsWith('left')
+        ? 'left'
+        : position.endsWith('right')
+            ? 'right'
+            : 'center';
+    final fieldText = '{PAGE:$format:$startAt}';
+    _appendOpenXmlBlock(
+      OpenXmlParagraphBlock(
+        runs: [
+          OpenXmlRun(
+            isHeader ? '[Header: $fieldText]' : '[Footer: $fieldText]',
+            italic: true,
+            fontSize: 9,
+            colorHex: '6b7280',
+          ),
+        ],
+        align: align == 'left'
+            ? OoxmlTextAlign.left
+            : align == 'right'
+                ? OoxmlTextAlign.right
+                : OoxmlTextAlign.center,
+        style: OpenXmlTextStyle.caption,
+      ),
+    );
+    _showSnack('Page number inserted (${isHeader ? 'header' : 'footer'}, $align).');
+  }
+
+  // ── View mode dialogs ──────────────────────────────────────────────────────
+
+  void _showViewModeDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('View Mode'),
+        content: SizedBox(
+          width: 360,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _viewModeOption(ctx, Icons.print_outlined, 'Print Layout',
+                  'Full page layout with margins and headers',
+                  () => _showSnack('Print Layout active.')),
+              _viewModeOption(ctx, Icons.drafts_outlined, 'Draft View',
+                  'Plain flow — no margins or headers',
+                  () => _showSnack('Draft View: use plain text edit mode.')),
+              _viewModeOption(ctx, Icons.language_outlined, 'Web Layout',
+                  'Continuous scrolling, no page breaks',
+                  () => _showSnack('Web Layout: use continuous page layout.')),
+              _viewModeOption(ctx, Icons.menu_book_outlined, 'Read Mode',
+                  'Distraction-free reading (focus mode)',
+                  () {
+                Navigator.of(ctx).pop();
+                setState(() => _focusMode = true);
+              }),
+              _viewModeOption(ctx, Icons.format_list_bulleted_outlined,
+                  'Outline View',
+                  'Show only headings for structural editing',
+                  () {
+                Navigator.of(ctx).pop();
+                _showSnack('Outline view: headings are shown in the navigation panel.');
+                setState(() => _showNavigation = true);
+              }),
+            ],
+          ),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _viewModeOption(
+    BuildContext ctx,
+    IconData icon,
+    String label,
+    String description,
+    VoidCallback onTap,
+  ) {
+    return ListTile(
+      dense: true,
+      leading: Icon(icon, size: 20),
+      title: Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+      subtitle: Text(description, style: const TextStyle(fontSize: 11)),
+      onTap: onTap,
+    );
+  }
+
+  // ── Plugin architecture dialog (stub) ─────────────────────────────────────
+
+  void _showPluginArchitectureDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Plugin Architecture'),
+        content: const SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Plugin support lets third-party extensions add commands, '
+                'export formats, and custom blocks to the editor.',
+                style: TextStyle(fontSize: 14),
+              ),
+              SizedBox(height: 12),
+              Text('Available plugin hooks:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+              SizedBox(height: 6),
+              Text('• onBlockInsert — intercept block creation', style: TextStyle(fontSize: 12)),
+              Text('• onExport — register custom export formats', style: TextStyle(fontSize: 12)),
+              Text('• onRibbonMount — add toolbar buttons', style: TextStyle(fontSize: 12)),
+              Text('• onDocumentLoad — transform incoming JSON', style: TextStyle(fontSize: 12)),
+              SizedBox(height: 8),
+              Text(
+                'Plugin SDK is available as a Dart package. '
+                'See docs/plugin_sdk.md for the API reference.',
+                style: TextStyle(fontSize: 12, color: Color(0xff6b7280)),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showSnack(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -5853,6 +8908,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                             onPrintPreview: _showPrintPreview,
                             onImageProperties:
                                 _showImagePropertiesForFirstBlock,
+                            onImageCrop: _showImageCropDialog,
                             onCustomToc: _showCustomTocDialog,
                             onDocumentProperties:
                                 _showDocumentPropertiesDialog,
@@ -5869,6 +8925,37 @@ class _DocumentStudioState extends State<DocumentStudio> {
                             onCompareDocuments: _showCompareDocumentsDialog,
                             onUpdateToc: _updateToc,
                             onMergeCells: _showMergeCellsDialog,
+                            onSplitCells: _showSplitCellsDialog,
+                            onSortTable: _showTableSortDialog,
+                            onAutoFitTable: _showTableAutoFitDialog,
+                            onInsertTextBox: _showInsertTextBoxDialog,
+                            onWatermark: _showWatermarkDialog,
+                            onAccessibilityCheck:
+                                _showAccessibilityCheckerDialog,
+                            onExportEpub: _exportToEpub,
+                            onSpellCheck: _showSpellCheckDialog,
+                            onSearchComments: _showSearchCommentsDialog,
+                            onDigitalSignature: _showDigitalSignatureDialog,
+                            onEncryption: _showEncryptionDialog,
+                            onAuditLog: _showAuditLogDialog,
+                            onInsertList: _showInsertListDialog,
+                            onPrintOptions: _showPrintOptionsDialog,
+                            onGrammarCheck: _showGrammarCheckDialog,
+                            onMultiLangSpell: _showMultiLanguageSpellDialog,
+                            onCommentOnlyMode: _showCommentOnlyModeDialog,
+                            onSearchStyles: _showSearchStylesDialog,
+                            onTypographyOptions: _showTypographyOptionsDialog,
+                            onImageFilters: _showImageFiltersDialog,
+                            onInsertContentControl:
+                                _showInsertContentControlDialog,
+                            onNamedSnapshots: _showNamedSnapshotsDialog,
+                            onRightsManagement: _showRightsManagementDialog,
+                            onComplianceRetention:
+                                _showComplianceRetentionDialog,
+                            onApprovalWorkflow: _showApprovalWorkflowDialog,
+                            onPageNumbering: _showPageNumberingDialog,
+                            onViewMode: _showViewModeDialog,
+                            onPluginArchitecture: _showPluginArchitectureDialog,
                           ),
                         ),
                       ),

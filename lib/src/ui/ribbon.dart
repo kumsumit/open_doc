@@ -97,6 +97,7 @@ class Ribbon extends StatelessWidget {
     required this.onHighContrast,
     required this.onPrintPreview,
     required this.onImageProperties,
+    required this.onImageCrop,
     required this.onCustomToc,
     required this.onDocumentProperties,
     required this.onPageLayout,
@@ -111,6 +112,34 @@ class Ribbon extends StatelessWidget {
     required this.onCompareDocuments,
     required this.onUpdateToc,
     required this.onMergeCells,
+    required this.onSplitCells,
+    required this.onSortTable,
+    required this.onAutoFitTable,
+    required this.onInsertTextBox,
+    required this.onWatermark,
+    required this.onAccessibilityCheck,
+    required this.onExportEpub,
+    required this.onSpellCheck,
+    required this.onSearchComments,
+    required this.onDigitalSignature,
+    required this.onEncryption,
+    required this.onAuditLog,
+    required this.onInsertList,
+    required this.onPrintOptions,
+    required this.onGrammarCheck,
+    required this.onMultiLangSpell,
+    required this.onCommentOnlyMode,
+    required this.onSearchStyles,
+    required this.onTypographyOptions,
+    required this.onImageFilters,
+    required this.onInsertContentControl,
+    required this.onNamedSnapshots,
+    required this.onRightsManagement,
+    required this.onComplianceRetention,
+    required this.onApprovalWorkflow,
+    required this.onPageNumbering,
+    required this.onViewMode,
+    required this.onPluginArchitecture,
   });
 
   final bool bold;
@@ -202,6 +231,7 @@ class Ribbon extends StatelessWidget {
   final VoidCallback onHighContrast;
   final VoidCallback onPrintPreview;
   final VoidCallback onImageProperties;
+  final VoidCallback onImageCrop;
   final VoidCallback onCustomToc;
   final VoidCallback onDocumentProperties;
   final VoidCallback onPageLayout;
@@ -216,6 +246,34 @@ class Ribbon extends StatelessWidget {
   final VoidCallback onCompareDocuments;
   final VoidCallback onUpdateToc;
   final VoidCallback onMergeCells;
+  final VoidCallback onSplitCells;
+  final VoidCallback onSortTable;
+  final VoidCallback onAutoFitTable;
+  final VoidCallback onInsertTextBox;
+  final VoidCallback onWatermark;
+  final VoidCallback onAccessibilityCheck;
+  final VoidCallback onExportEpub;
+  final VoidCallback onSpellCheck;
+  final VoidCallback onSearchComments;
+  final VoidCallback onDigitalSignature;
+  final VoidCallback onEncryption;
+  final VoidCallback onAuditLog;
+  final VoidCallback onInsertList;
+  final VoidCallback onPrintOptions;
+  final VoidCallback onGrammarCheck;
+  final VoidCallback onMultiLangSpell;
+  final VoidCallback onCommentOnlyMode;
+  final VoidCallback onSearchStyles;
+  final VoidCallback onTypographyOptions;
+  final VoidCallback onImageFilters;
+  final VoidCallback onInsertContentControl;
+  final VoidCallback onNamedSnapshots;
+  final VoidCallback onRightsManagement;
+  final VoidCallback onComplianceRetention;
+  final VoidCallback onApprovalWorkflow;
+  final VoidCallback onPageNumbering;
+  final VoidCallback onViewMode;
+  final VoidCallback onPluginArchitecture;
 
   @override
   Widget build(BuildContext context) {
@@ -353,9 +411,154 @@ class Ribbon extends StatelessWidget {
                         onTap: onImageProperties,
                       ),
                       ToolButton(
+                        icon: Icons.crop_outlined,
+                        label: 'Crop',
+                        onTap: onImageCrop,
+                      ),
+                      ToolButton(
                         icon: Icons.table_rows_outlined,
                         label: 'Merge',
                         onTap: onMergeCells,
+                      ),
+                      ToolButton(
+                        icon: Icons.splitscreen_outlined,
+                        label: 'Split',
+                        onTap: onSplitCells,
+                      ),
+                      ToolButton(
+                        icon: Icons.sort_outlined,
+                        label: 'Sort',
+                        onTap: onSortTable,
+                      ),
+                      ToolButton(
+                        icon: Icons.fit_screen_outlined,
+                        label: 'AutoFit',
+                        onTap: onAutoFitTable,
+                      ),
+                      ToolButton(
+                        icon: Icons.text_snippet_outlined,
+                        label: 'TextBox',
+                        onTap: onInsertTextBox,
+                      ),
+                      ToolButton(
+                        icon: Icons.water_outlined,
+                        label: 'Watermark',
+                        onTap: onWatermark,
+                      ),
+                      ToolButton(
+                        icon: Icons.accessibility_new_outlined,
+                        label: 'Accessibility',
+                        onTap: onAccessibilityCheck,
+                      ),
+                      ToolButton(
+                        icon: Icons.menu_book_outlined,
+                        label: 'EPUB',
+                        onTap: onExportEpub,
+                      ),
+                      ToolButton(
+                        icon: Icons.spellcheck_outlined,
+                        label: 'Spell Check',
+                        onTap: onSpellCheck,
+                      ),
+                      ToolButton(
+                        icon: Icons.comment_bank_outlined,
+                        label: 'Find Comments',
+                        onTap: onSearchComments,
+                      ),
+                      ToolButton(
+                        icon: Icons.verified_outlined,
+                        label: 'Signature',
+                        onTap: onDigitalSignature,
+                      ),
+                      ToolButton(
+                        icon: Icons.lock_outlined,
+                        label: 'Encrypt',
+                        onTap: onEncryption,
+                      ),
+                      ToolButton(
+                        icon: Icons.history_outlined,
+                        label: 'Audit Log',
+                        onTap: onAuditLog,
+                      ),
+                      ToolButton(
+                        icon: Icons.format_list_bulleted_outlined,
+                        label: 'Insert List',
+                        onTap: onInsertList,
+                      ),
+                      ToolButton(
+                        icon: Icons.print_outlined,
+                        label: 'Print Options',
+                        onTap: onPrintOptions,
+                      ),
+                      ToolButton(
+                        icon: Icons.rule_outlined,
+                        label: 'Grammar',
+                        onTap: onGrammarCheck,
+                      ),
+                      ToolButton(
+                        icon: Icons.translate_outlined,
+                        label: 'Language',
+                        onTap: onMultiLangSpell,
+                      ),
+                      ToolButton(
+                        icon: Icons.comment_outlined,
+                        label: 'Comment Only',
+                        onTap: onCommentOnlyMode,
+                      ),
+                      ToolButton(
+                        icon: Icons.style_outlined,
+                        label: 'Find Style',
+                        onTap: onSearchStyles,
+                      ),
+                      ToolButton(
+                        icon: Icons.text_fields_outlined,
+                        label: 'Typography',
+                        onTap: onTypographyOptions,
+                      ),
+                      ToolButton(
+                        icon: Icons.filter_outlined,
+                        label: 'Img Filters',
+                        onTap: onImageFilters,
+                      ),
+                      ToolButton(
+                        icon: Icons.input_outlined,
+                        label: 'Form Field',
+                        onTap: onInsertContentControl,
+                      ),
+                      ToolButton(
+                        icon: Icons.bookmark_add_outlined,
+                        label: 'Snapshots',
+                        onTap: onNamedSnapshots,
+                      ),
+                      ToolButton(
+                        icon: Icons.manage_accounts_outlined,
+                        label: 'Rights',
+                        onTap: onRightsManagement,
+                      ),
+                      ToolButton(
+                        icon: Icons.policy_outlined,
+                        label: 'Compliance',
+                        onTap: onComplianceRetention,
+                      ),
+                      ToolButton(
+                        icon: Icons.approval_outlined,
+                        label: 'Approval',
+                        onTap: onApprovalWorkflow,
+                      ),
+                      ToolButton(
+                        icon: Icons.pin_outlined,
+                        label: 'Page #',
+                        onTap: onPageNumbering,
+                      ),
+                      ToolButton(
+                        icon: Icons.view_agenda_outlined,
+                        label: 'View Mode',
+                        onTap: onViewMode,
+                      ),
+                      ToolButton(
+                        icon: Icons.extension_outlined,
+                        label: 'Plugins',
+                        onTap: onPluginArchitecture,
                       ),
                       ToolButton(
                         icon: Icons.info_outline,

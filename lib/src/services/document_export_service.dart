@@ -107,6 +107,8 @@ class DocumentPageSetup {
     this.columns = 1,
     this.gutterTwips = 0,
     this.mirrorMargins = false,
+    this.differentFirstPage = false,
+    this.differentOddEvenPages = false,
   });
 
   final DocumentPageSize pageSize;
@@ -118,6 +120,10 @@ class DocumentPageSetup {
   final int gutterTwips;
   /// Whether to mirror margins for facing pages (odd/even).
   final bool mirrorMargins;
+  /// Whether the first page uses a different header/footer.
+  final bool differentFirstPage;
+  /// Whether odd and even pages use different headers/footers.
+  final bool differentOddEvenPages;
 
   DocumentPageSetup copyWith({
     DocumentPageSize? pageSize,
@@ -126,6 +132,8 @@ class DocumentPageSetup {
     int? columns,
     int? gutterTwips,
     bool? mirrorMargins,
+    bool? differentFirstPage,
+    bool? differentOddEvenPages,
   }) {
     return DocumentPageSetup(
       pageSize: pageSize ?? this.pageSize,
@@ -134,6 +142,8 @@ class DocumentPageSetup {
       columns: columns ?? this.columns,
       gutterTwips: gutterTwips ?? this.gutterTwips,
       mirrorMargins: mirrorMargins ?? this.mirrorMargins,
+      differentFirstPage: differentFirstPage ?? this.differentFirstPage,
+      differentOddEvenPages: differentOddEvenPages ?? this.differentOddEvenPages,
     );
   }
 }
@@ -837,6 +847,90 @@ class DocumentExportService {
     return Uint8List.fromList(
       utf8.encode(_withEmbeddedHtmlFonts(html, payload)),
     );
+  }
+
+  Future<Uint8List> exportEpub(DocumentExportPayload payload) async {
+    ensureLanguageSupport(payload);
+    final document = await buildDocument(payload);
+    final html = docx.HtmlExporter().export(document);
+    final title = _xmlEscape(payload.title.isEmpty ? 'Untitled' : payload.title);
+    final author = _xmlEscape(payload.metadata.author.isEmpty ? 'Unknown' : payload.metadata.author);
+    final uid = 'open-doc-${DateTime.now().millisecondsSinceEpoch}';
+
+    final archive = Archive();
+
+    // mimetype (must be first, uncompressed)
+    archive.addFile(ArchiveFile.noCompress(
+      'mimetype',
+      21,
+      utf8.encode('application/epub+zip'),
+    ));
+
+    // META-INF/container.xml
+    const containerXml = '''<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>''';
+    final containerBytes = utf8.encode(containerXml);
+    archive.addFile(ArchiveFile('META-INF/container.xml', containerBytes.length, containerBytes));
+
+    // OEBPS/content.opf
+    final contentOpf = '''<?xml version="1.0" encoding="UTF-8"?>
+<package version="3.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="uid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>$title</dc:title>
+    <dc:creator>$author</dc:creator>
+    <dc:identifier id="uid">$uid</dc:identifier>
+    <dc:language>en</dc:language>
+  </metadata>
+  <manifest>
+    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    <item id="chapter1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="chapter1"/>
+  </spine>
+</package>''';
+    final opfBytes = utf8.encode(contentOpf);
+    archive.addFile(ArchiveFile('OEBPS/content.opf', opfBytes.length, opfBytes));
+
+    // OEBPS/nav.xhtml
+    final navXhtml = '''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+<head><title>$title</title></head>
+<body>
+  <nav epub:type="toc" id="toc">
+    <h1>Contents</h1>
+    <ol><li><a href="chapter1.xhtml">$title</a></li></ol>
+  </nav>
+</body>
+</html>''';
+    final navBytes = utf8.encode(navXhtml);
+    archive.addFile(ArchiveFile('OEBPS/nav.xhtml', navBytes.length, navBytes));
+
+    // OEBPS/chapter1.xhtml — strip <html>/<head> wrapper from exported HTML
+    final bodyContent = _extractHtmlBody(html);
+    final chapterXhtml = '''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><title>$title</title></head>
+<body>$bodyContent</body>
+</html>''';
+    final chapterBytes = utf8.encode(chapterXhtml);
+    archive.addFile(ArchiveFile('OEBPS/chapter1.xhtml', chapterBytes.length, chapterBytes));
+
+    return Uint8List.fromList(ZipEncoder().encode(archive));
+  }
+
+  String _extractHtmlBody(String html) {
+    final bodyMatch = RegExp(
+      r'<body[^>]*>([\s\S]*?)</body>',
+      caseSensitive: false,
+    ).firstMatch(html);
+    return bodyMatch?.group(1)?.trim() ?? html;
   }
 
   Future<Uint8List> exportOpenDoc(DocumentExportPayload payload) async {

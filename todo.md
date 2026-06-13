@@ -18,7 +18,7 @@ It should be an entire document creation, layout, collaboration, automation, pub
 * [ ] References
 * [x] Captions
 * [x] Fields
-* [ ] Content controls
+* [x] Content controls
 * [x] Custom metadata
 
 ## Character Formatting
@@ -39,9 +39,9 @@ It should be an entire document creation, layout, collaboration, automation, pub
 * [x] All caps
 * [x] Hidden text
 * [x] Character spacing
-* [ ] Kerning
-* [ ] Text effects
-* [ ] Typography options
+* [x] Kerning
+* [x] Text effects
+* [x] Typography options
 
 ## Paragraph Formatting
 
@@ -67,8 +67,8 @@ It should be an entire document creation, layout, collaboration, automation, pub
 
 * [x] Continuous page layout
 * [x] Print layout
-* [ ] Web layout
-* [ ] Draft layout
+* [x] Web layout
+* [x] Draft layout
 * [x] Read mode
 
 ## Page Settings
@@ -86,9 +86,9 @@ It should be an entire document creation, layout, collaboration, automation, pub
 * [ ] Automatic page breaking
 * [ ] Reflow engine
 * [ ] Dynamic repagination
-* [ ] Page numbering
-* [ ] Different first page
-* [ ] Different odd/even pages
+* [x] Page numbering
+* [x] Different first page
+* [x] Different odd/even pages
 
 ---
 
@@ -98,11 +98,11 @@ It should be an entire document creation, layout, collaboration, automation, pub
 
 * [x] Insert table
 * [x] Merge cells
-* [ ] Split cells
+* [x] Split cells
 * [ ] Nested tables
 * [x] Table styles
-* [ ] Auto fit
-* [ ] Sorting
+* [x] Auto fit
+* [x] Sorting
 * [ ] Formula support
 * [x] Repeat header rows
 
@@ -113,11 +113,11 @@ It should be an entire document creation, layout, collaboration, automation, pub
 * [x] SVG
 * [x] WEBP
 * [x] GIF
-* [ ] Crop
+* [x] Crop
 * [x] Rotate
 * [x] Resize
-* [ ] Image filters
-* [ ] Transparency
+* [x] Image filters
+* [x] Transparency
 * [x] Alt text
 
 ## Shapes
@@ -131,9 +131,9 @@ It should be an entire document creation, layout, collaboration, automation, pub
 
 ## Text Boxes
 
-* [ ] Floating text boxes
-* [ ] Rotated text boxes
-* [ ] Anchored text boxes
+* [x] Floating text boxes
+* [x] Rotated text boxes
+* [x] Anchored text boxes
 
 ## Smart Art Alternative
 
@@ -180,7 +180,7 @@ It should be an entire document creation, layout, collaboration, automation, pub
 
 * [x] Unlimited undo
 * [x] Unlimited redo
-* [ ] Operation grouping
+* [x] Operation grouping
 
 ---
 
@@ -190,7 +190,7 @@ It should be an entire document creation, layout, collaboration, automation, pub
 
 * [x] Paragraph styles
 * [x] Character styles
-* [ ] Linked styles
+* [x] Linked styles
 * [x] Style inheritance
 * [x] Style organizer
 
@@ -212,10 +212,10 @@ It should be an entire document creation, layout, collaboration, automation, pub
 
 ## Spell Check
 
-* [ ] Real-time spell check
-* [ ] Multi-language spell check
-* [ ] Grammar check
-* [ ] Suggestions
+* [x] Real-time spell check
+* [x] Multi-language spell check
+* [x] Grammar check
+* [x] Suggestions
 
 ## Review
 
@@ -276,7 +276,7 @@ It should be an entire document creation, layout, collaboration, automation, pub
 * [x] Link sharing
 * [x] Permission control
 * [x] View-only mode
-* [ ] Comment-only mode
+* [x] Comment-only mode
 
 ---
 
@@ -286,8 +286,8 @@ It should be an entire document creation, layout, collaboration, automation, pub
 
 * [x] Search text
 * [x] Regex search
-* [ ] Search styles
-* [ ] Search comments
+* [x] Search styles
+* [x] Search comments
 
 ## Replace
 
@@ -315,7 +315,7 @@ It should be an entire document creation, layout, collaboration, automation, pub
 * [x] PDF
 * [x] HTML
 * [x] Markdown
-* [ ] EPUB
+* [x] EPUB
 * [x] TXT
 
 ---
@@ -323,9 +323,9 @@ It should be an entire document creation, layout, collaboration, automation, pub
 # 11. Printing
 
 * [x] Print preview
-* [ ] Custom print range
-* [ ] Duplex support
-* [ ] Scaling
+* [x] Custom print range
+* [x] Duplex support
+* [x] Scaling
 * [x] PDF print output
 
 ---
@@ -336,7 +336,7 @@ It should be an entire document creation, layout, collaboration, automation, pub
 * [x] Keyboard-only operation
 * [x] High contrast mode
 * [x] Alt text validation
-* [ ] Accessibility checker
+* [x] Accessibility checker
 
 ---
 
@@ -387,7 +387,7 @@ These would differentiate your editor:
 
 * [ ] Git-like history
 * [ ] Branches
-* [ ] Named snapshots
+* [x] Named snapshots
 * [ ] Visual diff timeline
 
 ## Infinite Canvas Mode
@@ -429,13 +429,13 @@ These would differentiate your editor:
 
 # 16. Enterprise Features
 
-* [ ] Digital signatures
-* [ ] Document encryption
-* [ ] Rights management
-* [ ] Watermarks
-* [ ] Audit logs
-* [ ] Compliance retention
-* [ ] Approval workflows
+* [x] Digital signatures
+* [x] Document encryption
+* [x] Rights management
+* [x] Watermarks
+* [x] Audit logs
+* [x] Compliance retention
+* [x] Approval workflows
 
 ---
 
@@ -461,7 +461,7 @@ Since you're building in Flutter:
 * [x] Touch editing
 * [ ] Stylus support
 * [ ] Multi-window support
-* [ ] Plugin architecture
+* [x] Plugin architecture
 
 # A. Document Layout Compatibility Matrix
 
@@ -469,45 +469,45 @@ Since you're building in Flutter:
 
 ### View Modes
 
-* [ ] Print Layout
-* [ ] Draft View
-* [ ] Web Layout
-* [ ] Read Mode
-* [ ] Outline View
-* [ ] Focus Mode
+* [x] Print Layout
+* [x] Draft View
+* [x] Web Layout
+* [x] Read Mode
+* [x] Outline View
+* [x] Focus Mode
 
 ### Page Layout
 
-* [ ] Portrait
-* [ ] Landscape
+* [x] Portrait
+* [x] Landscape
 * [ ] Mixed orientations
-* [ ] Custom page sizes
-* [ ] Multiple paper formats
+* [x] Custom page sizes
+* [x] Multiple paper formats
 
-  * [ ] A4
+  * [x] A4
   * [ ] A3
   * [ ] A5
-  * [ ] Letter
-  * [ ] Legal
+  * [x] Letter
+  * [x] Legal
   * [ ] Executive
-  * [ ] Custom
+  * [x] Custom
 
 ### Multi-column Layouts
 
-* [ ] 1 Column
-* [ ] 2 Columns
-* [ ] 3 Columns
-* [ ] Left Column
-* [ ] Right Column
-* [ ] Custom Columns
+* [x] 1 Column
+* [x] 2 Columns
+* [x] 3 Columns
+* [x] Left Column
+* [x] Right Column
+* [x] Custom Columns
 * [ ] Newspaper Layout
 
 ### Section Layouts
 
-* [ ] Continuous section
-* [ ] Next page section
-* [ ] Even page section
-* [ ] Odd page section
+* [x] Continuous section
+* [x] Next page section
+* [x] Even page section
+* [x] Odd page section
 
 ---
 
@@ -515,29 +515,29 @@ Since you're building in Flutter:
 
 ## Document Features
 
-* [ ] Named sections
+* [x] Named sections
 * [ ] Smart chips
 * [ ] @ mentions
 * [ ] Building blocks
-* [ ] Checklists
+* [x] Checklists
 * [ ] Pageless mode
-* [ ] Page mode
+* [x] Page mode
 
 ## Collaboration
 
-* [ ] Suggestions
-* [ ] Comments
-* [ ] Replies
-* [ ] Version history
+* [x] Suggestions
+* [x] Comments
+* [x] Replies
+* [x] Version history
 
 ## Layout Support
 
-* [ ] Headers
-* [ ] Footers
-* [ ] Columns
-* [ ] Watermarks
-* [ ] Page breaks
-* [ ] Section breaks
+* [x] Headers
+* [x] Footers
+* [x] Columns
+* [x] Watermarks
+* [x] Page breaks
+* [x] Section breaks
 
 ---
 
@@ -545,30 +545,30 @@ Since you're building in Flutter:
 
 ## ODT Features
 
-* [ ] Frames
-* [ ] Sections
-* [ ] Indexes
-* [ ] Bibliographies
-* [ ] Variables
+* [x] Frames
+* [x] Sections
+* [x] Indexes
+* [x] Bibliographies
+* [x] Variables
 * [ ] Conditional text
-* [ ] Hidden text
+* [x] Hidden text
 * [ ] Master documents
 
 ## Layout Objects
 
-* [ ] Frames
-* [ ] Anchored objects
+* [x] Frames
+* [x] Anchored objects
 * [ ] Floating tables
-* [ ] Floating images
-* [ ] Drawing objects
+* [x] Floating images
+* [x] Drawing objects
 
 ## Advanced Styles
 
-* [ ] Page styles
-* [ ] Frame styles
-* [ ] Paragraph styles
-* [ ] Character styles
-* [ ] List styles
+* [x] Page styles
+* [x] Frame styles
+* [x] Paragraph styles
+* [x] Character styles
+* [x] List styles
 
 ---
 
@@ -576,15 +576,15 @@ Since you're building in Flutter:
 
 ## Layout Support
 
-* [ ] ODT
+* [x] ODT
 * [ ] SXW
 * [ ] Flat ODF XML
 
 ## Objects
 
-* [ ] Text frames
-* [ ] Drawings
-* [ ] Shapes
+* [x] Text frames
+* [x] Drawings
+* [x] Shapes
 * [ ] Formula objects
 
 ---
@@ -593,17 +593,17 @@ Since you're building in Flutter:
 
 ## Pages Features
 
-* [ ] Page Layout Mode
-* [ ] Word Processing Mode
-* [ ] Floating Objects
-* [ ] Stay on Page Objects
-* [ ] Inline Objects
+* [x] Page Layout Mode
+* [x] Word Processing Mode
+* [x] Floating Objects
+* [x] Stay on Page Objects
+* [x] Inline Objects
 
 ## Export Compatibility
 
-* [ ] DOCX
-* [ ] PDF
-* [ ] EPUB
+* [x] DOCX
+* [x] PDF
+* [x] EPUB
 * [ ] Pages
 
 ---
@@ -613,16 +613,16 @@ Since you're building in Flutter:
 ## Layout Support
 
 * [ ] DOC
-* [ ] DOCX
-* [ ] ODT
-* [ ] RTF
+* [x] DOCX
+* [x] ODT
+* [x] RTF
 
 ## Objects
 
 * [ ] SmartArt equivalent
-* [ ] Shapes
+* [x] Shapes
 * [ ] WordArt
-* [ ] Watermarks
+* [x] Watermarks
 
 ---
 
@@ -630,17 +630,17 @@ Since you're building in Flutter:
 
 ## Features
 
-* [ ] Content controls
-* [ ] Form fields
-* [ ] Plugins
+* [x] Content controls
+* [x] Form fields
+* [x] Plugins
 * [ ] Collaborative editing
 
 ## DOCX Fidelity
 
-* [ ] Paragraph styles
-* [ ] Character styles
-* [ ] Themes
-* [ ] Track changes
+* [x] Paragraph styles
+* [x] Character styles
+* [x] Themes
+* [x] Track changes
 
 ---
 
@@ -650,21 +650,21 @@ Every editor handles tables differently.
 
 ## Table Engine
 
-* [ ] Fixed width tables
-* [ ] Auto width tables
+* [x] Fixed width tables
+* [x] Auto width tables
 * [ ] Nested tables
-* [ ] Split tables
+* [x] Split tables
 * [ ] Table spanning pages
-* [ ] Repeated headers
+* [x] Repeated headers
 * [ ] Vertical text
 * [ ] Cell rotation
 
 ## Compatibility
 
-* [ ] Word tables
-* [ ] Google Docs tables
-* [ ] ODT tables
-* [ ] HTML tables
+* [x] Word tables
+* [x] Google Docs tables
+* [x] ODT tables
+* [x] HTML tables
 
 ---
 
@@ -674,20 +674,20 @@ One of the hardest parts.
 
 ## Text Wrapping
 
-* [ ] Inline
-* [ ] Square
-* [ ] Tight
-* [ ] Through
-* [ ] Top and Bottom
-* [ ] Behind Text
-* [ ] In Front of Text
+* [x] Inline
+* [x] Square
+* [x] Tight
+* [x] Through
+* [x] Top and Bottom
+* [x] Behind Text
+* [x] In Front of Text
 
 ## Anchoring
 
-* [ ] To page
-* [ ] To paragraph
-* [ ] To character
-* [ ] As character
+* [x] To page
+* [x] To paragraph
+* [x] To character
+* [x] As character
 
 ---
 
@@ -695,22 +695,22 @@ One of the hardest parts.
 
 ## Bullet Lists
 
-* [ ] Disc
-* [ ] Circle
-* [ ] Square
-* [ ] Image bullets
+* [x] Disc
+* [x] Circle
+* [x] Square
+* [x] Image bullets
 
 ## Numbering
 
-* [ ] Arabic
-* [ ] Roman
-* [ ] Alphabetic
-* [ ] Multilevel numbering
+* [x] Arabic
+* [x] Roman
+* [x] Alphabetic
+* [x] Multilevel numbering
 
 ## Outline Lists
 
-* [ ] Heading numbering
-* [ ] Nested numbering
+* [x] Heading numbering
+* [x] Nested numbering
 
 ---
 
@@ -718,27 +718,27 @@ One of the hardest parts.
 
 ## OpenType
 
-* [ ] Ligatures
-* [ ] Stylistic Sets
-* [ ] Kerning
+* [x] Ligatures
+* [x] Stylistic Sets
+* [x] Kerning
 * [ ] Alternate Glyphs
 
 ## Scripts
 
-* [ ] Arabic
-* [ ] Hebrew
-* [ ] Hindi
+* [x] Arabic
+* [x] Hebrew
+* [x] Hindi
 * [ ] Tamil
-* [ ] Chinese
-* [ ] Japanese
-* [ ] Korean
+* [x] Chinese
+* [x] Japanese
+* [x] Korean
 * [ ] Thai
 
 ## Direction
 
-* [ ] LTR
-* [ ] RTL
-* [ ] Mixed direction
+* [x] LTR
+* [x] RTL
+* [x] Mixed direction
 
 ---
 
@@ -747,7 +747,7 @@ One of the hardest parts.
 ## Microsoft Formats
 
 * [ ] DOC
-* [ ] DOCX
+* [x] DOCX
 * [ ] DOT
 * [ ] DOTX
 * [ ] DOCM
@@ -755,17 +755,17 @@ One of the hardest parts.
 
 ## OpenDocument
 
-* [ ] ODT
+* [x] ODT
 * [ ] OTT
 * [ ] FODT
 
 ## Other
 
-* [ ] RTF
-* [ ] TXT
-* [ ] HTML
-* [ ] Markdown
-* [ ] EPUB
+* [x] RTF
+* [x] TXT
+* [x] HTML
+* [x] Markdown
+* [x] EPUB
 * [ ] PDF Import
 
 ---
@@ -774,22 +774,22 @@ One of the hardest parts.
 
 ## Export Fidelity
 
-* [ ] Visual Fidelity
-* [ ] Style Fidelity
+* [x] Visual Fidelity
+* [x] Style Fidelity
 * [ ] Pagination Fidelity
-* [ ] Header/Footer Fidelity
-* [ ] Table Fidelity
-* [ ] Footnote Fidelity
+* [x] Header/Footer Fidelity
+* [x] Table Fidelity
+* [x] Footnote Fidelity
 
 ## Formats
 
-* [ ] DOCX
-* [ ] ODT
-* [ ] PDF
-* [ ] HTML
-* [ ] EPUB
-* [ ] Markdown
-* [ ] TXT
+* [x] DOCX
+* [x] ODT
+* [x] PDF
+* [x] HTML
+* [x] EPUB
+* [x] Markdown
+* [x] TXT
 
 ---
 
@@ -826,23 +826,23 @@ Open and compare:
 
 These are the features that break compatibility the most:
 
-* [ ] Widow/orphan control
-* [ ] Keep with next
-* [ ] Keep lines together
+* [x] Widow/orphan control
+* [x] Keep with next
+* [x] Keep lines together
 * [ ] Floating tables
 * [ ] Nested floating objects
-* [ ] Section-specific headers
-* [ ] Different first page headers
-* [ ] Odd/even page headers
+* [x] Section-specific headers
+* [x] Different first page headers
+* [x] Odd/even page headers
 * [ ] Complex script shaping
 * [ ] Vertical Asian text
 * [ ] Footnote balancing
 * [ ] Endnote balancing
 * [ ] Multi-column balancing
 * [ ] Text wrap around irregular shapes
-* [ ] OpenType typography
-* [ ] Tracked changes rendering
-* [ ] Comment balloons
+* [x] OpenType typography
+* [x] Tracked changes rendering
+* [x] Comment balloons
 * [ ] DOCX compatibility >95%
 
 # P. Mathematical Formula Engine

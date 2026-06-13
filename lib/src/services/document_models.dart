@@ -22,7 +22,11 @@ enum OoxmlVisualBlockType { paragraph, table, partText }
 
 enum OoxmlTextAlign { left, center, right, justify }
 
-enum OpenXmlBlockType { paragraph, table, reviewMarker, bibliography }
+enum OpenXmlBlockType { paragraph, table, reviewMarker, bibliography, textBox, list, formField }
+
+enum ImageFilterType { none, grayscale, sepia, blur, sharpen, invert }
+
+enum FormFieldType { text, dropdown, checkbox, date }
 
 enum OpenXmlTextStyle {
   normal('Normal', null),
@@ -163,6 +167,41 @@ class OpenXmlBlockFactory {
         repeatHeaderRow: json['repeatHeaderRow'] == true,
         mergedCells: _mergedCellsFromJson(json['mergedCells']),
       ),
+      'list' => ListBlock(
+        items: json['items'] is List
+            ? (json['items'] as List)
+                  .whereType<Map<String, Object?>>()
+                  .map(ListItem.fromJson)
+                  .toList()
+            : const [],
+        ordered: json['ordered'] == true,
+        bulletStyle: _enumByName(
+          BulletStyle.values, json['bulletStyle'], BulletStyle.disc),
+        numberingStyle: _enumByName(
+          NumberingStyle.values, json['numberingStyle'], NumberingStyle.arabic),
+        startNumber: json['startNumber'] is int ? json['startNumber'] as int : 1,
+      ),
+      'textBox' => TextBoxBlock(
+        content: json['content'] is String ? json['content'] as String : '',
+        widthFraction: json['widthFraction'] is num
+            ? (json['widthFraction'] as num).toDouble()
+            : 0.4,
+        rotation: json['rotation'] is num
+            ? (json['rotation'] as num).toDouble()
+            : 0.0,
+        anchorType: _enumByName(
+          TextBoxAnchorType.values,
+          json['anchorType'],
+          TextBoxAnchorType.inline,
+        ),
+        borderColorHex: json['borderColorHex'] is String
+            ? json['borderColorHex'] as String
+            : null,
+        fillColorHex: json['fillColorHex'] is String
+            ? json['fillColorHex'] as String
+            : null,
+      ),
+      'formField' => FormFieldBlock.fromJson(json),
       _ => null,
     };
   }
@@ -197,6 +236,11 @@ class OpenXmlRun {
     this.colorHex,
     this.highlightHex,
     this.letterSpacing,
+    this.kerning,
+    this.textShadow = false,
+    this.textOutline = false,
+    this.ligatures = false,
+    this.stylisticSet,
     this.href,
     this.fontFamily,
     this.fontSize,
@@ -217,6 +261,16 @@ class OpenXmlRun {
   final String? colorHex;
   final String? highlightHex;
   final double? letterSpacing;
+  /// OpenType kerning value in half-points. Positive = expanded, negative = condensed, null = auto.
+  final double? kerning;
+  /// Drop shadow text effect.
+  final bool textShadow;
+  /// Outline text effect.
+  final bool textOutline;
+  /// Enable OpenType ligatures (fi, fl, ff, ffi, ffl).
+  final bool ligatures;
+  /// OpenType stylistic set index (1–20). Null = default.
+  final int? stylisticSet;
   final String? href;
   /// Run-level font family override (null = use document default).
   final String? fontFamily;
@@ -263,6 +317,11 @@ class OpenXmlRun {
       if (colorHex != null) 'colorHex': colorHex,
       if (highlightHex != null) 'highlightHex': highlightHex,
       if (letterSpacing != null) 'letterSpacing': letterSpacing,
+      if (kerning != null) 'kerning': kerning,
+      if (textShadow) 'textShadow': true,
+      if (textOutline) 'textOutline': true,
+      if (ligatures) 'ligatures': true,
+      if (stylisticSet != null) 'stylisticSet': stylisticSet,
       if (href != null) 'href': href,
       if (fontFamily != null) 'fontFamily': fontFamily,
       if (fontSize != null) 'fontSize': fontSize,
@@ -757,6 +816,15 @@ List<OpenXmlRun> _openXmlRunsFromJson(Object? value) {
               : null,
           letterSpacing: item['letterSpacing'] is num
               ? (item['letterSpacing'] as num).toDouble()
+              : null,
+          kerning: item['kerning'] is num
+              ? (item['kerning'] as num).toDouble()
+              : null,
+          textShadow: item['textShadow'] == true,
+          textOutline: item['textOutline'] == true,
+          ligatures: item['ligatures'] == true,
+          stylisticSet: item['stylisticSet'] is int
+              ? item['stylisticSet'] as int
               : null,
           href: item['href'] is String ? item['href'] as String : null,
           fontFamily:
@@ -1380,6 +1448,13 @@ class MediaBlock {
     this.widthFraction,
     this.heightPx,
     this.rotation = 0.0,
+    this.opacity = 1.0,
+    this.cropLeft = 0.0,
+    this.cropTop = 0.0,
+    this.cropRight = 0.0,
+    this.cropBottom = 0.0,
+    this.imageFilter = ImageFilterType.none,
+    this.brightness = 1.0,
   });
 
   final String id;
@@ -1394,6 +1469,17 @@ class MediaBlock {
   final double? heightPx;
   /// Rotation in degrees (0, 90, 180, 270).
   final double rotation;
+  /// Opacity from 0.0 (transparent) to 1.0 (fully opaque).
+  final double opacity;
+  /// Crop fractions (0.0–1.0) removed from each edge.
+  final double cropLeft;
+  final double cropTop;
+  final double cropRight;
+  final double cropBottom;
+  /// Color filter applied to the image.
+  final ImageFilterType imageFilter;
+  /// Brightness multiplier (0.0–2.0, default 1.0).
+  final double brightness;
 
   MediaBlock copyWith({
     String? id,
@@ -1405,6 +1491,13 @@ class MediaBlock {
     double? widthFraction,
     double? heightPx,
     double? rotation,
+    double? opacity,
+    double? cropLeft,
+    double? cropTop,
+    double? cropRight,
+    double? cropBottom,
+    ImageFilterType? imageFilter,
+    double? brightness,
   }) {
     return MediaBlock(
       id: id ?? this.id,
@@ -1416,6 +1509,13 @@ class MediaBlock {
       widthFraction: widthFraction ?? this.widthFraction,
       heightPx: heightPx ?? this.heightPx,
       rotation: rotation ?? this.rotation,
+      opacity: opacity ?? this.opacity,
+      cropLeft: cropLeft ?? this.cropLeft,
+      cropTop: cropTop ?? this.cropTop,
+      cropRight: cropRight ?? this.cropRight,
+      cropBottom: cropBottom ?? this.cropBottom,
+      imageFilter: imageFilter ?? this.imageFilter,
+      brightness: brightness ?? this.brightness,
     );
   }
 }
@@ -1581,6 +1681,7 @@ class CustomDocumentStyle {
     required this.id,
     required this.name,
     this.parentStyleId,
+    this.linkedStyleId,
     this.bold = false,
     this.italic = false,
     this.underline = false,
@@ -1596,6 +1697,8 @@ class CustomDocumentStyle {
   final String id;
   final String name;
   final String? parentStyleId;
+  /// ID of a character style linked to this paragraph style (and vice-versa).
+  final String? linkedStyleId;
   final bool bold;
   final bool italic;
   final bool underline;
@@ -1610,6 +1713,7 @@ class CustomDocumentStyle {
   CustomDocumentStyle copyWith({
     String? name,
     String? parentStyleId,
+    String? linkedStyleId,
     bool? bold,
     bool? italic,
     bool? underline,
@@ -1625,6 +1729,7 @@ class CustomDocumentStyle {
       id: id,
       name: name ?? this.name,
       parentStyleId: parentStyleId ?? this.parentStyleId,
+      linkedStyleId: linkedStyleId ?? this.linkedStyleId,
       bold: bold ?? this.bold,
       italic: italic ?? this.italic,
       underline: underline ?? this.underline,
@@ -1755,6 +1860,205 @@ class DocumentCommentReply {
   );
 }
 
+// ── Watermark ─────────────────────────────────────────────────────────────────
+
+class DocumentWatermark {
+  const DocumentWatermark({
+    this.text = 'DRAFT',
+    this.opacity = 0.15,
+    this.rotation = -45.0,
+    this.colorHex = 'FF0000',
+    this.fontSize = 72.0,
+  });
+
+  final String text;
+  final double opacity;
+  final double rotation;
+  final String colorHex;
+  final double fontSize;
+
+  DocumentWatermark copyWith({
+    String? text,
+    double? opacity,
+    double? rotation,
+    String? colorHex,
+    double? fontSize,
+  }) {
+    return DocumentWatermark(
+      text: text ?? this.text,
+      opacity: opacity ?? this.opacity,
+      rotation: rotation ?? this.rotation,
+      colorHex: colorHex ?? this.colorHex,
+      fontSize: fontSize ?? this.fontSize,
+    );
+  }
+}
+
+// ── Text box ──────────────────────────────────────────────────────────────────
+
+class TextBoxBlock extends OpenXmlBlock {
+  const TextBoxBlock({
+    required this.content,
+    this.widthFraction = 0.4,
+    this.rotation = 0.0,
+    this.anchorType = TextBoxAnchorType.inline,
+    this.borderColorHex,
+    this.fillColorHex,
+  }) : super(OpenXmlBlockType.textBox);
+
+  final String content;
+  /// Width as a fraction of page content width.
+  final double widthFraction;
+  /// Rotation in degrees.
+  final double rotation;
+  final TextBoxAnchorType anchorType;
+  final String? borderColorHex;
+  final String? fillColorHex;
+
+  TextBoxBlock copyWith({
+    String? content,
+    double? widthFraction,
+    double? rotation,
+    TextBoxAnchorType? anchorType,
+    String? borderColorHex,
+    String? fillColorHex,
+  }) {
+    return TextBoxBlock(
+      content: content ?? this.content,
+      widthFraction: widthFraction ?? this.widthFraction,
+      rotation: rotation ?? this.rotation,
+      anchorType: anchorType ?? this.anchorType,
+      borderColorHex: borderColorHex ?? this.borderColorHex,
+      fillColorHex: fillColorHex ?? this.fillColorHex,
+    );
+  }
+
+  @override
+  String get plainText => content;
+
+  @override
+  docx.DocxNode toDocxNode() {
+    return docx.DocxParagraph(
+      children: [docx.DocxText('[$content]')],
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() {
+    return {
+      'type': type.name,
+      'content': content,
+      'widthFraction': widthFraction,
+      'rotation': rotation,
+      'anchorType': anchorType.name,
+      if (borderColorHex != null) 'borderColorHex': borderColorHex,
+      if (fillColorHex != null) 'fillColorHex': fillColorHex,
+    };
+  }
+}
+
+enum TextBoxAnchorType { inline, floating, anchored }
+
+// ── Lists ─────────────────────────────────────────────────────────────────────
+
+enum BulletStyle { disc, circle, square, imageBullet }
+
+enum NumberingStyle { arabic, roman, alphabeticUpper, alphabeticLower, multilevel }
+
+class ListItem {
+  const ListItem({
+    required this.text,
+    this.level = 0,
+    this.checked,
+  });
+
+  final String text;
+  /// Nesting level (0 = top level).
+  final int level;
+  /// For checklists: true = checked, false = unchecked, null = not a checklist.
+  final bool? checked;
+
+  ListItem copyWith({String? text, int? level, bool? checked}) {
+    return ListItem(
+      text: text ?? this.text,
+      level: level ?? this.level,
+      checked: checked ?? this.checked,
+    );
+  }
+
+  Map<String, Object?> toJson() => {
+    'text': text,
+    if (level != 0) 'level': level,
+    if (checked != null) 'checked': checked,
+  };
+
+  factory ListItem.fromJson(Map<String, Object?> json) {
+    return ListItem(
+      text: json['text'] is String ? json['text'] as String : '',
+      level: json['level'] is int ? json['level'] as int : 0,
+      checked: json['checked'] is bool ? json['checked'] as bool : null,
+    );
+  }
+}
+
+class ListBlock extends OpenXmlBlock {
+  const ListBlock({
+    required this.items,
+    this.ordered = false,
+    this.bulletStyle = BulletStyle.disc,
+    this.numberingStyle = NumberingStyle.arabic,
+    this.startNumber = 1,
+  }) : super(OpenXmlBlockType.list);
+
+  final List<ListItem> items;
+  /// Whether this is an ordered (numbered) list.
+  final bool ordered;
+  final BulletStyle bulletStyle;
+  final NumberingStyle numberingStyle;
+  final int startNumber;
+
+  ListBlock copyWith({
+    List<ListItem>? items,
+    bool? ordered,
+    BulletStyle? bulletStyle,
+    NumberingStyle? numberingStyle,
+    int? startNumber,
+  }) {
+    return ListBlock(
+      items: items ?? this.items,
+      ordered: ordered ?? this.ordered,
+      bulletStyle: bulletStyle ?? this.bulletStyle,
+      numberingStyle: numberingStyle ?? this.numberingStyle,
+      startNumber: startNumber ?? this.startNumber,
+    );
+  }
+
+  @override
+  String get plainText => items.map((i) => i.text).join('\n');
+
+  @override
+  docx.DocxNode toDocxNode() {
+    return docx.DocxList.items(
+      [
+        for (final item in items)
+          docx.DocxListItem.rich([docx.DocxText(item.text)]),
+      ],
+      ordered: ordered,
+      start: startNumber,
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() => {
+    'type': type.name,
+    'ordered': ordered,
+    'bulletStyle': bulletStyle.name,
+    'numberingStyle': numberingStyle.name,
+    'startNumber': startNumber,
+    'items': [for (final i in items) i.toJson()],
+  };
+}
+
 class DocumentComment {
   DocumentComment({
     required this.id,
@@ -1786,4 +2090,92 @@ class DocumentComment {
       resolved: resolved ?? this.resolved,
     );
   }
+}
+
+// ── Form field / content control ─────────────────────────────────────────────
+
+class FormFieldBlock extends OpenXmlBlock {
+  const FormFieldBlock({
+    required this.fieldType,
+    this.label = '',
+    this.placeholder = '',
+    this.value = '',
+    this.options = const [],
+    this.required = false,
+  }) : super(OpenXmlBlockType.formField);
+
+  factory FormFieldBlock.fromJson(Map<String, Object?> json) {
+    final typeStr = json['fieldType'] as String? ?? 'text';
+    return FormFieldBlock(
+      fieldType: FormFieldType.values.firstWhere(
+        (e) => e.name == typeStr,
+        orElse: () => FormFieldType.text,
+      ),
+      label: json['label'] as String? ?? '',
+      placeholder: json['placeholder'] as String? ?? '',
+      value: json['value'] as String? ?? '',
+      options: (json['options'] as List?)?.cast<String>() ?? const [],
+      required: json['required'] == true,
+    );
+  }
+
+  final FormFieldType fieldType;
+  final String label;
+  final String placeholder;
+  final String value;
+  final List<String> options;
+  final bool required;
+
+  @override
+  String get plainText => '[$label]';
+
+  @override
+  docx.DocxNode toDocxNode() {
+    return docx.DocxParagraph(
+      children: [docx.DocxText('[$label: $placeholder]', fontStyle: docx.DocxFontStyle.italic)],
+    );
+  }
+
+  FormFieldBlock copyWith({
+    FormFieldType? fieldType,
+    String? label,
+    String? placeholder,
+    String? value,
+    List<String>? options,
+    bool? required,
+  }) {
+    return FormFieldBlock(
+      fieldType: fieldType ?? this.fieldType,
+      label: label ?? this.label,
+      placeholder: placeholder ?? this.placeholder,
+      value: value ?? this.value,
+      options: options ?? this.options,
+      required: required ?? this.required,
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() => {
+    'type': 'formField',
+    'fieldType': fieldType.name,
+    'label': label,
+    'placeholder': placeholder,
+    'value': value,
+    'options': options,
+    'required': required,
+  };
+}
+
+// ── Document named snapshot ───────────────────────────────────────────────────
+
+class DocumentSnapshot {
+  const DocumentSnapshot({
+    required this.name,
+    required this.createdAt,
+    required this.json,
+  });
+
+  final String name;
+  final DateTime createdAt;
+  final Map<String, Object?> json;
 }
