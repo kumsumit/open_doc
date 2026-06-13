@@ -200,6 +200,10 @@ It should be an entire document creation, layout, collaboration, automation, pub
 * [x] Theme colors
 * [x] Theme templates
 
+## Toolbar / UI Customization
+
+* [x] Configurable toolbar layout (single row, two rows, compact)
+
 ## Templates
 
 * [x] User templates
@@ -389,6 +393,7 @@ These would differentiate your editor:
 * [x] Branches
 * [x] Named snapshots
 * [x] Visual diff timeline
+* [x] Autosave (user-configurable interval)
 
 ## Infinite Canvas Mode
 

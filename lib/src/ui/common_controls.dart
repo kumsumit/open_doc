@@ -34,17 +34,50 @@ class Ruler extends StatelessWidget {
   }
 }
 
+/// Provides the toolbar density to descendant [RibbonGroup]s so a single
+/// wrapper can hide every group caption for the compact toolbar layout.
+class RibbonGroupLabels extends InheritedWidget {
+  const RibbonGroupLabels({
+    required this.visible,
+    required super.child,
+  });
+
+  final bool visible;
+
+  static bool of(BuildContext context) {
+    final scope = context
+        .dependOnInheritedWidgetOfExactType<RibbonGroupLabels>();
+    return scope?.visible ?? true;
+  }
+
+  @override
+  bool updateShouldNotify(RibbonGroupLabels oldWidget) =>
+      visible != oldWidget.visible;
+}
+
 class RibbonGroup extends StatelessWidget {
-  const RibbonGroup({required this.label, required this.child});
+  const RibbonGroup({
+    required this.label,
+    required this.child,
+    this.showLabel = true,
+  });
 
   final String label;
   final Widget child;
 
+  /// When false the group caption is hidden, yielding a denser toolbar used
+  /// by the compact toolbar layout. Defers to an ancestor [RibbonGroupLabels]
+  /// when present so the layout can toggle every group at once.
+  final bool showLabel;
+
   @override
   Widget build(BuildContext context) {
+    final showLabel = this.showLabel && RibbonGroupLabels.of(context);
     return Container(
       margin: const EdgeInsets.only(right: 14),
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 5),
+      padding: showLabel
+          ? const EdgeInsets.fromLTRB(10, 8, 10, 5)
+          : const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: const Color(0xffe2e8f0)),
@@ -54,15 +87,17 @@ class RibbonGroup extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           child,
-          const SizedBox(height: 6),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Color(0xff64748b),
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
+          if (showLabel) ...[
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Color(0xff64748b),
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );

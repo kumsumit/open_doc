@@ -5,9 +5,29 @@ import 'package:flutter/material.dart';
 import '../services/document_export_service.dart';
 import 'common_controls.dart';
 
+/// How the formatting ribbon arranges its command groups. Mirrors the
+/// "User Interface" choices LibreOffice offers (single toolbar, two rows,
+/// compact/tabbed).
+enum ToolbarLayout {
+  /// All groups on one horizontally scrolling row (default).
+  singleRow('Single row', 'All tools on one scrolling row'),
+
+  /// Groups split across two stacked rows, like the classic two-toolbar look.
+  twoRows('Two rows', 'Tools split across two stacked rows'),
+
+  /// One row with group captions hidden for a denser, tabbed-style bar.
+  compact('Compact', 'Single dense row, no group labels');
+
+  const ToolbarLayout(this.label, this.description);
+
+  final String label;
+  final String description;
+}
+
 class Ribbon extends StatelessWidget {
   const Ribbon({
     super.key,
+    this.layout = ToolbarLayout.singleRow,
     required this.bold,
     required this.italic,
     required this.underline,
@@ -142,6 +162,7 @@ class Ribbon extends StatelessWidget {
     required this.onPluginArchitecture,
   });
 
+  final ToolbarLayout layout;
   final bool bold;
   final bool italic;
   final bool underline;
@@ -282,20 +303,7 @@ class Ribbon extends StatelessWidget {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxWidth < 640;
-          return Container(
-            height: 112,
-            padding: EdgeInsets.fromLTRB(
-              compact ? 10 : 16,
-              10,
-              compact ? 10 : 16,
-              compact ? 8 : 12,
-            ),
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: Color(0xffdbe3ef))),
-            ),
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: [
+          final groups = <Widget>[
                 RibbonGroup(
                   label: 'Document',
                   child: Row(
@@ -944,12 +952,75 @@ class Ribbon extends StatelessWidget {
                     ],
                   ),
                 ),
-              ],
-            ),
-          );
+          ];
+          return _buildBody(groups, compact);
         },
       ),
     );
+  }
+
+  /// Arranges the ribbon [groups] according to [layout].
+  Widget _buildBody(List<Widget> groups, bool compact) {
+    final horizontalPad = compact ? 10.0 : 16.0;
+
+    Widget scrollingRow(List<Widget> items) {
+      return ListView(
+        scrollDirection: Axis.horizontal,
+        children: items,
+      );
+    }
+
+    switch (layout) {
+      case ToolbarLayout.twoRows:
+        // Split the groups roughly in half across two stacked rows.
+        final mid = (groups.length / 2).ceil();
+        return Container(
+          height: 196,
+          padding: EdgeInsets.symmetric(
+            horizontal: horizontalPad,
+            vertical: 8,
+          ),
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: Color(0xffdbe3ef))),
+          ),
+          child: Column(
+            children: [
+              Expanded(child: scrollingRow(groups.sublist(0, mid))),
+              const SizedBox(height: 6),
+              Expanded(child: scrollingRow(groups.sublist(mid))),
+            ],
+          ),
+        );
+      case ToolbarLayout.compact:
+        return RibbonGroupLabels(
+          visible: false,
+          child: Container(
+            height: 64,
+            padding: EdgeInsets.symmetric(
+              horizontal: horizontalPad,
+              vertical: 8,
+            ),
+            decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: Color(0xffdbe3ef))),
+            ),
+            child: scrollingRow(groups),
+          ),
+        );
+      case ToolbarLayout.singleRow:
+        return Container(
+          height: 112,
+          padding: EdgeInsets.fromLTRB(
+            horizontalPad,
+            10,
+            horizontalPad,
+            compact ? 8 : 12,
+          ),
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: Color(0xffdbe3ef))),
+          ),
+          child: scrollingRow(groups),
+        );
+    }
   }
 }
 

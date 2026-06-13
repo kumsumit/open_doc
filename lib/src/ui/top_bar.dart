@@ -10,8 +10,12 @@ class TopBar extends StatelessWidget {
     required this.titleController,
     required this.focusMode,
     required this.saved,
+    required this.autosaveEnabled,
+    required this.autosaveLabel,
     required this.onNew,
     required this.onSave,
+    required this.onAutosave,
+    required this.onToolbarLayout,
     required this.onImport,
     required this.onTemplates,
     required this.onDuplicate,
@@ -25,8 +29,15 @@ class TopBar extends StatelessWidget {
   final TextEditingController titleController;
   final bool focusMode;
   final bool saved;
+  final bool autosaveEnabled;
+
+  /// Short description of the active autosave cadence (e.g. "every 2 min"),
+  /// shown as a tooltip on the autosave action.
+  final String autosaveLabel;
   final VoidCallback onNew;
   final VoidCallback onSave;
+  final VoidCallback onAutosave;
+  final VoidCallback onToolbarLayout;
   final VoidCallback onImport;
   final VoidCallback onTemplates;
   final VoidCallback onDuplicate;
@@ -128,18 +139,27 @@ class TopBar extends StatelessWidget {
                         onTap: onSave,
                       ),
                       IconAction(
+                        icon: autosaveEnabled
+                            ? Icons.timer_outlined
+                            : Icons.timer_off_outlined,
+                        label: autosaveEnabled
+                            ? 'Autosave ($autosaveLabel)'
+                            : 'Autosave off',
+                        onTap: onAutosave,
+                      ),
+                      IconAction(
                         icon: Icons.dashboard_customize_outlined,
                         label: 'Templates',
                         onTap: onTemplates,
                       ),
                       IconAction(
-                        icon: Icons.copy_outlined,
-                        label: 'Duplicate',
+                        icon: Icons.file_copy_outlined,
+                        label: 'Duplicate document',
                         onTap: onDuplicate,
                       ),
                       IconAction(
                         icon: Icons.content_copy_outlined,
-                        label: 'Copy',
+                        label: 'Copy text to clipboard',
                         onTap: onCopy,
                       ),
                       IconAction(
@@ -177,6 +197,11 @@ class TopBar extends StatelessWidget {
                           filled: true,
                         ),
                       ],
+                      IconAction(
+                        icon: Icons.view_compact_outlined,
+                        label: 'Toolbar layout',
+                        onTap: onToolbarLayout,
+                      ),
                       IconAction(
                         icon: focusMode
                             ? Icons.fullscreen_exit_outlined

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -287,6 +288,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
   final List<OpenXmlDocument> _openXmlRedoStack = [];
   bool _syncingSrqFromOpenXml = false;
 
+  ToolbarLayout _toolbarLayout = ToolbarLayout.singleRow;
   bool _showRuler = true;
   bool _showNavigation = true;
   bool _showInspector = true;
@@ -330,6 +332,24 @@ class _DocumentStudioState extends State<DocumentStudio> {
   Color? _wysiwygInkCommandColor;
   int _wysiwygInkCommandId = 0;
   DateTime _savedAt = DateTime.now();
+
+  // ── Autosave ───────────────────────────────────────────────────────────────
+  /// Whether the document is saved automatically on a timer.
+  bool _autosaveEnabled = false;
+
+  /// How often autosave fires when enabled. Configurable by the user.
+  Duration _autosaveInterval = const Duration(minutes: 2);
+
+  /// Preset intervals offered in the autosave configuration dialog.
+  static const List<Duration> _autosaveIntervalPresets = [
+    Duration(seconds: 30),
+    Duration(minutes: 1),
+    Duration(minutes: 2),
+    Duration(minutes: 5),
+    Duration(minutes: 10),
+  ];
+  Timer? _autosaveTimer;
+
   final List<MediaBlock> _mediaBlocks = [];
   final List<CustomFontFile> _customFonts = [];
 
@@ -429,6 +449,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
       ..dispose();
     _replaceController.dispose();
     _editorFocusNode.dispose();
+    _autosaveTimer?.cancel();
     super.dispose();
   }
 
@@ -4478,6 +4499,145 @@ class _DocumentStudioState extends State<DocumentStudio> {
     setState(() => _captureVersion('Saved ${_titleController.text}'));
     _logAudit('Save', detail: _titleController.text);
     _showSnack('Saved locally as $_activeVersion.');
+  }
+
+  // ── Autosave ───────────────────────────────────────────────────────────────
+
+  /// (Re)starts the autosave timer when enabled, or cancels it when disabled.
+  /// Called whenever autosave is toggled or its interval changes.
+  void _restartAutosaveTimer() {
+    _autosaveTimer?.cancel();
+    if (!_autosaveEnabled) {
+      _autosaveTimer = null;
+      return;
+    }
+    _autosaveTimer = Timer.periodic(_autosaveInterval, (_) {
+      if (!mounted) return;
+      // Only persist when there are unsaved edits to avoid spamming versions.
+      if (!_saved) {
+        _saveDocument();
+      }
+    });
+  }
+
+  /// Human-readable label for an autosave interval (e.g. "30 sec", "2 min").
+  String _autosaveIntervalLabel(Duration interval) {
+    if (interval.inMinutes >= 1) {
+      final minutes = interval.inMinutes;
+      return '$minutes min';
+    }
+    return '${interval.inSeconds} sec';
+  }
+
+  void _showAutosaveSettings() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        bool enabled = _autosaveEnabled;
+        Duration interval = _autosaveInterval;
+        return StatefulBuilder(
+          builder: (context, setLocalState) {
+            return AlertDialog(
+              title: const Text('Autosave settings'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Enable autosave'),
+                    subtitle: const Text(
+                      'Automatically save changes on a timer.',
+                    ),
+                    value: enabled,
+                    onChanged: (value) =>
+                        setLocalState(() => enabled = value),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Save every',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: enabled ? null : Theme.of(context).disabledColor,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final preset in _autosaveIntervalPresets)
+                        ChoiceChip(
+                          label: Text(_autosaveIntervalLabel(preset)),
+                          selected: interval == preset,
+                          onSelected: enabled
+                              ? (_) =>
+                                    setLocalState(() => interval = preset)
+                              : null,
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop();
+                    setState(() {
+                      _autosaveEnabled = enabled;
+                      _autosaveInterval = interval;
+                    });
+                    _restartAutosaveTimer();
+                    _showSnack(
+                      enabled
+                          ? 'Autosave on — every '
+                                '${_autosaveIntervalLabel(interval)}.'
+                          : 'Autosave turned off.',
+                    );
+                  },
+                  child: const Text('Apply'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showToolbarLayoutMenu() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return SimpleDialog(
+          title: const Text('Toolbar layout'),
+          children: [
+            for (final option in ToolbarLayout.values)
+              ListTile(
+                leading: Icon(
+                  option == _toolbarLayout
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                  color: option == _toolbarLayout
+                      ? Theme.of(dialogContext).colorScheme.primary
+                      : null,
+                ),
+                title: Text(option.label),
+                subtitle: Text(option.description),
+                onTap: () {
+                  Navigator.of(dialogContext).pop();
+                  setState(() => _toolbarLayout = option);
+                  _showSnack('Toolbar layout: ${option.label}.');
+                },
+              ),
+          ],
+        );
+      },
+    );
   }
 
   void _newDocument() {
@@ -8672,8 +8832,13 @@ class _DocumentStudioState extends State<DocumentStudio> {
                       titleController: _titleController,
                       focusMode: _focusMode,
                       saved: _saved,
+                      autosaveEnabled: _autosaveEnabled,
+                      autosaveLabel: 'every '
+                          '${_autosaveIntervalLabel(_autosaveInterval)}',
                       onNew: _newDocument,
                       onSave: _saveDocument,
+                      onAutosave: _showAutosaveSettings,
+                      onToolbarLayout: _showToolbarLayoutMenu,
                       onImport: _showImportSheet,
                       onTemplates: _showTemplateSheet,
                       onDuplicate: _duplicateDocument,
@@ -8696,6 +8861,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                             }
                           },
                           child: Ribbon(
+                            layout: _toolbarLayout,
                             bold: _bold,
                             italic: _italic,
                             underline: _underline,
