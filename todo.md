@@ -816,7 +816,6 @@ Open and compare:
 
 * [x] Word → Your Editor → Word
 * [x] LibreOffice → Your Editor → LibreOffice
-* [ ] Google Docs → DOCX → Your Editor
 * [ ] Your Editor → DOCX → Word
 * [ ] Your Editor → ODT → LibreOffice
 
@@ -1159,8 +1158,6 @@ These are the features that break compatibility the most:
 ---
 
 # Z. Ultimate Document Engine Features
-
-If you're designing a next-generation editor rather than cloning Word:
 
 * [x] Native LaTeX document support
 * [x] Native Markdown support
