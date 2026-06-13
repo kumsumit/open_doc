@@ -501,9 +501,9 @@ class DocxThesisFrontMatter extends DocxBlock {
         builder.element('w:t', nest: () {
           final lines = [
             author,
-            if (degree case final d?) d,
-            if (institution case final inst?) inst,
-            if (department case final dept?) dept,
+            ?degree,
+            ?institution,
+            ?department,
             if (year case final y?) y.toString(),
           ];
           builder.text(lines.join('\n'));

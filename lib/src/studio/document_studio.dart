@@ -8014,7 +8014,7 @@ class _DocumentStudioState extends State<DocumentStudio> {
                     child: ReorderableListView.builder(
                       shrinkWrap: true,
                       itemCount: _approvalSteps.length,
-                      onReorder: (o, n) {
+                      onReorderItem: (o, n) {
                         setDlg(() {
                           final item = _approvalSteps.removeAt(o);
                           _approvalSteps.insert(

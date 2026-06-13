@@ -151,7 +151,9 @@ class DocxScriptShaper {
     if (first >= 0x0E00 && first <= 0x0E7F) return DocxScriptCategory.thai;
     if (first >= 0x0F00 && first <= 0x0FFF) return DocxScriptCategory.tibetan;
     if ((first >= 0x4E00 && first <= 0x9FFF) ||
-        (first >= 0x3040 && first <= 0x30FF)) return DocxScriptCategory.cjk;
+        (first >= 0x3040 && first <= 0x30FF)) {
+      return DocxScriptCategory.cjk;
+    }
     if (first >= 0xAC00 && first <= 0xD7FF) return DocxScriptCategory.hangul;
     return DocxScriptCategory.latin;
   }
