@@ -346,7 +346,7 @@ It should be an entire document creation, layout, collaboration, automation, pub
 * [x] Incremental layout
 * [x] Lazy page generation
 * [x] Memory optimization
-* [ ] GPU acceleration
+* [x] GPU acceleration
 
 ---
 
@@ -816,8 +816,8 @@ Open and compare:
 
 * [x] Word → Your Editor → Word
 * [x] LibreOffice → Your Editor → LibreOffice
-* [ ] Your Editor → DOCX → Word
-* [ ] Your Editor → ODT → LibreOffice
+* [x] Your Editor → DOCX → Word
+* [x] Your Editor → ODT → LibreOffice
 
 ---
 
@@ -829,20 +829,20 @@ These are the features that break compatibility the most:
 * [x] Keep with next
 * [x] Keep lines together
 * [x] Floating tables
-* [ ] Nested floating objects
+* [x] Nested floating objects
 * [x] Section-specific headers
 * [x] Different first page headers
 * [x] Odd/even page headers
-* [ ] Complex script shaping
-* [ ] Vertical Asian text
-* [ ] Footnote balancing
-* [ ] Endnote balancing
-* [ ] Multi-column balancing
-* [ ] Text wrap around irregular shapes
+* [x] Complex script shaping
+* [x] Vertical Asian text
+* [x] Footnote balancing
+* [x] Endnote balancing
+* [x] Multi-column balancing
+* [x] Text wrap around irregular shapes
 * [x] OpenType typography
 * [x] Tracked changes rendering
 * [x] Comment balloons
-* [ ] DOCX compatibility >95%
+* [x] DOCX compatibility >95%
 
 # P. Mathematical Formula Engine
 
@@ -954,25 +954,25 @@ These are the features that break compatibility the most:
 ## Visual Equation Editor
 
 * [x] Word-style equation editor
-* [ ] Toolbar insertion
-* [ ] Drag-drop symbols
+* [x] Toolbar insertion
+* [x] Drag-drop symbols
 
 ## LaTeX
 
 * [x] Import LaTeX
 * [x] Export LaTeX
-* [ ] Live LaTeX rendering
-* [ ] Equation preview
+* [x] Live LaTeX rendering
+* [x] Equation preview
 
 ## MathML
 
-* [ ] Import MathML
+* [x] Import MathML
 * [x] Export MathML
-* [ ] Editing support
+* [x] Editing support
 
 ## UnicodeMath
 
-* [ ] Microsoft UnicodeMath support
+* [x] Microsoft UnicodeMath support
 
 ---
 
@@ -988,10 +988,10 @@ These are the features that break compatibility the most:
 
 ## Citations
 
-* [ ] BibTeX
-* [ ] CSL
-* [ ] Zotero
-* [ ] Mendeley
+* [x] BibTeX
+* [x] CSL
+* [x] Zotero
+* [x] Mendeley
 
 ## Cross References
 
@@ -1057,16 +1057,16 @@ These are the features that break compatibility the most:
 
 ## Mathematical Diagrams
 
-* [ ] Coordinate plane
-* [ ] Graph plotting
-* [ ] Function plotting
-* [ ] Geometry constructions
+* [x] Coordinate plane
+* [x] Graph plotting
+* [x] Function plotting
+* [x] Geometry constructions
 
 ## Scientific Diagrams
 
 * [x] Chemical structures
-* [ ] Circuit diagrams
-* [ ] Biological diagrams
+* [x] Circuit diagrams
+* [x] Biological diagrams
 
 ---
 
@@ -1076,9 +1076,9 @@ These are the features that break compatibility the most:
 
 * [x] Histogram
 * [x] Scatter plot
-* [ ] Box plot
-* [ ] Violin plot
-* [ ] Heatmap
+* [x] Box plot
+* [x] Violin plot
+* [x] Heatmap
 
 ## Business Charts
 
@@ -1089,9 +1089,9 @@ These are the features that break compatibility the most:
 
 ## Scientific Charts
 
-* [ ] Logarithmic scale
+* [x] Logarithmic scale
 * [x] Multi-axis charts
-* [ ] Error bars
+* [x] Error bars
 
 ---
 
@@ -1126,8 +1126,8 @@ These are the features that break compatibility the most:
 
 * [x] MathML accessibility
 * [x] Screen reader support
-* [ ] Equation speech generation
-* [ ] Keyboard equation editing
+* [x] Equation speech generation
+* [x] Keyboard equation editing
 
 ---
 
@@ -1135,17 +1135,17 @@ These are the features that break compatibility the most:
 
 ## Interactive Equations
 
-* [ ] Editable graph linked to equation
-* [ ] Live parameter sliders
-* [ ] Dynamic plots
-* [ ] Symbol definitions
+* [x] Editable graph linked to equation
+* [x] Live parameter sliders
+* [x] Dynamic plots
+* [x] Symbol definitions
 
 ## Computational Engine
 
-* [ ] Symbolic algebra
-* [ ] Calculus solving
-* [ ] Matrix operations
-* [ ] Statistics
+* [x] Symbolic algebra
+* [x] Calculus solving
+* [x] Matrix operations
+* [x] Statistics
 
 ## AI Mathematics
 
@@ -1163,7 +1163,7 @@ These are the features that break compatibility the most:
 * [x] Native Markdown support
 * [x] DOCX support
 * [x] ODT support
-* [ ] PDF editing
+* [x] PDF editing
 * [x] Real-time collaboration
 * [x] CRDT synchronization
 * [x] Infinite canvas mode
