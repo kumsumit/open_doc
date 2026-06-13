@@ -804,3 +804,239 @@ class DocxShapeBlock extends DocxBlock {
     });
   }
 }
+
+// ============================================================
+// FREEFORM DRAWING
+// ============================================================
+
+/// A single point in a freeform path.
+class DocxPathPoint {
+  final double x;
+  final double y;
+
+  const DocxPathPoint(this.x, this.y);
+}
+
+/// Freeform / hand-drawn path shape.
+///
+/// ```dart
+/// DocxFreeformShape(
+///   points: [DocxPathPoint(0, 0), DocxPathPoint(100, 50), DocxPathPoint(200, 0)],
+///   closed: false,
+///   strokeColor: DocxColor.black,
+///   strokeWidth: 2,
+/// )
+/// ```
+class DocxFreeformShape extends DocxInline {
+  /// The polyline / freeform path points (in EMUs or logical units).
+  final List<DocxPathPoint> points;
+
+  /// Whether to close the path (connect last point back to first).
+  final bool closed;
+
+  /// Fill color (null = no fill).
+  final DocxColor? fillColor;
+
+  /// Stroke/outline color.
+  final DocxColor strokeColor;
+
+  /// Stroke width in points.
+  final double strokeWidth;
+
+  /// Width of the bounding box in EMUs.
+  final int width;
+
+  /// Height of the bounding box in EMUs.
+  final int height;
+
+  const DocxFreeformShape({
+    required this.points,
+    this.closed = false,
+    this.fillColor,
+    this.strokeColor = DocxColor.black,
+    this.strokeWidth = 1.0,
+    this.width = 914400,
+    this.height = 457200,
+    super.id,
+  });
+
+  @override
+  void accept(DocxVisitor visitor) => visitor.visitShape(this);
+
+  @override
+  void buildXml(XmlBuilder builder) {
+    builder.element('w:r', nest: () {
+      builder.element('mc:AlternateContent',
+          namespaceUris: {'mc': 'http://schemas.openxmlformats.org/markup-compatibility/2006'},
+          nest: () {
+        builder.element('mc:Choice', nest: () {
+          builder.attribute('Requires', 'wps');
+          builder.element('w:drawing', nest: () {
+            _buildDrawingXml(builder);
+          });
+        });
+      });
+    });
+  }
+
+  void _buildDrawingXml(XmlBuilder builder) {
+    builder.element('wp:inline',
+        namespaceUris: {'wp': 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing'},
+        nest: () {
+      builder.element('wp:extent', nest: () {
+        builder.attribute('cx', width.toString());
+        builder.attribute('cy', height.toString());
+      });
+      builder.element('a:graphic',
+          namespaceUris: {'a': 'http://schemas.openxmlformats.org/drawingml/2006/main'},
+          nest: () {
+        builder.element('a:graphicData', nest: () {
+          builder.attribute('uri', 'http://schemas.microsoft.com/office/word/2010/wordprocessingShape');
+          _buildCustomGeometry(builder);
+        });
+      });
+    });
+  }
+
+  void _buildCustomGeometry(XmlBuilder builder) {
+    if (points.isEmpty) return;
+    final pathData = StringBuffer('M ${points.first.x.round()},${points.first.y.round()}');
+    for (int i = 1; i < points.length; i++) {
+      pathData.write(' L ${points[i].x.round()},${points[i].y.round()}');
+    }
+    if (closed) pathData.write(' Z');
+
+    builder.element('wps:wsp',
+        namespaceUris: {'wps': 'http://schemas.microsoft.com/office/word/2010/wordprocessingShape'},
+        nest: () {
+      builder.element('wps:spPr', nest: () {
+        builder.element('a:custGeom',
+            namespaceUris: {'a': 'http://schemas.openxmlformats.org/drawingml/2006/main'},
+            nest: () {
+          builder.element('a:pathLst', nest: () {
+            builder.element('a:path', nest: () {
+              builder.attribute('w', width.toString());
+              builder.attribute('h', height.toString());
+              builder.text(pathData.toString());
+            });
+          });
+        });
+      });
+    });
+  }
+}
+
+// ============================================================
+// CONNECTOR SHAPE
+// ============================================================
+
+/// Type of connector line.
+enum DocxConnectorType { straight, elbow, curved }
+
+/// A connector line between two shapes or points.
+///
+/// ```dart
+/// DocxConnector(
+///   type: DocxConnectorType.elbow,
+///   startX: 100, startY: 100,
+///   endX: 400, endY: 300,
+///   color: DocxColor.black,
+///   strokeWidth: 1.5,
+///   hasArrowEnd: true,
+/// )
+/// ```
+class DocxConnector extends DocxInline {
+  final DocxConnectorType type;
+  final double startX;
+  final double startY;
+  final double endX;
+  final double endY;
+  final DocxColor color;
+  final double strokeWidth;
+  final bool hasArrowStart;
+  final bool hasArrowEnd;
+
+  /// Optional source shape ID.
+  final String? sourceShapeId;
+
+  /// Optional target shape ID.
+  final String? targetShapeId;
+
+  const DocxConnector({
+    this.type = DocxConnectorType.straight,
+    required this.startX,
+    required this.startY,
+    required this.endX,
+    required this.endY,
+    this.color = DocxColor.black,
+    this.strokeWidth = 1.0,
+    this.hasArrowStart = false,
+    this.hasArrowEnd = true,
+    this.sourceShapeId,
+    this.targetShapeId,
+    super.id,
+  });
+
+  @override
+  void accept(DocxVisitor visitor) => visitor.visitShape(this);
+
+  @override
+  void buildXml(XmlBuilder builder) {
+    final presetGeom = switch (type) {
+      DocxConnectorType.straight => 'line',
+      DocxConnectorType.elbow => 'bentConnector3',
+      DocxConnectorType.curved => 'curvedConnector3',
+    };
+    final cx = ((endX - startX).abs() * 9144).round();
+    final cy = ((endY - startY).abs() * 9144).round();
+
+    builder.element('w:r', nest: () {
+      builder.element('w:drawing', nest: () {
+        builder.element('wp:inline',
+            namespaceUris: {'wp': 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing'},
+            nest: () {
+          builder.element('wp:extent', nest: () {
+            builder.attribute('cx', cx.toString());
+            builder.attribute('cy', cy.toString());
+          });
+          builder.element('a:graphic',
+              namespaceUris: {'a': 'http://schemas.openxmlformats.org/drawingml/2006/main'},
+              nest: () {
+            builder.element('a:graphicData', nest: () {
+              builder.attribute('uri', 'http://schemas.openxmlformats.org/drawingml/2006/picture');
+              builder.element('p:sp',
+                  namespaceUris: {'p': 'http://schemas.openxmlformats.org/drawingml/2006/picture'},
+                  nest: () {
+                builder.element('p:spPr', nest: () {
+                  builder.element('a:prstGeom',
+                      namespaceUris: {'a': 'http://schemas.openxmlformats.org/drawingml/2006/main'},
+                      nest: () {
+                    builder.attribute('prst', presetGeom);
+                  });
+                  builder.element('a:ln', nest: () {
+                    builder.attribute('w', (strokeWidth * 12700).round().toString());
+                    builder.element('a:solidFill', nest: () {
+                      builder.element('a:srgbClr', nest: () {
+                        builder.attribute('val', color.hex);
+                      });
+                    });
+                    if (hasArrowEnd) {
+                      builder.element('a:tailEnd', nest: () {
+                        builder.attribute('type', 'arrow');
+                      });
+                    }
+                    if (hasArrowStart) {
+                      builder.element('a:headEnd', nest: () {
+                        builder.attribute('type', 'arrow');
+                      });
+                    }
+                  });
+                });
+              });
+            });
+          });
+        });
+      });
+    });
+  }
+}

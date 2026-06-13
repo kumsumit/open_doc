@@ -161,8 +161,14 @@ class DocxThemeColors {
   }
 
   /// All accent colors as a list.
-  List<String> get accents =>
-      [accent1, accent2, accent3, accent4, accent5, accent6];
+  List<String> get accents => [
+    accent1,
+    accent2,
+    accent3,
+    accent4,
+    accent5,
+    accent6,
+  ];
 }
 
 /// Theme font definitions from theme1.xml.
@@ -403,15 +409,78 @@ class DocxSectionProperties {
     switch (size) {
       case DocxPageSize.letter:
         return const DocxSectionProperties(pageWidth: 12240, pageHeight: 15840);
-      case DocxPageSize.a4:
-        return const DocxSectionProperties(pageWidth: 11906, pageHeight: 16838);
+
       case DocxPageSize.legal:
         return const DocxSectionProperties(pageWidth: 12240, pageHeight: 20160);
+
       case DocxPageSize.tabloid:
-        return const DocxSectionProperties(pageWidth: 12240, pageHeight: 15840);
+        return const DocxSectionProperties(pageWidth: 15840, pageHeight: 24480);
+
+      case DocxPageSize.statement:
+        return const DocxSectionProperties(pageWidth: 7920, pageHeight: 12240);
+
+      case DocxPageSize.executive:
+        return const DocxSectionProperties(pageWidth: 10440, pageHeight: 15120);
+
+      case DocxPageSize.a3:
+        return const DocxSectionProperties(pageWidth: 16838, pageHeight: 23811);
+
+      case DocxPageSize.a4:
+        return const DocxSectionProperties(pageWidth: 11906, pageHeight: 16838);
+
+      case DocxPageSize.a5:
+        return const DocxSectionProperties(pageWidth: 8391, pageHeight: 11906);
+
+      case DocxPageSize.b4:
+        return const DocxSectionProperties(pageWidth: 14570, pageHeight: 20636);
+
+      case DocxPageSize.b5:
+        return const DocxSectionProperties(pageWidth: 10318, pageHeight: 14570);
+
+      case DocxPageSize.folio:
+        return const DocxSectionProperties(pageWidth: 12240, pageHeight: 18720);
+
+      case DocxPageSize.quarto:
+        return const DocxSectionProperties(pageWidth: 12240, pageHeight: 15552);
 
       case DocxPageSize.custom:
         return const DocxSectionProperties();
+        
+      case DocxPageSize.a6:
+        // 105 × 148 mm
+        return const DocxSectionProperties(pageWidth: 5953, pageHeight: 8391);
+
+      case DocxPageSize.b6:
+        // 125 × 176 mm (JIS B6)
+        return const DocxSectionProperties(pageWidth: 7087, pageHeight: 9978);
+
+      case DocxPageSize.ledger:
+        // 17" × 11" (Tabloid rotated)
+        return const DocxSectionProperties(pageWidth: 24480, pageHeight: 15840);
+
+      case DocxPageSize.note:
+        // 8.5" × 11" (same as Letter)
+        return const DocxSectionProperties(pageWidth: 12240, pageHeight: 15840);
+
+      case DocxPageSize.envelope10:
+        // 4.125" × 9.5"
+        return const DocxSectionProperties(pageWidth: 5940, pageHeight: 13680);
+
+      case DocxPageSize.envelopeMonarch:
+        // 3.875" × 7.5"
+        return const DocxSectionProperties(pageWidth: 5580, pageHeight: 10800);
+
+      case DocxPageSize.envelopeDL:
+        // 110 × 220 mm
+        return const DocxSectionProperties(pageWidth: 6237, pageHeight: 12474);
+
+      case DocxPageSize.envelopeC5:
+        // 162 × 229 mm
+        return const DocxSectionProperties(pageWidth: 9184, pageHeight: 12983);
+
+      case DocxPageSize.envelopeB5:
+        // 176 × 250 mm (ISO B5 envelope)
+        return const DocxSectionProperties(pageWidth: 9978, pageHeight: 14173);
     }
   }
 }

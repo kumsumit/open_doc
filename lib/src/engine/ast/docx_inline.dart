@@ -1006,3 +1006,175 @@ class DocxCheckbox extends DocxInline {
     );
   }
 }
+
+/// A formula field in a table cell (e.g. `=SUM(ABOVE)`, `=AVERAGE(LEFT)`).
+///
+/// ```dart
+/// DocxTableFormula(formula: '=SUM(ABOVE)', format: '#,##0')
+/// ```
+class DocxTableFormula extends DocxInline {
+  /// The formula expression (Word-style, e.g. `=SUM(ABOVE)`).
+  final String formula;
+
+  /// Optional numeric format string (e.g. `#,##0.00`).
+  final String? format;
+
+  const DocxTableFormula({
+    required this.formula,
+    this.format,
+    super.id,
+  });
+
+  @override
+  void accept(DocxVisitor visitor) => visitor.visitText(this);
+
+  @override
+  void buildXml(XmlBuilder builder) {
+    final instr = format != null
+        ? ' = ${formula.replaceFirst('=', '').trim()} \\# "$format" '
+        : ' = ${formula.replaceFirst('=', '').trim()} ';
+    builder.element('w:fldSimple', nest: () {
+      builder.attribute('w:instr', instr);
+      builder.element('w:r', nest: () {
+        builder.element('w:rPr', nest: () {});
+        builder.element('w:t', nest: () {
+          builder.text('0');
+        });
+      });
+    });
+  }
+}
+
+/// A smart chip / @mention inline element (Google Docs-style).
+///
+/// ```dart
+/// DocxSmartChip(type: DocxSmartChipType.mention, value: '@johndoe', label: 'John Doe')
+/// ```
+class DocxSmartChip extends DocxInline {
+  final DocxSmartChipType type;
+  final String value;
+  final String label;
+
+  const DocxSmartChip({
+    required this.type,
+    required this.value,
+    required this.label,
+    super.id,
+  });
+
+  @override
+  void accept(DocxVisitor visitor) => visitor.visitText(this);
+
+  @override
+  void buildXml(XmlBuilder builder) {
+    builder.element('w:r', nest: () {
+      builder.element('w:rPr', nest: () {
+        builder.element('w:rStyle', nest: () {
+          builder.attribute('w:val', 'Hyperlink');
+        });
+      });
+      builder.element('w:t', nest: () {
+        builder.attribute('xml:space', 'preserve');
+        builder.text(type == DocxSmartChipType.mention ? '@$label' : label);
+      });
+    });
+  }
+}
+
+/// Types of smart chips.
+enum DocxSmartChipType { mention, date, place, file, variable }
+
+/// A WordArt element (decorative styled text).
+class DocxWordArt extends DocxInline {
+  final String text;
+  final String? style;
+  final DocxColor? color;
+  final double fontSize;
+
+  const DocxWordArt({
+    required this.text,
+    this.style,
+    this.color,
+    this.fontSize = 36,
+    super.id,
+  });
+
+  @override
+  void accept(DocxVisitor visitor) => visitor.visitText(this);
+
+  @override
+  void buildXml(XmlBuilder builder) {
+    // WordArt rendered as a large bold run with theme color
+    builder.element('w:r', nest: () {
+      builder.element('w:rPr', nest: () {
+        builder.element('w:b');
+        builder.element('w:sz', nest: () {
+          builder.attribute('w:val', (fontSize * 2).round().toString());
+        });
+        if (color != null) {
+          builder.element('w:color', nest: () {
+            builder.attribute('w:val', color!.hex);
+          });
+        }
+      });
+      builder.element('w:t', nest: () {
+        builder.text(text);
+      });
+    });
+  }
+}
+
+/// An embedded audio element in the document.
+class DocxAudio extends DocxInline {
+  /// Relative path or URL to the audio file.
+  final String source;
+
+  /// Optional title / alt text.
+  final String? title;
+
+  /// Duration hint in seconds.
+  final int? durationSeconds;
+
+  const DocxAudio({
+    required this.source,
+    this.title,
+    this.durationSeconds,
+    super.id,
+  });
+
+  @override
+  void accept(DocxVisitor visitor) => visitor.visitText(this);
+
+  @override
+  void buildXml(XmlBuilder builder) {
+    builder.element('w:r', nest: () {
+      builder.element('w:t', nest: () {
+        builder.text('[Audio: ${title ?? source}]');
+      });
+    });
+  }
+}
+
+/// A building block (reusable content snippet, Google Docs-style).
+class DocxBuildingBlock extends DocxInline {
+  final String name;
+  final String category;
+  final List<DocxInline> content;
+
+  const DocxBuildingBlock({
+    required this.name,
+    this.category = 'General',
+    this.content = const [],
+    super.id,
+  });
+
+  @override
+  void accept(DocxVisitor visitor) => visitor.visitText(this);
+
+  @override
+  void buildXml(XmlBuilder builder) {
+    for (final run in content) {
+      run.buildXml(builder);
+    }
+  }
+}

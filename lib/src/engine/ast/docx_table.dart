@@ -277,6 +277,9 @@ class DocxTable extends DocxBlock {
   /// Whether this table is floating (has custom positioning).
   bool get isFloating => position != null;
 
+  /// Whether this table can span multiple pages (large tables).
+  final bool spansPages;
+
   const DocxTable({
     required this.rows,
     this.style = const DocxTableStyle(),
@@ -289,6 +292,7 @@ class DocxTable extends DocxBlock {
     this.tblOverlap,
     this.look = const DocxTableLook(),
     this.gridColumns,
+    this.spansPages = false,
     super.id,
   });
 
@@ -686,7 +690,7 @@ class DocxTableRow extends DocxNode {
 
 /// A cell within a [DocxTableRow].
 class DocxTableCell extends DocxNode {
-  /// Block content in this cell.
+  /// Block content in this cell (can include nested [DocxTable] instances).
   final List<DocxBlock> children;
 
   /// Column span (merge cells horizontally).
@@ -726,6 +730,12 @@ class DocxTableCell extends DocxNode {
   final int? marginLeft;
   final int? marginRight;
 
+  /// Text direction for vertical text (CJK, rotated layouts).
+  final DocxTextDirection? textDirection;
+
+  /// Cell rotation angle in degrees (0, 90, 270).
+  final int? rotation;
+
   const DocxTableCell({
     this.children = const [],
     this.colSpan = 1,
@@ -743,6 +753,8 @@ class DocxTableCell extends DocxNode {
     this.marginLeft,
     this.marginRight,
     this.cnfStyle,
+    this.textDirection,
+    this.rotation,
     super.id,
   });
 
@@ -789,6 +801,8 @@ class DocxTableCell extends DocxNode {
     DocxBorderSide? borderRight,
     int? marginLeft,
     int? marginRight,
+    DocxTextDirection? textDirection,
+    int? rotation,
   }) {
     return DocxTableCell(
       children: children ?? this.children,
@@ -803,6 +817,8 @@ class DocxTableCell extends DocxNode {
       borderRight: borderRight ?? this.borderRight,
       marginLeft: marginLeft ?? this.marginLeft,
       marginRight: marginRight ?? this.marginRight,
+      textDirection: textDirection ?? this.textDirection,
+      rotation: rotation ?? this.rotation,
       id: id,
     );
   }
@@ -923,6 +939,11 @@ class DocxTableCell extends DocxNode {
                 builder.attribute('w:val', verticalAlign.name);
               },
             );
+            if (textDirection != null) {
+              builder.element('w:textDirection', nest: () {
+                builder.attribute('w:val', textDirection!.name);
+              });
+            }
           },
         );
 

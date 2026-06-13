@@ -112,6 +112,15 @@ class DocxSectionDef extends DocxSection {
   /// the image will be rendered on top of the color.
   final DocxBackgroundImage? backgroundImage;
 
+  /// Layout mode for this section (paginated, pageless, newspaper, etc.).
+  final DocxLayoutMode layoutMode;
+
+  /// Allow mixed page orientations within the section (portrait + landscape pages).
+  final bool allowMixedOrientations;
+
+  /// Number of newspaper-style columns (when layoutMode is newspaper).
+  final int? newspaperColumns;
+
   const DocxSectionDef({
     this.orientation = DocxPageOrientation.portrait,
     this.pageSize = DocxPageSize.letter,
@@ -126,6 +135,9 @@ class DocxSectionDef extends DocxSection {
     this.footer,
     this.backgroundColor,
     this.backgroundImage,
+    this.layoutMode = DocxLayoutMode.page,
+    this.allowMixedOrientations = false,
+    this.newspaperColumns,
     super.id,
   });
 
@@ -144,6 +156,9 @@ class DocxSectionDef extends DocxSection {
     DocxFooter? footer,
     DocxColor? backgroundColor,
     DocxBackgroundImage? backgroundImage,
+    DocxLayoutMode? layoutMode,
+    bool? allowMixedOrientations,
+    int? newspaperColumns,
   }) {
     return DocxSectionDef(
       orientation: orientation ?? this.orientation,
@@ -159,6 +174,9 @@ class DocxSectionDef extends DocxSection {
       footer: footer ?? this.footer,
       backgroundColor: backgroundColor ?? this.backgroundColor,
       backgroundImage: backgroundImage ?? this.backgroundImage,
+      layoutMode: layoutMode ?? this.layoutMode,
+      allowMixedOrientations: allowMixedOrientations ?? this.allowMixedOrientations,
+      newspaperColumns: newspaperColumns ?? this.newspaperColumns,
       id: id,
     );
   }
@@ -167,36 +185,14 @@ class DocxSectionDef extends DocxSection {
     if (pageSize == DocxPageSize.custom && customWidth != null) {
       return customWidth!;
     }
-    switch (pageSize) {
-      case DocxPageSize.letter:
-        return 12240;
-      case DocxPageSize.a4:
-        return 11906;
-      case DocxPageSize.legal:
-        return 12240;
-      case DocxPageSize.tabloid:
-        return 15840;
-      case DocxPageSize.custom:
-        return customWidth ?? 12240;
-    }
+    return pageSize.widthTwips;
   }
 
   int get effectiveHeight {
     if (pageSize == DocxPageSize.custom && customHeight != null) {
       return customHeight!;
     }
-    switch (pageSize) {
-      case DocxPageSize.letter:
-        return 15840;
-      case DocxPageSize.a4:
-        return 16838;
-      case DocxPageSize.legal:
-        return 20160;
-      case DocxPageSize.tabloid:
-        return 24480;
-      case DocxPageSize.custom:
-        return customHeight ?? 15840;
-    }
+    return pageSize.heightTwips;
   }
 
   @override

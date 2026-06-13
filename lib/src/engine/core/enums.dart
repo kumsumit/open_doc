@@ -227,7 +227,88 @@ enum DocxHighlight {
 
 enum DocxPageOrientation { portrait, landscape }
 
-enum DocxPageSize { letter, a4, legal, tabloid, custom }
+enum DocxPageSize {
+  custom,
+
+  letter,
+  legal,
+  tabloid,
+  statement,
+  executive,
+  folio,
+  quarto,
+
+  a3,
+  a4,
+  a5,
+  a6,
+
+  b4,
+  b5,
+  b6,
+
+  ledger,
+  note,
+
+  envelope10,
+  envelopeMonarch,
+  envelopeDL,
+  envelopeC5,
+  envelopeB5,
+}
+extension DocxPageSizeExtension on DocxPageSize {
+  /// Width in twips (1/1440 inch).
+  int get widthTwips => switch (this) {
+        DocxPageSize.letter => 12240,
+        DocxPageSize.legal => 12240,
+        DocxPageSize.tabloid => 15840,
+        DocxPageSize.ledger => 24480,
+        DocxPageSize.statement => 7920,
+        DocxPageSize.executive => 10440,
+        DocxPageSize.folio => 12240,
+        DocxPageSize.quarto => 12249,
+        DocxPageSize.note => 12240,
+        DocxPageSize.a3 => 16838,
+        DocxPageSize.a4 => 11906,
+        DocxPageSize.a5 => 8391,
+        DocxPageSize.a6 => 5953,
+        DocxPageSize.b4 => 14174,
+        DocxPageSize.b5 => 9979,
+        DocxPageSize.b6 => 7087,
+        DocxPageSize.envelope10 => 5580,
+        DocxPageSize.envelopeMonarch => 5580,
+        DocxPageSize.envelopeDL => 6237,
+        DocxPageSize.envelopeC5 => 9184,
+        DocxPageSize.envelopeB5 => 9979,
+        DocxPageSize.custom => 12240,
+      };
+
+  /// Height in twips.
+  int get heightTwips => switch (this) {
+        DocxPageSize.letter => 15840,
+        DocxPageSize.legal => 20160,
+        DocxPageSize.tabloid => 24480,
+        DocxPageSize.ledger => 15840,
+        DocxPageSize.statement => 12240,
+        DocxPageSize.executive => 15120,
+        DocxPageSize.folio => 19440,
+        DocxPageSize.quarto => 15120,
+        DocxPageSize.note => 15840,
+        DocxPageSize.a3 => 23811,
+        DocxPageSize.a4 => 16838,
+        DocxPageSize.a5 => 11906,
+        DocxPageSize.a6 => 8391,
+        DocxPageSize.b4 => 20072,
+        DocxPageSize.b5 => 14174,
+        DocxPageSize.b6 => 9979,
+        DocxPageSize.envelope10 => 12780,
+        DocxPageSize.envelopeMonarch => 10800,
+        DocxPageSize.envelopeDL => 12474,
+        DocxPageSize.envelopeC5 => 6492,
+        DocxPageSize.envelopeB5 => 7087,
+        DocxPageSize.custom => 15840,
+      };
+}
 
 enum DocxSectionBreak { continuous, nextPage, evenPage, oddPage }
 
@@ -242,6 +323,173 @@ enum DocxWidthType { auto, dxa, pct }
 // ============================================================
 // HEADING LEVELS
 // ============================================================
+
+// ============================================================
+// SCRIPT / LANGUAGE SUPPORT
+// ============================================================
+
+/// Scripts supported for advanced text rendering.
+enum DocxScript {
+  latin,
+  arabic,
+  hebrew,
+  hindi,
+  tamil,
+  chinese,
+  japanese,
+  korean,
+  thai,
+  cyrillic,
+  greek,
+  georgian,
+}
+
+// ============================================================
+// TYPOGRAPHY
+// ============================================================
+
+/// OpenType alternate glyph sets.
+enum DocxAlternateGlyphs {
+  none,
+  alternateSet1,
+  alternateSet2,
+  alternateSet3,
+  titlingAlternates,
+  ornamentalForms,
+  historicalForms,
+  stylisticAlternates,
+}
+
+// ============================================================
+// TABLE CELL DIRECTION
+// ============================================================
+
+/// Text direction for table cells.
+enum DocxTextDirection {
+  lrTb,  // Left-to-right, top-to-bottom (default)
+  tbRl,  // Top-to-bottom, right-to-left (vertical CJK)
+  btLr,  // Bottom-to-top, left-to-right
+  lrTbV, // Vertical left-to-right
+  tbRlV, // Vertical top-to-bottom right-to-left
+  tbLrV, // Vertical top-to-bottom left-to-right
+}
+
+// ============================================================
+// NEWSPAPER / LAYOUT MODES
+// ============================================================
+
+/// Document layout mode.
+enum DocxLayoutMode {
+  page,       // Standard paginated layout
+  pageless,   // Continuous scroll without page breaks
+  infiniteCanvas, // Free-form infinite canvas
+  newspaper,  // Newspaper-style multi-column flow
+}
+
+// ============================================================
+// CHART TYPES
+// ============================================================
+
+enum DocxChartType {
+  pie,
+  bar,
+  line,
+  scatter,
+  area,
+  combo,
+  histogram,
+  boxPlot,
+  heatmap,
+  violin,
+}
+
+// ============================================================
+// COLLABORATION
+// ============================================================
+
+/// User presence state in collaborative editing.
+enum DocxPresenceState { active, idle, offline }
+
+// ============================================================
+// VERSION CONTROL
+// ============================================================
+
+/// Type of a version control operation.
+enum DocxVcsOperation { commit, branch, merge, revert, diff }
+
+// ============================================================
+// EQUATION / MATH
+// ============================================================
+
+/// Display mode for mathematical equations.
+enum DocxEquationDisplay { inline, block }
+
+/// Math element types.
+enum DocxMathElementType {
+  fraction,
+  root,
+  superscript,
+  subscript,
+  supSub,
+  integral,
+  summation,
+  product,
+  matrix,
+  vector,
+  limit,
+  nary,
+  radical,
+  delimiter,
+  group,
+  phantom,
+  accent,
+  bar,
+  border,
+  box,
+  eqArray,
+  func,
+  limLow,
+  limUpp,
+  run,
+}
+
+// ============================================================
+// DIAGRAM TYPES
+// ============================================================
+
+enum DocxDiagramType {
+  flowchart,
+  uml,
+  erDiagram,
+  networkDiagram,
+  coordinatePlane,
+  graphPlot,
+  functionPlot,
+  geometryConstruction,
+  chemicalStructure,
+  circuitDiagram,
+  biologicalDiagram,
+  orgChart,
+  timeline,
+  processDiagram,
+}
+
+// ============================================================
+// SMART ART / DIAGRAM LAYOUT
+// ============================================================
+
+enum DocxSmartArtLayout {
+  orgChart,
+  horizontalOrgChart,
+  timeline,
+  process,
+  cycle,
+  hierarchy,
+  relationship,
+  matrix,
+  pyramid,
+  list,
+}
 
 enum DocxHeadingLevel { h1, h2, h3, h4, h5, h6 }
 
